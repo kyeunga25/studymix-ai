@@ -9,7 +9,7 @@ app.get("/api/health", (context) =>
       status: "ok",
     },
     error: null,
-    requestId: "local-foundation",
+    requestId: "foundation-health",
   }),
 );
 

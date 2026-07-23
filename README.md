@@ -2,6 +2,9 @@
 
 > Working title. A cloud-native SaaS that transforms a user-authorized audio track into a consistent study-friendly instrumental style.
 
+[Live demo](https://studymix-ai.kyeunga25.workers.dev) ·
+[GitHub Actions](https://github.com/kyeunga25/studymix-ai/actions)
+
 ## MVP outcome
 
 A user can:

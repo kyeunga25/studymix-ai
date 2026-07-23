@@ -13,7 +13,7 @@ describe("StudyMix API foundation", () => {
         status: "ok",
       },
       error: null,
-      requestId: "local-foundation",
+      requestId: "foundation-health",
     });
   });
 });
