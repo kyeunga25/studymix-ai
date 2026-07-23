@@ -63,3 +63,14 @@ Validate quality and cost before adding billing.
 Position the product for recordings the user owns or is authorized to process.
 
 **Reason:** Model licensing does not grant rights to adapt third-party recordings.
+
+## ADR-009: One Worker for the SPA and API
+
+**Status:** Accepted
+
+Deploy the Vite build as Cloudflare Workers Static Assets on the same Worker that serves `/api/*`.
+Use SPA fallback for browser navigation and invoke Worker code first only for API routes.
+
+**Reason:** One origin avoids CORS and split-deployment drift while allowing static assets to bypass
+Worker execution. Cloudflare Workers Builds can then deploy the complete application from the public
+GitHub repository without storing Cloudflare credentials in the repository.

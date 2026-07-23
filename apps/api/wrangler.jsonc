@@ -1,13 +1,19 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "studymix-api",
+  "name": "studymix-ai",
   "main": "src/index.ts",
   "compatibility_date": "2026-07-23",
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
   "observability": {
     "enabled": true,
   },
   "vars": {
-    "APP_ENV": "local",
+    "APP_ENV": "production",
     "GENERATION_PROVIDER": "mock",
     "REAL_GENERATION_ENABLED": "false",
   },

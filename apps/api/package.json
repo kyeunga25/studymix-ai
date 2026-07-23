@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log WRANGLER_REGISTRY_PATH=.wrangler/registry wrangler dev",
     "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler deploy --dry-run --outdir dist",
+    "deploy": "WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler deploy",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "cf-typegen": "WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler types"
   },

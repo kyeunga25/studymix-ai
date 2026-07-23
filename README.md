@@ -100,6 +100,21 @@ The web application runs at `http://localhost:5173` and the Worker API at
 `http://localhost:8787`. Phase 0 uses only `GENERATION_PROVIDER=mock`; no Cloudflare account,
 fal key, or paid API is required.
 
+The production build uses one Cloudflare Worker: Vite output is served through Workers Static Assets,
+while `/api/*` is routed to the Hono Worker. Build or deploy it from the repository root:
+
+```bash
+pnpm build
+pnpm deploy
+```
+
+Cloudflare Workers Builds settings for GitHub deployment:
+
+- Production branch: `main`
+- Root directory: `/`
+- Build command: `pnpm install --frozen-lockfile && pnpm build:web`
+- Deploy command: `pnpm deploy:worker`
+
 Validation commands:
 
 ```bash
