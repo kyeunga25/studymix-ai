@@ -1,1 +1,1 @@
-export const providersPackage = "@studymix/providers" as const;
+export * from "./types";

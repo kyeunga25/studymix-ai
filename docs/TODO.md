@@ -39,23 +39,23 @@ Codex must complete tasks in order and keep this file updated.
 
 ## Phase 1 — Contracts and domain model
 
-- [ ] Define Zod schemas for uploads.
-- [ ] Define Zod schemas for presets.
-- [ ] Define Zod schemas for jobs and outputs.
-- [ ] Define standard API success/error envelope.
-- [ ] Implement secure ID generation.
-- [ ] Implement job state machine.
-- [ ] Unit-test every allowed transition.
-- [ ] Unit-test rejected transitions.
-- [ ] Define provider interface.
-- [ ] Implement versioned preset package.
-- [ ] Add Traditional Chinese and English preset text.
+- [x] Define Zod schemas for uploads.
+- [x] Define Zod schemas for presets.
+- [x] Define Zod schemas for jobs and outputs.
+- [x] Define standard API success/error envelope.
+- [x] Implement secure ID generation.
+- [x] Implement job state machine.
+- [x] Unit-test every allowed transition.
+- [x] Unit-test rejected transitions.
+- [x] Define provider interface.
+- [x] Implement versioned preset package.
+- [x] Add Traditional Chinese and English preset text.
 
 ### Exit criteria
 
-- [ ] Domain packages have no Cloudflare or fal imports.
-- [ ] State transitions have full unit coverage.
-- [ ] Public contracts do not contain vendor-specific fields.
+- [x] Domain packages have no Cloudflare or fal imports.
+- [x] State transitions have full unit coverage.
+- [x] Public contracts do not contain vendor-specific fields.
 
 ## Phase 2 — D1 and repositories
 

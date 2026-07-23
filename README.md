@@ -134,12 +134,16 @@ The active relaxed, study-focused UI direction and browser QA screenshots are un
 
 ## Current implementation status
 
-Phase 0 is complete. The repository includes:
+Phases 0 and 1 are complete. The repository includes:
 
 - pnpm workspaces for the React/Vite web app, Hono Worker API, and shared packages.
 - Strict TypeScript, ESLint, Prettier, Vitest, Playwright, and GitHub Actions.
 - Generated Wrangler binding types and a credential-free Worker dry-run build.
 - An interactive bilingual upload UI shell using the mock-only product state.
+- Strict public Zod contracts for uploads, presets, jobs, outputs, and API envelopes.
+- Cryptographically secure resource IDs and an exhaustive job state machine.
+- A vendor-neutral music-generation provider interface.
+- Versioned English and Traditional Chinese preset definitions.
 
-Contracts, state transitions, D1 repositories, direct R2 transfer, Workflows, and fal integration
-remain in their ordered phases in `docs/TODO.md`.
+D1 repositories, direct R2 transfer, Workflows, and fal integration remain in their ordered phases in
+`docs/TODO.md`.

@@ -1,1 +1,3 @@
-export const presetsPackage = "@studymix/presets" as const;
+export * from "./presets";
+export * from "./types";
+export * from "./versions/v1";
