@@ -1,0 +1,456 @@
+# Product Requirements Document
+
+## 1. Product summary
+
+StudyMix AI is a cloud-native audio restyling SaaS. It allows a user to upload an audio recording that they own or are authorized to process, then generate study-friendly instrumental reinterpretations in a consistent style.
+
+The MVP is intended to validate three questions:
+
+1. Does audio-to-audio generation preserve enough of the recognizable melody and structure?
+2. Do users prefer the resulting versions for studying, relaxing, or background listening?
+3. Is the generation cost and failure rate low enough for a credit-based SaaS?
+
+## 2. Problem
+
+People often enjoy songs from different artists, games, animation projects, and personal music collections, but the originals may be distracting during study or work because of vocals, loud dynamics, or inconsistent styles.
+
+Manually commissioning or producing piano, music-box, and lo-fi arrangements is expensive and slow. Existing text-to-music tools generally create new music rather than a recognizable reinterpretation of a user-provided track.
+
+## 3. Target users
+
+### Primary
+
+- Independent musicians and small creators processing their own recordings.
+- Users processing public-domain, royalty-free, Creative Commons, or otherwise licensed recordings.
+- Content creators needing a private instrumental study version of authorized material.
+
+### Excluded from initial positioning
+
+- Public distribution of unauthorized commercial-song remixes.
+- Artist imitation services.
+- A public remix marketplace.
+- A streaming replacement or music piracy tool.
+- Training models on user uploads.
+
+## 4. MVP user story
+
+> As a user with the necessary rights, I upload one audio track, select a study-friendly style, generate two candidates, listen to both, and download the version I prefer.
+
+## 5. Scope
+
+### Included
+
+- Upload MP3, WAV, M4A, AAC, or OGG.
+- Private direct-to-R2 upload.
+- File metadata validation.
+- Rights declaration checkbox.
+- Three style presets.
+- One asynchronous generation job with two candidates.
+- Job status and retry-safe progress.
+- Candidate audio player.
+- Download through a short-lived signed URL.
+- Automatic expiry and deletion.
+- Mock generation provider.
+- fal.ai provider adapter.
+- Basic quota and abuse controls.
+- Operational logs without sensitive audio data.
+- English and Traditional Chinese UI strings.
+
+### Explicitly excluded
+
+- Payments and subscriptions.
+- Playlists and batch uploads.
+- Stem separation.
+- MIDI extraction.
+- User-written arbitrary prompts.
+- Artist-name style prompts.
+- Public result pages.
+- Social features.
+- Permanent cloud library.
+- Collaborative editing.
+- Mobile native applications.
+- Self-hosted GPU inference.
+- Formal automated musical-quality scoring.
+- Audio mastering beyond basic output validation.
+
+## 6. Functional requirements
+
+### FR-1: Create upload
+
+The API creates an upload record and returns:
+
+- `uploadId`
+- `objectKey`
+- A short-lived R2 `PUT` presigned URL
+- Allowed content types
+- Maximum file size
+- Expiry time
+
+The browser uploads directly to R2.
+
+### FR-2: Confirm upload
+
+After upload, the client calls a confirmation endpoint.
+
+The server checks:
+
+- The upload record exists.
+- The object key belongs to the current user/session.
+- The object exists in R2.
+- The object size is within the configured limit.
+- The declared content type is accepted.
+- The upload has not expired.
+
+The server must not trust client-supplied object keys or sizes.
+
+### FR-3: Rights declaration
+
+Before creating a generation job, the user must affirm:
+
+> I own this recording or have permission to upload, process, and create an adapted version of it.
+
+Store:
+
+- Declaration version
+- Timestamp
+- User/session ID
+- Job ID
+- Source upload ID
+
+Do not store unnecessary identifying information.
+
+### FR-4: Style selection
+
+MVP presets:
+
+#### Soft Piano
+
+Goal: calm instrumental solo-piano reinterpretation with a recognizable central melody and restrained dynamics.
+
+#### Music Box
+
+Goal: delicate music-box reinterpretation with sparse accompaniment and no vocals.
+
+#### Lo-fi Study
+
+Goal: relaxed instrumental lo-fi reinterpretation with soft drums, warm keys, limited high-frequency energy, and no vocals.
+
+Presets are versioned data, not hardcoded UI copy.
+
+### FR-5: Start generation
+
+A job request includes:
+
+- Confirmed upload ID
+- Preset ID and preset version
+- Candidate count: fixed at 2 for MVP
+- Rights declaration version
+- Optional deterministic client request key
+
+The API:
+
+1. Validates quota.
+2. Creates one job record.
+3. Starts one Workflow instance.
+4. Returns `202 Accepted` and the job ID.
+
+Repeated requests with the same idempotency key must not create duplicate paid generations.
+
+### FR-6: Provider submission
+
+The Workflow generates a short-lived input URL and submits candidate requests through the configured provider adapter.
+
+For the fal adapter:
+
+- Endpoint: ACE-Step audio-to-audio
+- Edit mode: remix
+- Input audio: short-lived signed source URL
+- Target tags: generated from the selected preset
+- Instrumental output requested
+- Provider request ID stored
+- FAL key kept only as a Worker secret
+
+Do not make browser-to-fal calls.
+
+### FR-7: Job progress
+
+Supported public job states:
+
+```text
+created
+validating
+queued
+generating
+processing_output
+completed
+failed
+expired
+cancelled
+```
+
+Internal state may be more detailed.
+
+The client polls `GET /api/jobs/:jobId` with bounded backoff. Server-Sent Events are optional and not required for MVP.
+
+### FR-8: Provider completion
+
+Support both:
+
+- Provider webhook completion.
+- Workflow polling fallback.
+
+Webhook handling must:
+
+- Authenticate or verify the callback using the strongest mechanism supported by the provider.
+- Be idempotent.
+- Reject unknown request IDs.
+- Never log secret query parameters or complete payloads.
+- Return quickly.
+- Store only necessary provider metadata.
+
+If strong webhook verification is not available, treat webhook data as a signal and verify the result using the provider API before accepting it.
+
+### FR-9: Output ingestion
+
+For each provider output:
+
+1. Validate the returned URL and expected provider domain or retrieval mechanism.
+2. Fetch with timeouts and maximum-size protections.
+3. Stream the output into private R2.
+4. Record object metadata.
+5. Mark the candidate ready.
+6. Delete or stop referencing third-party output URLs.
+
+Never load an unbounded audio response fully into Worker memory.
+
+### FR-10: Preview and download
+
+The user can:
+
+- Play both candidates.
+- See preset name, generation status, duration when known, and expiry.
+- Request a short-lived signed `GET` URL.
+- Download an output before expiry.
+
+### FR-11: Retention
+
+Default MVP policy:
+
+- Abandoned uploads: delete after 24 hours.
+- Source audio: delete no later than 72 hours after job completion.
+- Generated outputs: delete after 7 days.
+- Failed-job artifacts: delete after 24 hours.
+- Metadata required for abuse, cost, and legal audit may be retained longer without retaining audio.
+
+Retention values must be configurable.
+
+### FR-12: Failure handling
+
+User-visible failure categories:
+
+- Invalid or unsupported file.
+- Upload expired.
+- Quota exceeded.
+- Provider rejected request.
+- Provider timeout.
+- Provider generation failed.
+- Output could not be validated.
+- Internal temporary error.
+
+A failed job must not silently consume the user's future paid credit. For MVP without payments, record whether a retry is permitted.
+
+## 7. Non-functional requirements
+
+### Security
+
+- All buckets private.
+- Presigned upload URLs expire quickly.
+- Object keys generated using cryptographically secure random IDs.
+- Secrets managed using Wrangler secrets.
+- Strict CORS.
+- Turnstile on job creation.
+- Per-IP and per-session quotas.
+- No user-controlled remote URL fetches.
+- Content Security Policy on the web application.
+- Structured error responses without stack traces.
+- No request-scoped mutable global state.
+
+### Privacy
+
+- No training on uploads.
+- No public indexing.
+- No permanent retention by default.
+- No audio content in logs.
+- Clear retention notice before upload.
+- User can request immediate deletion of a completed or failed job.
+
+### Reliability
+
+- Every Workflow step must be idempotent.
+- Provider submissions must use idempotency controls where available.
+- Duplicate webhooks must be harmless.
+- Job state transitions must be validated.
+- The system must recover from Worker restarts and transient provider errors.
+
+### Performance
+
+- API metadata responses target p95 below 500 ms, excluding external services.
+- Upload and download transfer directly between the browser and R2.
+- UI remains usable while generation is pending.
+- Do not promise a fixed generation time.
+
+### Accessibility
+
+- Keyboard-operable upload and audio controls.
+- Proper labels and error summaries.
+- Status changes announced with ARIA live regions.
+- No color-only status communication.
+- Traditional Chinese and English text supported.
+
+## 8. Data model
+
+### users_or_sessions
+
+- `id`
+- `kind`
+- `created_at`
+- `last_seen_at`
+- `status`
+
+### uploads
+
+- `id`
+- `owner_id`
+- `object_key`
+- `original_filename`
+- `declared_content_type`
+- `size_bytes`
+- `status`
+- `created_at`
+- `confirmed_at`
+- `expires_at`
+
+### jobs
+
+- `id`
+- `owner_id`
+- `upload_id`
+- `preset_id`
+- `preset_version`
+- `status`
+- `idempotency_key`
+- `workflow_instance_id`
+- `candidate_count`
+- `provider`
+- `error_code`
+- `created_at`
+- `updated_at`
+- `completed_at`
+- `expires_at`
+
+### provider_requests
+
+- `id`
+- `job_id`
+- `candidate_index`
+- `provider`
+- `provider_request_id`
+- `status`
+- `seed`
+- `submitted_at`
+- `completed_at`
+- `cost_estimate_usd`
+- `error_code`
+
+### outputs
+
+- `id`
+- `job_id`
+- `candidate_index`
+- `object_key`
+- `content_type`
+- `size_bytes`
+- `duration_seconds`
+- `status`
+- `created_at`
+- `expires_at`
+
+### rights_declarations
+
+- `id`
+- `job_id`
+- `owner_id`
+- `declaration_version`
+- `accepted_at`
+
+### usage_events
+
+- `id`
+- `owner_id`
+- `job_id`
+- `event_type`
+- `quantity`
+- `estimated_cost_usd`
+- `created_at`
+
+## 9. API outline
+
+```text
+POST   /api/uploads
+POST   /api/uploads/:uploadId/confirm
+DELETE /api/uploads/:uploadId
+
+GET    /api/presets
+
+POST   /api/jobs
+GET    /api/jobs/:jobId
+DELETE /api/jobs/:jobId
+
+POST   /api/outputs/:outputId/download
+POST   /api/webhooks/fal
+
+GET    /api/health
+```
+
+All routes return a consistent envelope:
+
+```json
+{
+  "data": {},
+  "error": null,
+  "requestId": "..."
+}
+```
+
+Error example:
+
+```json
+{
+  "data": null,
+  "error": {
+    "code": "UPLOAD_EXPIRED",
+    "message": "The upload has expired.",
+    "retryable": false
+  },
+  "requestId": "..."
+}
+```
+
+## 10. Acceptance criteria
+
+The MVP is accepted when:
+
+1. A clean clone runs locally with the mock provider.
+2. A user can upload a non-copyrighted test file directly to R2 in a deployed test environment.
+3. The API creates exactly one job for repeated requests sharing an idempotency key.
+4. The mock Workflow produces two playable candidates.
+5. The fal adapter can be enabled using environment configuration without changing domain code.
+6. The fal API key never appears in browser bundles, logs, D1, or repository history.
+7. A duplicate webhook does not duplicate outputs or corrupt state.
+8. Generated files are stored privately in R2.
+9. Download links expire.
+10. Cleanup removes expired objects and updates metadata.
+11. Unit, integration, and end-to-end tests pass in CI.
+12. The user must accept the rights declaration before any real provider request.
+13. The UI clearly states that output may not preserve every musical detail.
+14. The repository documents how to run locally, deploy staging, and configure production.

@@ -1,0 +1,15 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+allowBuilds:
+  esbuild: true
+  sharp: true
+  workerd: true
+
+catalog:
+  zod: ^4.4.3
+
+engineStrict: true
+sharedWorkspaceLockfile: true
+strictPeerDependencies: true

@@ -1,0 +1,33 @@
+{
+  "name": "studymix-ai",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Private, cloud-native AI audio restyling MVP.",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22.12.0",
+    "pnpm": ">=11.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @studymix/web --filter @studymix/api dev",
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier . --check",
+    "format:write": "prettier . --write",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "cf-typegen": "pnpm --filter @studymix/api cf-typegen"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.61.1",
+    "@types/node": "^26.1.1",
+    "eslint": "^10.7.0",
+    "globals": "^17.7.0",
+    "prettier": "^3.9.6",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^4.1.10"
+  }
+}

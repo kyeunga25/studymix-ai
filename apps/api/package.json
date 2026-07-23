@@ -1,0 +1,20 @@
+{
+  "name": "@studymix/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log WRANGLER_REGISTRY_PATH=.wrangler/registry wrangler dev",
+    "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler deploy --dry-run --outdir dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "cf-typegen": "WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler types"
+  },
+  "dependencies": {
+    "hono": "^4.12.31",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3",
+    "wrangler": "^4.113.0"
+  }
+}
