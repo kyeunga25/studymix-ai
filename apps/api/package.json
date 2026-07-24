@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log WRANGLER_REGISTRY_PATH=.wrangler/registry wrangler dev --var APP_ENV:local --var DEV_AUTH_SUBJECT:local-development-owner --var LEGAL_CONTACT_EMAIL:privacy@example.test",
     "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler deploy --dry-run --outdir dist",
-    "deploy": "WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler deploy",
+    "deploy": "pnpm deploy:cloudflare",
+    "deploy:cloudflare": "node scripts/create-cloudflare-config.mjs && WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler deploy --config wrangler.deploy.json",
+    "preview:cloudflare": "node scripts/create-cloudflare-config.mjs && WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler versions upload --config wrangler.deploy.json",
     "d1:migrate:local": "WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler d1 migrations apply DB --local",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "cf-typegen": "WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler types --strict-vars=false"
