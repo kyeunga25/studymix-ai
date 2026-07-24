@@ -110,7 +110,7 @@ packages/presets
 
 ```ts
 export interface MusicGenerationProvider {
-  readonly name: "mock" | "fal" | "self-hosted";
+  readonly name: "mock" | "fal";
 
   submit(input: GenerationSubmission): Promise<GenerationSubmissionResult>;
 
@@ -241,7 +241,7 @@ These strings are hypotheses and must be benchmarked. Do not claim that they gua
 ```text
 POST /api/jobs
   │
-  ├── validate owner, confirmed upload, rights, quota
+  ├── validate owner, current legal acceptance, confirmed upload, rights, quota
   ├── insert job in D1
   ├── create Workflow with instance ID derived from job ID
   └── return 202
@@ -260,6 +260,27 @@ Workflow.run
 ```
 
 Each `step.do` body must be safe to retry.
+
+## 7.1 Legal-document and acceptance boundary
+
+The legal documents are versioned public contracts shared by the API and web build. The authenticated
+Worker exposes:
+
+```text
+GET  /api/legal/documents    -> configured contact + current document manifest
+GET  /api/legal/acceptances  -> current authenticated-owner status
+POST /api/legal/acceptances  -> exact current required versions only
+```
+
+`POST` uses a bounded JSON reader, strict Zod parsing, exact version comparison, a server-derived owner,
+and a server timestamp. D1 stores one idempotent row per `owner_id + document_id + document_version`.
+The Privacy Notice is not included in the acceptance table because necessary data processing should not
+be represented as optional consent. The web checkbox acknowledges it while accepting the three
+contractual documents.
+
+Every job-creation route must call `hasCurrentLegalAcceptances()` before inserting a job and must
+separately persist the upload/job-specific rights declaration. Updating a required document version
+automatically makes earlier status non-current without deleting audit history.
 
 ## 8. State machine
 
@@ -338,21 +359,29 @@ Validate:
 - Basic output metadata.
 - Non-empty stream.
 
-A future media worker can run `ffprobe` and loudness checks on a CPU container. This is not mandatory for the first vertical slice.
-
 ## 12. Authentication strategy
 
-### MVP recommendation
+### Authentication boundary
 
 Implement an `OwnerContext` abstraction supporting:
 
 - Development user.
-- Anonymous signed session.
-- Future authenticated user.
+- Authenticated Cloudflare Access user.
 
 Do not make authentication vendor-specific in domain logic.
 
-For a public beta, add email or social sign-in before payments. The upload, job, and output records must always have an owner ID even for anonymous sessions.
+Production and staging have no anonymous owner mode. Cloudflare Access protects the entire Worker,
+including static assets, and the Worker separately verifies the Access JWT signature, algorithm,
+issuer, audience, expiry, application-token type, user subject, and verified email claim. Service
+tokens are not accepted as interactive user identities.
+
+Derive the stable owner ID from a SHA-256 digest of the verified issuer and subject. Store only the
+subject hash and owner ID in D1. Never trust `X-User-Id`, `X-Owner-Id`, request bodies, URL parameters,
+or unsigned cookies as identity sources. All owner-owned repository reads and writes include the
+resolved owner ID in the SQL predicate.
+
+Local development uses one configured development identity and only when `APP_ENV` is explicitly a
+non-production value. Unknown environments and incomplete Access configuration fail closed.
 
 ## 13. Abuse controls
 
@@ -365,7 +394,7 @@ For a public beta, add email or social sign-in before payments. The upload, job,
 - No arbitrary prompt input in MVP.
 - No arbitrary remote source URL.
 - Kill switch: `REAL_GENERATION_ENABLED=false`.
-- Budget cap checked before submission.
+- Real-generation kill switch and quota checked before submission.
 - Provider failures are circuit-breaker signals.
 
 ## 14. Configuration
@@ -374,6 +403,10 @@ Non-secret configuration in `wrangler.jsonc`:
 
 ```text
 APP_ENV
+ACCESS_TEAM_DOMAIN
+ACCESS_AUD
+DEV_AUTH_SUBJECT          # local development only; ignored in production/staging
+LEGAL_CONTACT_EMAIL       # real monitored address required outside local/test
 GENERATION_PROVIDER
 REAL_GENERATION_ENABLED
 MAX_UPLOAD_BYTES
@@ -391,12 +424,33 @@ Secrets:
 FAL_KEY
 R2_S3_ACCESS_KEY_ID
 R2_S3_SECRET_ACCESS_KEY
-SESSION_SIGNING_SECRET
 TURNSTILE_SECRET_KEY
 FAL_WEBHOOK_SECRET      # only if provider supports it
 ```
 
 Generate Worker binding types using Wrangler. Do not hand-maintain an `Env` interface.
+
+## 14.1 Data lifecycle and disclosure status
+
+The current codebase does not collect audio in R2 and does not enable external generation. It therefore
+does not claim that audio retention, deletion, or provider controls are operational. Those capabilities
+remain disabled unless runtime deletion and owner-isolation checks are present.
+
+Legal acceptance records are metadata evidence, not audio. Their final retention period must be
+documented before launch and limited to what is necessary for governing-version proof, security, and
+live disputes.
+
+## 14.2 Data recipients, sources, and location claims
+
+- Cloudflare is the current identity, Worker, and D1 processor. Automatic placement and
+  location hints do not justify a Hong Kong-only residency claim.
+- External generation is disabled. A provider adapter must remain disabled until the exact
+  model supports verified no-payload storage, restrictive media ACL/expiry, suitable deletion, and
+  provider contract terms.
+- The application never ingests user-supplied URLs or scrapes official/third-party data-source sites or
+  APIs for tracks.
+- A provider URL is untrusted transport input, not a public result or proof of rights. Verified output is
+  streamed into private R2 and the provider URL is no longer exposed.
 
 ## 15. Observability
 
@@ -434,7 +488,6 @@ Operational metrics:
 - Jobs completed and failed.
 - Provider latency.
 - Output-ingestion latency.
-- Cost estimate per job.
 - Retry count.
 - Expired-object cleanup count.
 - Generation success by preset.
@@ -453,7 +506,6 @@ Operational metrics:
 - Separate D1 database and R2 bucket.
 - fal provider disabled by default.
 - Explicit allowlist for real-generation testers.
-- Low daily budget cap.
 
 ### Production
 
@@ -461,18 +513,4 @@ Operational metrics:
 - Real generation gated by feature flag.
 - Strict allowed origins.
 - Retention and cleanup enabled.
-- Alerting on cost and failure-rate thresholds.
-
-## 17. Future migration to self-hosted GPU
-
-The provider abstraction allows:
-
-```text
-fal.ai
-  ↓
-RunPod/Modal endpoint running ACE-Step
-  ↓
-Dedicated GPU when utilization justifies it
-```
-
-The web, upload, D1, Workflow, and output contracts should not change. Only provider-specific configuration and adapter code should change.
+- Alerting on failure-rate thresholds.

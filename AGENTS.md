@@ -47,18 +47,18 @@ Do not silently change product scope. Record material architecture changes in an
 
 ## Working method
 
-For each phase:
+For each change:
 
 1. Read the relevant documents.
 2. Inspect existing code before editing.
-3. State assumptions in the commit or task summary.
+3. Keep public commit and pull-request text limited to the implementation itself.
 4. Implement the smallest vertical slice.
 5. Add or update tests.
 6. Run typecheck, lint, and tests.
-7. Update `docs/TODO.md`.
+7. Update `docs/TODO.md` only with demonstrably verified current status.
 8. Summarize changed files, commands run, and remaining risks.
 
-Do not mark a TODO complete unless its acceptance criteria are demonstrably satisfied.
+Do not mark a status complete unless its acceptance criteria are demonstrably satisfied.
 
 ## External APIs
 
