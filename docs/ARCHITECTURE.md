@@ -7,9 +7,10 @@ Use Cloudflare as the control plane and object-storage layer. Use a replaceable 
 ```text
 Browser
   │
-  ├── Static application ───────────────► Cloudflare Worker assets
+  ├── Public overview and legal pages ──► Cloudflare Worker assets
+  ├── Protected `/app*` ────────────────► Cloudflare Access ─► Worker assets
   │
-  ├── API metadata ─────────────────────► Worker API
+  ├── Protected `/api/*` ───────────────► Cloudflare Access ─► Worker API
   │                                         │
   │                                         ├── D1
   │                                         ├── Workflow binding
@@ -263,11 +264,11 @@ Each `step.do` body must be safe to retry.
 
 ## 7.1 Legal-document and acceptance boundary
 
-The legal documents are versioned public contracts shared by the API and web build. The authenticated
-Worker exposes:
+The legal documents are versioned public contracts shared by the API and web build. The Worker exposes:
 
 ```text
-GET  /api/legal/documents    -> configured contact + current document manifest
+GET  /legal/documents.json   -> public configured contact + current document manifest
+GET  /api/legal/documents    -> authenticated compatibility manifest
 GET  /api/legal/acceptances  -> current authenticated-owner status
 POST /api/legal/acceptances  -> exact current required versions only
 ```
@@ -370,10 +371,11 @@ Implement an `OwnerContext` abstraction supporting:
 
 Do not make authentication vendor-specific in domain logic.
 
-Production and staging have no anonymous owner mode. Cloudflare Access protects the entire Worker,
-including static assets, and the Worker separately verifies the Access JWT signature, algorithm,
-issuer, audience, expiry, application-token type, user subject, and verified email claim. Service
-tokens are not accepted as interactive user identities.
+Production and staging have no anonymous owner mode. The product overview, legal pages, `/health`, and
+`/legal/documents.json` are public and never resolve or create an owner. Cloudflare Access protects
+`/app*` and `/api/*`, and the Worker separately verifies the Access JWT signature, algorithm, issuer,
+audience, expiry, application-token type, user subject, and verified email claim. Service tokens are not
+accepted as interactive user identities.
 
 Derive the stable owner ID from a SHA-256 digest of the verified issuer and subject. Store only the
 subject hash and owner ID in D1. Never trust `X-User-Id`, `X-Owner-Id`, request bodies, URL parameters,

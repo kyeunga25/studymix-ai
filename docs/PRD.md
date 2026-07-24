@@ -52,6 +52,7 @@ Manually commissioning or producing piano, music-box, and lo-fi arrangements is 
 - Basic quota and abuse controls.
 - Operational logs without sensitive audio data.
 - English and Traditional Chinese UI strings.
+- Public bilingual product overview with no registration or user-content surface.
 - Authenticated private-beta access through Cloudflare Access.
 - Versioned Terms, Privacy Notice, Acceptable Use Policy, and AI/output notice.
 - Server-side current-document acceptance before real generation.
@@ -291,7 +292,7 @@ A failed job must record whether a safe retry is permitted.
 ### Privacy
 
 - No training on uploads.
-- No public indexing.
+- No indexing or public exposure of the private workspace, user metadata, source audio, or outputs.
 - No permanent retention by default.
 - No audio content in logs.
 - Clear retention notice before upload.
@@ -428,6 +429,9 @@ A failed job must record whether a safe retry is permitted.
 ## 9. API outline
 
 ```text
+GET    /health
+GET    /legal/documents.json
+
 GET    /api/legal/documents
 GET    /api/legal/acceptances
 POST   /api/legal/acceptances
@@ -490,4 +494,5 @@ The MVP is accepted when:
 12. The user must accept the rights declaration before any real provider request.
 13. The UI clearly states that output may not preserve every musical detail.
 14. The repository documents how to run locally, deploy staging, and configure production.
-15. Production and staging serve neither the SPA nor API data without a valid interactive Access JWT.
+15. Production and staging require a valid interactive Access JWT for `/app*` and `/api/*`; public
+    routes expose no owner state, audio, signed URLs, or private application data.

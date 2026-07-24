@@ -1,9 +1,10 @@
-# Cloudflare Access deployment gate
+# Cloudflare private-beta deployment
 
-Production and staging must remain unavailable until every item in this document is complete. The
-Worker deliberately fails closed when the Access configuration is absent or still contains repository
-placeholders. This public document never records actual Cloudflare account, D1, Access, Worker, route,
-or other resource identifiers.
+The product overview and legal notices may be public during the closed beta. The application workspace
+and all private APIs must remain unavailable to anyone outside the tester allowlist. The Worker fails
+closed on protected paths when the Access configuration is absent or still contains repository
+placeholders. This document never records actual Cloudflare account, D1, Access, Worker, or other
+resource identifiers.
 
 ## 1. Create the D1 database
 
@@ -24,21 +25,22 @@ pnpm --filter @studymix/api exec wrangler d1 migrations apply DB --remote --conf
 Do not use ad-hoc schema commands in production. Confirm the migration list before and after the
 apply operation.
 
-## 2. Put Access in front of the entire Worker
+## 2. Protect the private paths with Access
 
 In Cloudflare Zero Trust:
 
 1. Go to **Access controls → Applications** and add a **Self-hosted** application.
-2. Select the intended Worker as the destination, including production deployments. Protecting
-   the Worker by name prevents an alternate `workers.dev` hostname from bypassing the policy.
+2. Add the production custom hostname destinations for `/app*` and `/api/*` to the same application.
+   Do not add the bare hostname or `/`, because the product overview and legal notices are intentionally
+   public. The checked-in deployment setting disables the default `workers.dev` hostname.
 3. Add an **Allow** policy for the exact beta-tester email addresses or approved identity-provider
    group. Do not use an `Everyone` or permanent `Bypass` rule.
 4. Do not add a Service Auth rule to the interactive web application. The application rejects
    service-token JWTs because they are not user identities.
 5. Choose an appropriately short application and policy session duration for the private beta.
 
-Cloudflare's current guidance calls protecting the Worker by name the safest and most direct option:
-<https://developers.cloudflare.com/cloudflare-one/access-controls/applications/choose-application-type/#protecting-workers>
+Cloudflare supports path destinations and evaluates more-specific application paths first:
+<https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/>
 
 ## 3. Configure Worker JWT verification
 
@@ -72,21 +74,45 @@ deletion gate in `docs/LEGAL_AND_DATA_USE.md`.
 Before production traffic is enabled:
 
 1. Run `pnpm cf-typegen`, `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm build`.
-2. In a private browser window, confirm that `/`, hashed assets, `/legal/privacy`, `/api/health`, and
-   `/api/legal/documents` all show the Access login or denial page before the Worker is reached.
-3. Confirm an approved identity can load `/api/auth/me` and receives an `own_…` owner ID.
-4. Confirm an unapproved email is denied by Access.
-5. Send a request without `Cf-Access-Jwt-Assertion` directly to the Worker and confirm a `401`
+2. In a private browser window, confirm that `/`, `/legal/privacy`, `/health`, and
+   `/legal/documents.json` load without login and create no owner row.
+3. Confirm `/app` and `/api/auth/me` show Access login or denial before the Worker is reached.
+4. Confirm an approved identity can load `/api/auth/me` and receives a valid owner ID response. Do not
+   copy the value into screenshots, issues, commits, or public documentation.
+5. Confirm an unapproved email is denied by Access.
+6. Send a request without `Cf-Access-Jwt-Assertion` directly to a protected Worker path and confirm a `401`
    response with no owner row created.
-6. Send a malformed or expired JWT and confirm it is rejected without token details in the response
+7. Send a malformed or expired JWT and confirm it is rejected without token details in the response
    or logs.
-7. Confirm `/cdn-cgi/access/logout` clears the application session.
-8. Confirm every authenticated application response uses `Cache-Control: private, no-store`, including
-   SPA fallbacks and legal pages.
-9. Confirm the legal manifest exposes the real monitored contact and current document versions, then
+8. Confirm `/cdn-cgi/access/logout` clears the application session.
+9. Confirm every authenticated application response uses `Cache-Control: private, no-store`, including
+   SPA fallbacks.
+10. Confirm the legal manifest exposes the real monitored contact and current document versions, then
    submit, repeat, and query acceptance for an approved test owner.
-10. Confirm a denied identity and a second approved identity cannot read or satisfy the first owner's
+11. Confirm a denied identity and a second approved identity cannot read or satisfy the first owner's
     legal or metadata state.
 
-There must be no path-specific Access application or Bypass policy that leaves static assets, API
-routes, preview deployments, or the default Worker hostname outside the authentication boundary.
+There must be no Bypass policy, broader conflicting application, preview hostname, or default Worker
+hostname that exposes `/app*` or `/api/*` outside the authentication boundary.
+
+## 6. Connect GitHub automatic deployment
+
+Use Cloudflare Workers Builds for deployment and GitHub Actions for validation. This avoids storing a
+Cloudflare deployment token in the repository or GitHub Actions secrets.
+
+1. In the Worker's **Settings → Builds**, connect the GitHub repository through the Cloudflare Workers
+   Builds GitHub App. This is a one-time account-authorized action.
+2. Set the production branch to `main` and keep automatic production deployments enabled.
+3. Use repository root `/`, build command `pnpm build:web`, deploy command
+   `pnpm --filter @studymix/api deploy:cloudflare`, and preview command
+   `pnpm --filter @studymix/api preview:cloudflare`.
+4. Add `DEPLOY_WORKER_NAME`, `DEPLOY_D1_NAME`, and `DEPLOY_D1_ID` as protected build settings in
+   Cloudflare. Their values must never be committed or printed in public build documentation.
+5. Keep `APP_ENV`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `LEGAL_CONTACT_EMAIL`,
+   `GENERATION_PROVIDER=mock`, and `REAL_GENERATION_ENABLED=false` as Worker runtime variables. The
+   generated deployment config uses `keep_vars` and does not redefine them.
+6. Require the GitHub `CI` check before merging to `main`. A merged production commit is then deployed
+   by Workers Builds; non-production branch uploads do not receive production traffic.
+
+Cloudflare Workers Builds configuration reference:
+<https://developers.cloudflare.com/workers/ci-cd/builds/configuration/>

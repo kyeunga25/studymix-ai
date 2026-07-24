@@ -4,7 +4,7 @@ StudyMix AI 是一個 Cloudflare-first、雙語及安全優先的音訊風格重
 
 StudyMix AI is a bilingual, security-first, Cloudflare-native application for restyling audio that the user owns or is authorized to process.
 
-目前公開程式碼可在不使用付費憑證的情況下展示完整介面狀態；真實音訊上傳及外部生成保持停用。
+公開首頁提供產品、運作方式及私隱安全概覽；AI 工作區位於 `/app`，只限受邀測試者經 Cloudflare Access 登入。沒有公開註冊，真實音訊上載及外部生成保持停用。公開程式碼可在不使用付費憑證的情況下展示完整介面狀態。
 
 ## Target MVP outcome
 
@@ -39,7 +39,7 @@ The first implementation uses a provider adapter with:
 - Authentication: Cloudflare Access with Worker-side JWT verification
 - AI provider: fal.ai ACE-Step audio-to-audio
 - Testing: Vitest + Playwright
-- CI/CD: GitHub Actions + Wrangler
+- CI/CD: GitHub Actions validation + Cloudflare Workers Builds deployment
 - Package manager: pnpm
 
 ## Repository layout
@@ -105,7 +105,8 @@ pnpm cf-typegen
 pnpm dev
 ```
 
-The web application runs at `http://localhost:5173` and the Worker API at
+The public product page runs at `http://localhost:5173/`, the invited-tester workspace at
+`http://localhost:5173/app`, and the Worker API at
 `http://localhost:8787`. Local Wrangler development uses one fixed development owner and the mock
 provider; no Cloudflare account, fal key, or paid API is required. The development identity is enabled
 only by the local `dev` script and is ignored by production and staging authentication. `pnpm dev`
@@ -118,16 +119,20 @@ or paid credentials. Open `http://localhost:5173/?mockScenario=failed` to verify
 production build; production upload and generation remain disabled until their security controls are verified.
 
 The production build uses one Cloudflare Worker: Vite output is served through Workers Static Assets,
-while `/api/*` is routed to the Hono Worker. Build it from the repository root:
+while `/api/*` is routed to the Hono Worker. The product overview, legal pages, `/health`, and
+`/legal/documents.json` are public. Cloudflare Access and Worker-side JWT verification protect `/app*`
+and `/api/*`. Build it from the repository root:
 
 ```bash
 pnpm build
 ```
 
 The checked-in Wrangler file contains placeholders only and is intentionally not a deployable production
-configuration. Follow [`docs/CLOUDFLARE_ACCESS.md`](docs/CLOUDFLARE_ACCESS.md) with an ignored local or
-CI deployment configuration. Never commit Cloudflare account IDs, D1 IDs, Access identifiers, actual
-resource names, or contact details.
+configuration. `pnpm deploy:cloudflare` generates an ignored deployment file from the protected
+`DEPLOY_WORKER_NAME`, `DEPLOY_D1_NAME`, and `DEPLOY_D1_ID` build settings. Runtime Access and legal
+settings stay in Cloudflare and are retained during deployment. Follow
+[`docs/CLOUDFLARE_ACCESS.md`](docs/CLOUDFLARE_ACCESS.md); never commit Cloudflare account IDs, D1 IDs,
+Access identifiers, actual resource names, contact details, or deployment tokens.
 
 Validation commands:
 
@@ -149,6 +154,8 @@ The repository currently includes:
 
 - pnpm workspaces for the React/Vite web app, Hono Worker API, and shared packages.
 - Strict TypeScript, ESLint, Prettier, Vitest, Playwright, and GitHub Actions.
+- A bilingual public product overview with an explicit closed-beta status and no registration flow.
+- A separate `/app` workspace that verifies the invited Access session before exposing application UI.
 - Generated Wrangler binding types and a credential-free Worker dry-run build.
 - An interactive bilingual upload UI shell with pending, result-comparison, and safe retry states backed
   by a development-only mock HTTP API.
@@ -160,6 +167,8 @@ The repository currently includes:
 - Cloudflare Access JWT authentication, a server-derived owner identity, and cross-owner denial tests.
 - Versioned bilingual legal pages, owner-scoped D1 acceptance evidence, bounded legal APIs, and a
   fail-closed production contact requirement.
+- Identifier-free deployment scripts for Cloudflare Workers Builds and one-time authenticated Wrangler
+  deployment.
 
 Direct R2 transfer, external generation, deletion/cleanup, and provider callbacks remain disabled. See
 [`docs/TODO.md`](docs/TODO.md) for the current verified status without internal planning material.

@@ -23,7 +23,9 @@ operational.
 | Acceptable Use Policy | `/legal/acceptable-use` | `2026-07-24` | Yes |
 | AI and Output Notice | `/legal/ai-output-notice` | `2026-07-24` | Yes |
 
-`GET /api/legal/documents` returns the configured contact and current public manifest.
+`GET /legal/documents.json` returns the configured contact and current public manifest without creating
+an owner record. The authenticated compatibility route `GET /api/legal/documents` returns the same
+manifest inside the private API boundary.
 `GET /api/legal/acceptances` returns only the authenticated owner's current status.
 `POST /api/legal/acceptances` accepts an exact, complete, non-duplicated set of current required
 versions. The Worker derives the owner from the verified Cloudflare Access assertion and supplies the

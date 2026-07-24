@@ -61,8 +61,8 @@ Position the product for recordings the user owns or is authorized to process.
 **Status:** Accepted
 
 Deploy the Vite build as Cloudflare Workers Static Assets on the same Worker that serves `/api/*`.
-Use SPA fallback for browser navigation. ADR-010 supersedes the original API-only Worker routing and
-requires every asset route to invoke authentication before using the static-assets binding.
+Use SPA fallback for browser navigation. The Worker serves a public product overview and legal pages,
+then applies the ADR-010 authentication boundary before the private application or API is reached.
 
 **Reason:** One origin avoids CORS and split-deployment drift. Cloudflare Workers Builds can deploy the
 complete application from the public GitHub repository without storing Cloudflare credentials in the
@@ -72,17 +72,18 @@ repository.
 
 **Status:** Accepted
 
-Require an interactive Cloudflare Access identity before serving the SPA or any API route. Configure
-Access against the entire Worker, then independently verify `Cf-Access-Jwt-Assertion` inside the
-Worker. Derive the application owner ID from the verified Access issuer and subject; never accept an
-owner ID from a browser header, cookie, URL, or request body.
+Keep `/`, legal pages, `/health`, and `/legal/documents.json` public. Require an interactive Cloudflare
+Access identity for `/app*` and `/api/*`, then independently verify `Cf-Access-Jwt-Assertion` inside
+the Worker. Derive the application owner ID from the verified Access issuer and subject; never accept
+an owner ID from a browser header, cookie, URL, or request body.
 
 Cloudflare Access owns the login session. D1 stores only a one-way subject hash and the derived owner
 ID, not passwords, Access JWTs, session cookies, or user email addresses. A fixed development owner is
 allowed only when `APP_ENV` is explicitly `local`, `development`, or `test`.
 
-**Reason:** Access supplies a maintained identity-aware login boundary for the private beta, while Worker-side JWT verification and
-owner-scoped D1 queries preserve defence in depth if a route or hostname is misconfigured.
+**Reason:** Visitors can understand the project without an account, while Access supplies a maintained
+identity-aware boundary for the private beta. Worker-side JWT verification and owner-scoped D1 queries
+preserve defence in depth if a protected path or hostname is misconfigured.
 
 ## ADR-011: Versioned legal acceptance and fail-closed provider activation
 
