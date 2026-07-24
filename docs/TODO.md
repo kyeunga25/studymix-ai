@@ -20,6 +20,7 @@ This document records only verifiable repository capabilities and public safety 
 - [x] `/health`、法律頁及公開法律 manifest 可匿名讀取，但不建立 owner 紀錄。
 - [x] Mock provider 模式不需要付費憑證，CI 不會呼叫外部生成服務。
 - [x] Cloudflare Workers Builds 可用的部署指令以受保護設定生成 ignored config，不把資源識別資料寫入版本庫。
+- [x] GitHub 存放庫已連接至 Cloudflare Workers Builds；生產與預覽命令採用加密建置設定，不在版本庫保存資源識別資料。
 
 ## 目前未啟用 / Currently disabled
 
