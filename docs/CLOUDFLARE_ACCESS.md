@@ -35,12 +35,19 @@ In Cloudflare Zero Trust:
    public. The checked-in deployment setting disables the default `workers.dev` hostname.
 3. Add an **Allow** policy for the exact beta-tester email addresses or approved identity-provider
    group. Do not use an `Everyone` or permanent `Bypass` rule.
-4. Do not add a Service Auth rule to the interactive web application. The application rejects
+4. Select only the login method needed by the approved testers. Cloudflare account members may use
+   the Cloudflare identity provider. For an invited tester outside the account, explicitly enable
+   One-time PIN and keep the exact-email **Allow** selector. A `Login Methods: One-time PIN` include
+   rule by itself is not an email allowlist and must not be used to grant access.
+5. Do not add a Service Auth rule to the interactive web application. The application rejects
    service-token JWTs because they are not user identities.
-5. Choose an appropriately short application and policy session duration for the private beta.
+6. Choose an appropriately short application and policy session duration for the private beta.
 
 Cloudflare supports path destinations and evaluates more-specific application paths first:
 <https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/>
+
+Cloudflare documents the Cloudflare identity provider and email One-time PIN behavior here:
+<https://developers.cloudflare.com/cloudflare-one/integrations/identity-providers/>
 
 ## 3. Configure Worker JWT verification
 
