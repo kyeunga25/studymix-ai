@@ -1,4 +1,4 @@
-export const resourceIdPrefixes = ["own", "upl", "job", "out", "rgt", "req"] as const;
+export const resourceIdPrefixes = ["own", "upl", "job", "out", "rgt", "req", "evt"] as const;
 
 export type ResourceIdPrefix = (typeof resourceIdPrefixes)[number];
 export type SecureResourceId<TPrefix extends ResourceIdPrefix = ResourceIdPrefix> =

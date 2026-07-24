@@ -1,19 +1,32 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "studymix-ai",
+  "name": "change-me-worker",
   "main": "src/index.ts",
-  "compatibility_date": "2026-07-23",
+  "compatibility_date": "2026-07-25",
+  "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "../web/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"],
+    "run_worker_first": true,
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "change-me-database",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations",
+    },
+  ],
   "observability": {
     "enabled": true,
   },
   "vars": {
     "APP_ENV": "production",
+    "ACCESS_TEAM_DOMAIN": "https://CHANGE-ME.cloudflareaccess.com",
+    "ACCESS_AUD": "CHANGE_ME",
+    "DEV_AUTH_SUBJECT": "",
+    "LEGAL_CONTACT_EMAIL": "CHANGE_ME",
     "GENERATION_PROVIDER": "mock",
     "REAL_GENERATION_ENABLED": "false",
   },

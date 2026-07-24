@@ -1,0 +1,158 @@
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
+import { z } from "zod";
+
+const ACCESS_TOKEN_HEADER = "cf-access-jwt-assertion";
+const DEVELOPMENT_ISSUER = "urn:studymix:development";
+
+const accessClaimsSchema = z
+  .object({
+    email: z.email(),
+    exp: z.number().int().positive(),
+    iat: z.number().int().positive(),
+    nbf: z.number().int().positive(),
+    sub: z.uuid(),
+    type: z.literal("app"),
+  })
+  .passthrough();
+
+const accessAudienceSchema = z.string().regex(/^[a-f0-9]{64}$/i);
+const developmentSubjectSchema = z.string().trim().min(8).max(128);
+
+export type OwnerContext = {
+  authIssuer: string;
+  authSubjectHash: string;
+  kind: "authenticated" | "development";
+  ownerId: string;
+};
+
+export type AuthEnvironment = {
+  ACCESS_AUD: string;
+  ACCESS_TEAM_DOMAIN: string;
+  APP_ENV: string;
+  DEV_AUTH_SUBJECT: string;
+};
+
+type AccessJwtVerifier = (token: string, issuer: string, audience: string) => Promise<JWTPayload>;
+
+export class AuthenticationError extends Error {
+  constructor(
+    readonly reason: "AUTH_CONFIGURATION_INVALID" | "AUTH_TOKEN_INVALID" | "AUTH_TOKEN_MISSING",
+    readonly status: 401 | 503,
+  ) {
+    super(reason);
+    this.name = "AuthenticationError";
+  }
+}
+
+const remoteJwksByIssuer = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+
+function getRemoteJwks(issuer: string): ReturnType<typeof createRemoteJWKSet> {
+  const existing = remoteJwksByIssuer.get(issuer);
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  const jwks = createRemoteJWKSet(new URL("/cdn-cgi/access/certs", issuer));
+  remoteJwksByIssuer.set(issuer, jwks);
+  return jwks;
+}
+
+const verifyAccessJwt: AccessJwtVerifier = async (token, issuer, audience) => {
+  const { payload } = await jwtVerify(token, getRemoteJwks(issuer), {
+    algorithms: ["RS256"],
+    audience,
+    clockTolerance: 5,
+    issuer,
+    requiredClaims: ["aud", "email", "exp", "iat", "iss", "nbf", "sub", "type"],
+  });
+
+  return payload;
+};
+
+function normalizeAccessIssuer(value: string): string | null {
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" ||
+      !url.hostname.endsWith(".cloudflareaccess.com") ||
+      url.username !== "" ||
+      url.password !== "" ||
+      url.port !== "" ||
+      url.search !== "" ||
+      url.hash !== "" ||
+      (url.pathname !== "" && url.pathname !== "/")
+    ) {
+      return null;
+    }
+
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function createOwnerContext(
+  issuer: string,
+  subject: string,
+  kind: OwnerContext["kind"],
+): Promise<OwnerContext> {
+  const identityBytes = new TextEncoder().encode(`${issuer}\u0000${subject}`);
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", identityBytes));
+  const subjectHash = bytesToHex(digest);
+
+  return {
+    authIssuer: issuer,
+    authSubjectHash: subjectHash,
+    kind,
+    ownerId: `own_${subjectHash.slice(0, 32)}`,
+  };
+}
+
+function isDevelopmentEnvironment(value: string): boolean {
+  return value === "development" || value === "local" || value === "test";
+}
+
+export async function resolveOwnerContext(
+  request: Request,
+  environment: AuthEnvironment,
+  verifier: AccessJwtVerifier = verifyAccessJwt,
+): Promise<OwnerContext> {
+  if (isDevelopmentEnvironment(environment.APP_ENV)) {
+    const parsedSubject = developmentSubjectSchema.safeParse(environment.DEV_AUTH_SUBJECT);
+    if (!parsedSubject.success) {
+      throw new AuthenticationError("AUTH_CONFIGURATION_INVALID", 503);
+    }
+
+    return createOwnerContext(DEVELOPMENT_ISSUER, parsedSubject.data, "development");
+  }
+
+  if (environment.APP_ENV !== "production" && environment.APP_ENV !== "staging") {
+    throw new AuthenticationError("AUTH_CONFIGURATION_INVALID", 503);
+  }
+
+  const issuer = normalizeAccessIssuer(environment.ACCESS_TEAM_DOMAIN);
+  const audience = accessAudienceSchema.safeParse(environment.ACCESS_AUD);
+  if (issuer === null || !audience.success) {
+    throw new AuthenticationError("AUTH_CONFIGURATION_INVALID", 503);
+  }
+
+  const token = request.headers.get(ACCESS_TOKEN_HEADER);
+  if (token === null || token.length === 0) {
+    throw new AuthenticationError("AUTH_TOKEN_MISSING", 401);
+  }
+  if (token.length > 16_384) {
+    throw new AuthenticationError("AUTH_TOKEN_INVALID", 401);
+  }
+
+  try {
+    const payload = await verifier(token, issuer, audience.data);
+    const claims = accessClaimsSchema.parse(payload);
+    return await createOwnerContext(issuer, claims.sub, "authenticated");
+  } catch {
+    throw new AuthenticationError("AUTH_TOKEN_INVALID", 401);
+  }
+}

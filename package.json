@@ -9,7 +9,7 @@
     "pnpm": ">=11.0.0"
   },
   "scripts": {
-    "dev": "pnpm build:web && pnpm --parallel --filter @studymix/web --filter @studymix/api dev",
+    "dev": "pnpm build:web && pnpm --filter @studymix/api d1:migrate:local && pnpm --parallel --filter @studymix/web --filter @studymix/api dev",
     "build": "pnpm build:web && pnpm build:worker",
     "build:web": "pnpm --filter @studymix/web build",
     "build:worker": "pnpm --filter @studymix/api build",
@@ -19,11 +19,14 @@
     "lint": "eslint . --max-warnings 0",
     "format": "prettier . --check",
     "format:write": "prettier . --write",
-    "test": "vitest run",
+    "test": "pnpm test:unit && pnpm test:api",
+    "test:unit": "vitest run --exclude 'apps/api/**/*.workers.test.ts'",
+    "test:api": "vitest run --config apps/api/vitest.config.ts",
     "test:e2e": "playwright test",
     "cf-typegen": "pnpm --filter @studymix/api cf-typegen"
   },
   "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.18.7",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.61.1",
     "@types/node": "^26.1.1",

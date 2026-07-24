@@ -4,14 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log WRANGLER_REGISTRY_PATH=.wrangler/registry wrangler dev",
+    "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log WRANGLER_REGISTRY_PATH=.wrangler/registry wrangler dev --var APP_ENV:local --var DEV_AUTH_SUBJECT:local-development-owner --var LEGAL_CONTACT_EMAIL:privacy@example.test",
     "build": "WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler deploy --dry-run --outdir dist",
     "deploy": "WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler deploy",
+    "d1:migrate:local": "WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler d1 migrations apply DB --local",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "cf-typegen": "WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler types"
+    "cf-typegen": "WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler types --strict-vars=false"
   },
   "dependencies": {
+    "@studymix/contracts": "workspace:*",
+    "@studymix/core": "workspace:*",
     "hono": "^4.12.31",
+    "jose": "^6.2.4",
     "zod": "catalog:"
   },
   "devDependencies": {

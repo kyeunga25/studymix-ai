@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   apiEnvelopeSchema,
+  acceptLegalDocumentsRequestSchema,
   createJobRequestSchema,
   createUploadRequestSchema,
   createUploadResponseSchema,
   publicJobSchema,
   publicPresetSchema,
+  currentLegalAcceptanceDocuments,
+  legalAcceptanceStatusSchema,
 } from "./index";
 
 const uploadId = "upl_0123456789abcdef0123456789abcdef";
@@ -158,6 +161,59 @@ describe("API envelopes", () => {
           stack: "secret stack trace",
         },
         requestId: "req-003",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("legal document contracts", () => {
+  it("accepts the exact current acceptance set and a complete status", () => {
+    expect(
+      acceptLegalDocumentsRequestSchema.safeParse({
+        documents: currentLegalAcceptanceDocuments,
+      }).success,
+    ).toBe(true);
+
+    expect(
+      legalAcceptanceStatusSchema.safeParse({
+        acceptedAt: {
+          "acceptable-use": now,
+          "ai-output-notice": now,
+          "terms-of-use": now,
+        },
+        current: true,
+        requiredDocuments: currentLegalAcceptanceDocuments,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects duplicated, missing, unknown, and loose legal acceptance fields", () => {
+    const duplicated = [
+      currentLegalAcceptanceDocuments[0],
+      currentLegalAcceptanceDocuments[0],
+      currentLegalAcceptanceDocuments[2],
+    ];
+
+    expect(acceptLegalDocumentsRequestSchema.safeParse({ documents: duplicated }).success).toBe(
+      false,
+    );
+    expect(
+      acceptLegalDocumentsRequestSchema.safeParse({
+        documents: currentLegalAcceptanceDocuments.slice(0, 2),
+      }).success,
+    ).toBe(false);
+    expect(
+      acceptLegalDocumentsRequestSchema.safeParse({
+        documents: [
+          ...currentLegalAcceptanceDocuments.slice(0, 2),
+          { documentId: "privacy-notice", version: "2026-07-24" },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      acceptLegalDocumentsRequestSchema.safeParse({
+        documents: currentLegalAcceptanceDocuments,
+        ownerId: "own_0123456789abcdef0123456789abcdef",
       }).success,
     ).toBe(false);
   });
