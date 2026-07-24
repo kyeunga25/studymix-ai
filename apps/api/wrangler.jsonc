@@ -2,7 +2,7 @@
   "$schema": "../../node_modules/wrangler/config-schema.json",
   "name": "change-me-worker",
   "main": "src/index.ts",
-  "compatibility_date": "2026-07-25",
+  "compatibility_date": "2026-07-24",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
     "directory": "../web/dist",
