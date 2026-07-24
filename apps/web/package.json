@@ -11,7 +11,8 @@
   "dependencies": {
     "@studymix/contracts": "workspace:*",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/react": "^19.2.17",

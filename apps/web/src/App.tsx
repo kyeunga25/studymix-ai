@@ -3,6 +3,7 @@ import {
   currentLegalAcceptanceDocuments,
   legalAcceptanceStatusSchema,
   legalDocumentsManifestSchema,
+  ownerIdSchema,
   type LegalDocumentId,
   type PublicJob,
 } from "@studymix/contracts";
@@ -14,6 +15,8 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { z } from "zod";
+import { LandingPage } from "./LandingPage";
 import { legalPageContent, legalPathToDocumentId, type Language } from "./legal-content";
 import { JobExperience, isPendingJob } from "./job-experience";
 import { getJob, toJobApiError, type JobApiError } from "./job-api";
@@ -112,6 +115,12 @@ const legalLinkCopy = {
 
 const legalAcceptanceEnvelopeSchema = apiEnvelopeSchema(legalAcceptanceStatusSchema);
 const legalManifestEnvelopeSchema = apiEnvelopeSchema(legalDocumentsManifestSchema);
+const authMeEnvelopeSchema = apiEnvelopeSchema(
+  z.object({
+    kind: z.enum(["authenticated", "development"]),
+    ownerId: ownerIdSchema,
+  }),
+);
 const mockApiEnabled = import.meta.env.DEV;
 
 const presets: Preset[] = [
@@ -149,57 +158,70 @@ const waveformHeights = [
 ];
 
 export function App() {
-  const [language, setLanguage] = useState<Language>("en");
+  const path = window.location.pathname;
+  const legalDocumentId = legalPathToDocumentId[path];
+
+  if (path === "/" || path === "/index.html") {
+    return <LandingPage />;
+  }
+  if (legalDocumentId !== undefined) {
+    return <PublicLegalExperience documentId={legalDocumentId} />;
+  }
+  if (path === "/app" || path.startsWith("/app/")) {
+    return <PrivateApp />;
+  }
+  return <LandingPage />;
+}
+
+function PrivateApp() {
+  const [language, setLanguage] = useState<Language>("zh-HK");
   const [selectedPreset, setSelectedPreset] = useState<PresetId>("soft-piano");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [rightsAccepted, setRightsAccepted] = useState(false);
   const [legalAccepted, setLegalAccepted] = useState(false);
-  const [legalContactEmail, setLegalContactEmail] = useState<string | null>(null);
+  const [accessStatus, setAccessStatus] = useState<"checking" | "unavailable" | "verified">(
+    "checking",
+  );
   const [isSavingAcceptance, setIsSavingAcceptance] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [activeJob, setActiveJob] = useState<PublicJob | null>(null);
   const [jobError, setJobError] = useState<JobApiError | null>(null);
   const [candidateSources, setCandidateSources] = useState<readonly [string, string] | null>(null);
-  const legalDocumentId = legalPathToDocumentId[window.location.pathname];
   const strings = copy[language];
   const selectedPresetName =
     presets.find((item) => item.id === selectedPreset)?.name[language] ?? "Soft Piano";
   const canGenerate = selectedFile !== null && rightsAccepted && legalAccepted;
 
   useEffect(() => {
-    document.title =
-      legalDocumentId === undefined
-        ? "StudyMix AI"
-        : `${legalPageContent[legalDocumentId].title[language]} | StudyMix AI`;
-  }, [language, legalDocumentId]);
+    document.documentElement.lang = language;
+    document.title = language === "en" ? "StudyMix AI | Private beta" : "StudyMix AI｜私密測試";
+  }, [language]);
 
   useEffect(() => {
-    if (legalDocumentId === undefined) {
-      return;
-    }
-
     const controller = new AbortController();
-    const loadLegalManifest = async () => {
+    const verifyAccess = async () => {
       try {
-        const response = await fetch("/api/legal/documents", {
+        const response = await fetch("/api/auth/me", {
           credentials: "same-origin",
           signal: controller.signal,
         });
         const body: unknown = await response.json();
-        const parsed = legalManifestEnvelopeSchema.safeParse(body);
+        const parsed = authMeEnvelopeSchema.safeParse(body);
         if (response.ok && parsed.success && parsed.data.error === null) {
-          setLegalContactEmail(parsed.data.data.contactEmail);
+          setAccessStatus("verified");
+          return;
         }
+        setAccessStatus("unavailable");
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
-          setLegalContactEmail(null);
+          setAccessStatus("unavailable");
         }
       }
     };
 
-    void loadLegalManifest();
+    void verifyAccess();
     return () => controller.abort();
-  }, [legalDocumentId]);
+  }, []);
 
   const activeJobId = activeJob?.jobId;
   const activeJobStatus = activeJob?.status;
@@ -353,150 +375,244 @@ export function App() {
       </header>
 
       <main>
-        {legalDocumentId !== undefined ? (
-          <LegalDocumentPage
-            contactEmail={legalContactEmail}
-            documentId={legalDocumentId}
-            language={language}
-          />
-        ) : activeJob !== null || jobError !== null ? (
-          <JobExperience
-            candidateSources={candidateSources}
-            error={jobError}
-            filename={selectedFile?.name ?? "—"}
-            isRetrying={isSavingAcceptance}
-            job={activeJob}
-            language={language}
-            presetName={selectedPresetName}
-            onRetry={() => void handleRetry()}
-            onStartOver={handleStartOver}
-          />
-        ) : (
-          <>
-            <form className="mix-workspace" onSubmit={(event) => void handleSubmit(event)}>
-              <UploadPanel
-                language={language}
-                selectedFile={selectedFile}
-                onFileChange={handleFileChange}
-                onDrop={handleDrop}
-              />
+        <AccessVerificationStatus language={language} status={accessStatus} />
+        {accessStatus === "verified" ? (
+          activeJob !== null || jobError !== null ? (
+            <JobExperience
+              candidateSources={candidateSources}
+              error={jobError}
+              filename={selectedFile?.name ?? "—"}
+              isRetrying={isSavingAcceptance}
+              job={activeJob}
+              language={language}
+              presetName={selectedPresetName}
+              onRetry={() => void handleRetry()}
+              onStartOver={handleStartOver}
+            />
+          ) : (
+            <>
+              <form className="mix-workspace" onSubmit={(event) => void handleSubmit(event)}>
+                <UploadPanel
+                  language={language}
+                  selectedFile={selectedFile}
+                  onFileChange={handleFileChange}
+                  onDrop={handleDrop}
+                />
 
-              <section className="setup-panel" aria-labelledby="page-title">
-                <div className="intro">
-                  <h1 id="page-title">{strings.heading}</h1>
-                  <p>{strings.lede}</p>
-                </div>
-
-                <fieldset className="preset-fieldset">
-                  <legend>{strings.presetTitle}</legend>
-                  <div className="preset-grid">
-                    {presets.map((item) => (
-                      <label
-                        className={`preset-option${selectedPreset === item.id ? " is-selected" : ""}`}
-                        key={item.id}
-                      >
-                        <input
-                          type="radio"
-                          name="preset"
-                          value={item.id}
-                          checked={selectedPreset === item.id}
-                          onChange={() => {
-                            setSelectedPreset(item.id);
-                            setNotice(null);
-                          }}
-                        />
-                        <span className="preset-icon" aria-hidden="true">
-                          {item.icon}
-                        </span>
-                        <strong>{item.name[language]}</strong>
-                        <small>{item.description[language]}</small>
-                      </label>
-                    ))}
+                <section className="setup-panel" aria-labelledby="page-title">
+                  <div className="intro">
+                    <h1 id="page-title">{strings.heading}</h1>
+                    <p>{strings.lede}</p>
                   </div>
-                </fieldset>
 
-                <label className="rights-control">
-                  <input
-                    type="checkbox"
-                    checked={rightsAccepted}
-                    onChange={(event) => {
-                      setRightsAccepted(event.target.checked);
-                      setNotice(null);
-                    }}
-                  />
-                  <span className="custom-checkbox" aria-hidden="true">
-                    <CheckIcon />
-                  </span>
-                  <span>{strings.rights}</span>
-                </label>
+                  <fieldset className="preset-fieldset">
+                    <legend>{strings.presetTitle}</legend>
+                    <div className="preset-grid">
+                      {presets.map((item) => (
+                        <label
+                          className={`preset-option${selectedPreset === item.id ? " is-selected" : ""}`}
+                          key={item.id}
+                        >
+                          <input
+                            type="radio"
+                            name="preset"
+                            value={item.id}
+                            checked={selectedPreset === item.id}
+                            onChange={() => {
+                              setSelectedPreset(item.id);
+                              setNotice(null);
+                            }}
+                          />
+                          <span className="preset-icon" aria-hidden="true">
+                            {item.icon}
+                          </span>
+                          <strong>{item.name[language]}</strong>
+                          <small>{item.description[language]}</small>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
 
-                <div className="rights-control legal-acceptance-control">
-                  <input
-                    id="legal-acceptance"
-                    type="checkbox"
-                    checked={legalAccepted}
-                    onChange={(event) => {
-                      setLegalAccepted(event.target.checked);
-                      setNotice(null);
-                    }}
-                  />
-                  <label className="custom-checkbox" htmlFor="legal-acceptance">
-                    <span className="visually-hidden">
-                      {language === "en" ? "Accept current legal documents" : "接受現行法律文件"}
+                  <label className="rights-control">
+                    <input
+                      type="checkbox"
+                      checked={rightsAccepted}
+                      onChange={(event) => {
+                        setRightsAccepted(event.target.checked);
+                        setNotice(null);
+                      }}
+                    />
+                    <span className="custom-checkbox" aria-hidden="true">
+                      <CheckIcon />
                     </span>
-                    <CheckIcon />
+                    <span>{strings.rights}</span>
                   </label>
-                  <span>
-                    {strings.legalAcceptanceLead}{" "}
-                    <a href="/legal/terms">{legalLinkCopy[language].terms}</a> {strings.legalAnd}{" "}
-                    <a href="/legal/acceptable-use">{legalLinkCopy[language].acceptableUse}</a>{" "}
-                    {strings.legalAnd}{" "}
-                    <a href="/legal/ai-output-notice">{legalLinkCopy[language].aiOutputNotice}</a>
-                    {"; "}
-                    {strings.privacyAcknowledgement}{" "}
-                    <a href="/legal/privacy">{legalLinkCopy[language].privacyNotice}</a>.
-                  </span>
+
+                  <div className="rights-control legal-acceptance-control">
+                    <input
+                      id="legal-acceptance"
+                      type="checkbox"
+                      checked={legalAccepted}
+                      onChange={(event) => {
+                        setLegalAccepted(event.target.checked);
+                        setNotice(null);
+                      }}
+                    />
+                    <label className="custom-checkbox" htmlFor="legal-acceptance">
+                      <span className="visually-hidden">
+                        {language === "en" ? "Accept current legal documents" : "接受現行法律文件"}
+                      </span>
+                      <CheckIcon />
+                    </label>
+                    <span>
+                      {strings.legalAcceptanceLead}{" "}
+                      <a href="/legal/terms">{legalLinkCopy[language].terms}</a> {strings.legalAnd}{" "}
+                      <a href="/legal/acceptable-use">{legalLinkCopy[language].acceptableUse}</a>{" "}
+                      {strings.legalAnd}{" "}
+                      <a href="/legal/ai-output-notice">{legalLinkCopy[language].aiOutputNotice}</a>
+                      {"; "}
+                      {strings.privacyAcknowledgement}{" "}
+                      <a href="/legal/privacy">{legalLinkCopy[language].privacyNotice}</a>.
+                    </span>
+                  </div>
+
+                  <div className="selection-summary">
+                    <strong className="summary-title">{strings.summary}</strong>
+                    <SummaryRow icon={<FileIcon />} label={strings.file}>
+                      {selectedFile?.name ?? "—"}
+                    </SummaryRow>
+                    <SummaryRow icon={<SlidersIcon />} label={strings.preset}>
+                      {selectedPresetName}
+                    </SummaryRow>
+                    <SummaryRow icon={<CandidatesIcon />} label={strings.candidates}>
+                      2
+                    </SummaryRow>
+                  </div>
+
+                  <button
+                    className="generate-button"
+                    type="submit"
+                    disabled={!canGenerate || isSavingAcceptance}
+                  >
+                    <SparkleIcon />
+                    <span>{strings.generate}</span>
+                  </button>
+                  <p className={`form-status${canGenerate ? " is-ready" : ""}`} aria-live="polite">
+                    {notice ?? (canGenerate ? strings.ready : strings.disabled)}
+                  </p>
+                </section>
+              </form>
+
+              <aside className="privacy-note">
+                <ShieldIcon />
+                <div>
+                  <strong>{strings.privacy}</strong>
+                  <span>{strings.privacyDetail}</span>
                 </div>
-
-                <div className="selection-summary">
-                  <strong className="summary-title">{strings.summary}</strong>
-                  <SummaryRow icon={<FileIcon />} label={strings.file}>
-                    {selectedFile?.name ?? "—"}
-                  </SummaryRow>
-                  <SummaryRow icon={<SlidersIcon />} label={strings.preset}>
-                    {selectedPresetName}
-                  </SummaryRow>
-                  <SummaryRow icon={<CandidatesIcon />} label={strings.candidates}>
-                    2
-                  </SummaryRow>
-                </div>
-
-                <button
-                  className="generate-button"
-                  type="submit"
-                  disabled={!canGenerate || isSavingAcceptance}
-                >
-                  <SparkleIcon />
-                  <span>{strings.generate}</span>
-                </button>
-                <p className={`form-status${canGenerate ? " is-ready" : ""}`} aria-live="polite">
-                  {notice ?? (canGenerate ? strings.ready : strings.disabled)}
-                </p>
-              </section>
-            </form>
-
-            <aside className="privacy-note">
-              <ShieldIcon />
-              <div>
-                <strong>{strings.privacy}</strong>
-                <span>{strings.privacyDetail}</span>
-              </div>
-            </aside>
-          </>
-        )}
+              </aside>
+            </>
+          )
+        ) : null}
         <SiteFooter language={language} />
       </main>
     </div>
+  );
+}
+
+function PublicLegalExperience({ documentId }: { documentId: LegalDocumentId }) {
+  const [language, setLanguage] = useState<Language>("zh-HK");
+  const [legalContactEmail, setLegalContactEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+    document.title = `${legalPageContent[documentId].title[language]} | StudyMix AI`;
+  }, [documentId, language]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadLegalManifest = async () => {
+      try {
+        const response = await fetch("/legal/documents.json", {
+          credentials: "same-origin",
+          signal: controller.signal,
+        });
+        const body: unknown = await response.json();
+        const parsed = legalManifestEnvelopeSchema.safeParse(body);
+        if (response.ok && parsed.success && parsed.data.error === null) {
+          setLegalContactEmail(parsed.data.data.contactEmail);
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setLegalContactEmail(null);
+        }
+      }
+    };
+
+    void loadLegalManifest();
+    return () => controller.abort();
+  }, []);
+
+  return (
+    <div className="app-shell public-legal-shell">
+      <header className="app-header">
+        <a className="brand" href="/" aria-label="StudyMix AI home">
+          <BrandMark />
+          <span>StudyMix AI</span>
+        </a>
+        <div className="header-actions">
+          <button
+            className="language-switch"
+            type="button"
+            onClick={() => setLanguage(language === "en" ? "zh-HK" : "en")}
+          >
+            <GlobeIcon />
+            <span>{language === "en" ? "繁體中文" : "EN"}</span>
+          </button>
+          <a className="logout-link" href="/app">
+            {language === "en" ? "Invited tester sign in" : "受邀測試者登入"}
+          </a>
+        </div>
+      </header>
+      <main>
+        <LegalDocumentPage
+          contactEmail={legalContactEmail}
+          documentId={documentId}
+          language={language}
+        />
+        <SiteFooter language={language} />
+      </main>
+    </div>
+  );
+}
+
+function AccessVerificationStatus({
+  language,
+  status,
+}: {
+  language: Language;
+  status: "checking" | "unavailable" | "verified";
+}) {
+  const statusCopy = {
+    en: {
+      checking: "Verifying private-beta access…",
+      unavailable: "Access could not be verified. Sign in again before testing the app.",
+      verified: "Private-beta access verified. This session is approved for testing.",
+    },
+    "zh-HK": {
+      checking: "正在驗證私密測試存取權……",
+      unavailable: "未能驗證存取權；請重新登入後再測試應用程式。",
+      verified: "私密測試存取權已驗證；此工作階段可進行測試。",
+    },
+  } satisfies Record<Language, Record<typeof status, string>>;
+
+  return (
+    <section className={`access-verification is-${status}`} role="status">
+      <ShieldIcon />
+      <span>{statusCopy[language][status]}</span>
+      {status === "unavailable" ? (
+        <a href="/app">{language === "en" ? "Sign in again" : "重新登入"}</a>
+      ) : null}
+    </section>
   );
 }
 

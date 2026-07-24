@@ -69,7 +69,10 @@ app.use("*", async (context, next) => {
   return;
 });
 
-app.use("*", async (context, next) => {
+const requireAuthentication = async (
+  context: Context<AppBindings>,
+  next: () => Promise<void>,
+): Promise<Response | undefined> => {
   try {
     const owner = await resolveOwnerContext(context.req.raw, context.env);
     context.set("owner", owner);
@@ -90,37 +93,19 @@ app.use("*", async (context, next) => {
     }
     throw error;
   }
-});
+};
 
-app.use("/api/*", async (context, next) => {
-  const owner = context.get("owner");
-  const record = await upsertOwner(context.env.DB, owner, new Date().toISOString());
-  if (record.id !== owner.ownerId || record.status !== "active") {
-    return errorResponse(
-      context,
-      403,
-      "FORBIDDEN",
-      "This account is not permitted to use StudyMix AI.",
-      false,
-    );
-  }
-  await next();
-  return;
-});
-
-app.get("/api/auth/me", (context) => {
-  const owner = context.get("owner");
-  return context.json({
+const healthHandler = (context: Context<AppBindings>) =>
+  context.json({
     data: {
-      kind: owner.kind,
-      ownerId: owner.ownerId,
+      service: "studymix-api",
+      status: "ok",
     },
     error: null,
     requestId: createRequestId(),
   });
-});
 
-app.get("/api/legal/documents", (context) => {
+const legalDocumentsHandler = (context: Context<AppBindings>) => {
   try {
     const documents = resolveLegalDocumentsManifest(context.env);
     return context.json({
@@ -140,6 +125,44 @@ app.get("/api/legal/documents", (context) => {
     }
     throw error;
   }
+};
+
+app.get("/health", healthHandler);
+app.get("/legal/documents.json", legalDocumentsHandler);
+
+app.use("/app", requireAuthentication);
+app.use("/app/*", requireAuthentication);
+app.use("/api/*", requireAuthentication);
+
+app.use("/api/*", async (context, next) => {
+  const owner = context.get("owner");
+  const record = await upsertOwner(context.env.DB, owner, new Date().toISOString());
+  if (record.id !== owner.ownerId || record.status !== "active") {
+    return errorResponse(
+      context,
+      403,
+      "FORBIDDEN",
+      "This account is not permitted to use StudyMix AI.",
+      false,
+    );
+  }
+  await next();
+  return;
+});
+
+app.get("/api/health", healthHandler);
+app.get("/api/legal/documents", legalDocumentsHandler);
+
+app.get("/api/auth/me", (context) => {
+  const owner = context.get("owner");
+  return context.json({
+    data: {
+      kind: owner.kind,
+      ownerId: owner.ownerId,
+    },
+    error: null,
+    requestId: createRequestId(),
+  });
 });
 
 app.get("/api/legal/acceptances", async (context) => {
@@ -249,17 +272,6 @@ app.post("/api/legal/acceptances", async (context) => {
   );
   return context.json({ data: status, error: null, requestId: createRequestId() });
 });
-
-app.get("/api/health", (context) =>
-  context.json({
-    data: {
-      service: "studymix-api",
-      status: "ok",
-    },
-    error: null,
-    requestId: createRequestId(),
-  }),
-);
 
 app.get("*", (context) => context.env.ASSETS.fetch(context.req.raw));
 

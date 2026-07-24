@@ -34,10 +34,11 @@ type MockPublicJob = {
   uploadId: string;
 };
 
+const mockLegalVersion = "2026-07-24";
 const currentLegalAcceptanceDocuments = [
-  { documentId: "terms-of-use", version: "2026-07-24" },
-  { documentId: "acceptable-use", version: "2026-07-24" },
-  { documentId: "ai-output-notice", version: "2026-07-24" },
+  { documentId: "terms-of-use", version: mockLegalVersion },
+  { documentId: "acceptable-use", version: mockLegalVersion },
+  { documentId: "ai-output-notice", version: mockLegalVersion },
 ] as const;
 
 type StoredJob = {
@@ -241,6 +242,64 @@ async function handleMockRequest(
     response.setHeader("Content-Length", body.byteLength.toString());
     response.setHeader("Content-Type", "audio/wav");
     response.end(body);
+    return true;
+  }
+
+  if (method === "GET" && url.pathname === "/api/auth/me") {
+    sendJson(response, 200, {
+      data: {
+        kind: "development",
+        ownerId: "own_0123456789abcdef0123456789abcdef",
+      },
+      error: null,
+      requestId: requestId(),
+    });
+    return true;
+  }
+
+  if (method === "GET" && url.pathname === "/legal/documents.json") {
+    sendJson(response, 200, {
+      data: {
+        contactEmail: "privacy@example.test",
+        documents: [
+          {
+            documentId: "terms-of-use",
+            path: "/legal/terms",
+            requiresAcceptance: true,
+            summary: { en: "Private beta terms.", "zh-HK": "封閉測試使用條款。" },
+            title: { en: "Terms of Use", "zh-HK": "使用條款" },
+            version: mockLegalVersion,
+          },
+          {
+            documentId: "privacy-notice",
+            path: "/legal/privacy",
+            requiresAcceptance: false,
+            summary: { en: "Private beta privacy notice.", "zh-HK": "封閉測試私隱通知。" },
+            title: { en: "Privacy Notice", "zh-HK": "私隱通知" },
+            version: mockLegalVersion,
+          },
+          {
+            documentId: "acceptable-use",
+            path: "/legal/acceptable-use",
+            requiresAcceptance: true,
+            summary: { en: "Private beta acceptable use.", "zh-HK": "封閉測試可接受使用政策。" },
+            title: { en: "Acceptable Use", "zh-HK": "可接受使用政策" },
+            version: mockLegalVersion,
+          },
+          {
+            documentId: "ai-output-notice",
+            path: "/legal/ai-output-notice",
+            requiresAcceptance: true,
+            summary: { en: "Private beta AI notice.", "zh-HK": "封閉測試 AI 聲明。" },
+            title: { en: "AI and Output Notice", "zh-HK": "AI 及輸出聲明" },
+            version: mockLegalVersion,
+          },
+        ],
+        effectiveAt: "2026-07-24T00:00:00.000Z",
+      },
+      error: null,
+      requestId: requestId(),
+    });
     return true;
   }
 

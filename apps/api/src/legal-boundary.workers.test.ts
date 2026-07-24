@@ -9,13 +9,16 @@ describe("legal document and acceptance boundary", () => {
     await env.DB.prepare("DELETE FROM owners").run();
   });
 
-  it("publishes authenticated, versioned legal metadata with a configured contact", async () => {
+  it("publishes versioned legal metadata without creating an authenticated owner", async () => {
     const response = await app.request(
-      "https://studymix.example/api/legal/documents",
+      "https://studymix.example/legal/documents.json",
       undefined,
       env,
     );
     const body: unknown = await response.json();
+    const ownerCount = await env.DB.prepare("SELECT COUNT(*) AS total FROM owners").first<{
+      total: number;
+    }>();
 
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
@@ -36,12 +39,13 @@ describe("legal document and acceptance boundary", () => {
       },
       error: null,
     });
+    expect(ownerCount?.total).toBe(0);
   });
 
   it("fails closed when the legal contact configuration is invalid", async () => {
     const invalidEnvironment: Env = { ...env, LEGAL_CONTACT_EMAIL: "CHANGE_ME" };
     const response = await app.request(
-      "https://studymix.example/api/legal/documents",
+      "https://studymix.example/legal/documents.json",
       undefined,
       invalidEnvironment,
     );

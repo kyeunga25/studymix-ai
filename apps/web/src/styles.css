@@ -158,6 +158,54 @@ main {
   padding-bottom: 34px;
 }
 
+.access-verification {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 14px;
+  color: #4b4b6d;
+  background: rgba(255, 252, 250, 0.9);
+  box-shadow: 0 9px 24px rgba(51, 41, 104, 0.12);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.access-verification svg {
+  width: 21px;
+  flex: 0 0 auto;
+  color: #6558d5;
+}
+
+.access-verification.is-verified {
+  border-color: rgba(116, 180, 139, 0.62);
+  color: #285f42;
+  background: rgba(244, 252, 247, 0.94);
+}
+
+.access-verification.is-verified svg {
+  color: #3f8a5f;
+}
+
+.access-verification.is-unavailable {
+  border-color: rgba(213, 159, 159, 0.66);
+  color: #793f4a;
+  background: rgba(255, 247, 247, 0.94);
+}
+
+.access-verification a {
+  margin-left: auto;
+  color: currentColor;
+  font-weight: 760;
+}
+
+.public-legal-shell {
+  overflow: visible;
+}
+
 .mix-workspace {
   display: grid;
   grid-template-columns: minmax(360px, 0.72fr) minmax(560px, 1.28fr);

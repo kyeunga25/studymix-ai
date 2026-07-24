@@ -1,7 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
-async function prepareAuthorizedMix(page: Page, path = "/") {
+async function openPrivateAppInEnglish(page: Page, path = "/app") {
   await page.goto(path);
+  await page.getByRole("button", { name: "EN" }).click();
+}
+
+async function prepareAuthorizedMix(page: Page, path = "/app") {
+  await openPrivateAppInEnglish(page, path);
   await page.locator('input[type="file"]').setInputFiles({
     buffer: Buffer.from("test-audio-placeholder"),
     mimeType: "audio/wav",
@@ -12,29 +17,59 @@ async function prepareAuthorizedMix(page: Page, path = "/") {
   await checkboxes.nth(1).check();
 }
 
-test("renders the StudyMix AI foundation shell", async ({ page }) => {
+test("renders a public product overview without exposing the private app", async ({ page }) => {
   await page.goto("/");
 
   await expect(
-    page.getByRole("heading", { name: "Turn your track into a study mix" }),
+    page.getByRole("heading", { name: "把你的錄音，變成更適合專注的 Study Mix" }),
   ).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Upload your audio" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Sign out" })).toHaveAttribute(
+  await expect(page.getByText("目前為封閉測試，尚未開放註冊及真實生成。")).toBeVisible();
+  await expect(page.getByRole("link", { name: "受邀測試者登入" }).first()).toHaveAttribute(
+    "href",
+    "/app",
+  );
+  await expect(
+    page.getByRole("navigation", { name: "法律文件" }).getByRole("link", {
+      name: "使用條款",
+    }),
+  ).toHaveAttribute("href", "/legal/terms");
+  await expect(page.getByRole("heading", { name: "上載你的音訊" })).toHaveCount(0);
+});
+
+test("verifies the invited test session before showing the private app", async ({ page }) => {
+  await page.goto("/app");
+
+  await expect(page.getByRole("status")).toContainText("私密測試存取權已驗證");
+  await expect(page.getByRole("heading", { name: "把你的音樂變成專注讀書 Mix" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "登出" })).toHaveAttribute(
     "href",
     "/cdn-cgi/access/logout",
   );
-  await expect(page.getByRole("button", { name: "Generate 2 candidates" })).toBeDisabled();
-  await expect(
-    page.getByRole("navigation", { name: "Legal documents" }).getByRole("link", {
-      name: "Terms of Use",
-    }),
-  ).toHaveAttribute("href", "/legal/terms");
+});
+
+test("does not expose the private workspace when session verification fails", async ({ page }) => {
+  await page.route("**/api/auth/me", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({
+        data: null,
+        error: { code: "UNAUTHORIZED", message: "Sign-in is required.", retryable: false },
+        requestId: "req_0123456789abcdef0123456789abcdef",
+      }),
+      contentType: "application/json",
+      status: 401,
+    });
+  });
+  await page.goto("/app");
+
+  await expect(page.getByRole("status")).toContainText("未能驗證存取權");
+  await expect(page.getByRole("heading", { name: "把你的音樂變成專注讀書 Mix" })).toHaveCount(0);
+  await expect(page.locator('input[type="file"]')).toHaveCount(0);
 });
 
 test("requires both rights and current legal documents before generation can be requested", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openPrivateAppInEnglish(page);
   await page.locator('input[type="file"]').setInputFiles({
     buffer: Buffer.from("test-audio-placeholder"),
     mimeType: "audio/mpeg",
@@ -61,6 +96,7 @@ test("renders every versioned legal page and discloses the pre-release blockers"
 
   for (const [path, heading] of documents) {
     await page.goto(path);
+    await page.getByRole("button", { name: "EN" }).click();
     await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
     await expect(page.getByText("Document version: 2026-07-24")).toBeVisible();
     await expect(
@@ -73,8 +109,13 @@ test("moves from a pending mock HTTP job to two playable result candidates", asy
   await prepareAuthorizedMix(page);
   await page.getByRole("button", { name: "Generate 2 candidates" }).click();
 
-  await expect(page.getByRole("heading", { name: "Creating your study mix" })).toBeVisible();
-  await expect(page.getByRole("status")).toContainText(/Request received|Generating candidates/);
+  const pendingRegion = page.getByRole("region", { name: "Creating your study mix" });
+  await expect(
+    pendingRegion.getByRole("heading", { name: "Creating your study mix" }),
+  ).toBeVisible();
+  await expect(pendingRegion.getByRole("status")).toContainText(
+    /Request received|Generating candidates/,
+  );
   await expect(page.getByRole("heading", { name: "Your study mix is ready" })).toBeVisible({
     timeout: 5_000,
   });
@@ -92,7 +133,7 @@ test("moves from a pending mock HTTP job to two playable result candidates", asy
 });
 
 test("shows a retryable error summary when the mock job fails", async ({ page }) => {
-  await prepareAuthorizedMix(page, "/?mockScenario=failed");
+  await prepareAuthorizedMix(page, "/app?mockScenario=failed");
   await page.getByRole("button", { name: "Generate 2 candidates" }).click();
 
   const alert = page.getByRole("alert");
@@ -104,7 +145,7 @@ test("shows a retryable error summary when the mock job fails", async ({ page })
 });
 
 test("rejects a malformed mock job response with safe retry guidance", async ({ page }) => {
-  await prepareAuthorizedMix(page, "/?mockScenario=malformed");
+  await prepareAuthorizedMix(page, "/app?mockScenario=malformed");
   await page.getByRole("button", { name: "Generate 2 candidates" }).click();
 
   const alert = page.getByRole("alert");
@@ -116,7 +157,7 @@ test("rejects a malformed mock job response with safe retry guidance", async ({ 
 test("supports keyboard operation from the selected file through job submission", async ({
   page,
 }) => {
-  await page.goto("/");
+  await openPrivateAppInEnglish(page);
   const fileInput = page.locator('input[type="file"]');
   await fileInput.setInputFiles({
     buffer: Buffer.from("test-audio-placeholder"),
