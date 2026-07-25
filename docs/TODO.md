@@ -1,6 +1,6 @@
 # 實作狀態 / Implementation Status
 
-更新日期：2026-07-25
+更新日期：2026-07-26
 
 本文件只記錄目前程式庫可驗證的能力與公開安全限制；未落實的工作不在此列出。
 
@@ -21,12 +21,13 @@ This document records only verifiable repository capabilities and public safety 
 - [x] Mock provider 模式不需要付費憑證，CI 不會呼叫外部生成服務。
 - [x] Cloudflare Workers Builds 可用的部署指令以受保護設定生成 ignored config，不把資源識別資料寫入版本庫。
 - [x] GitHub 存放庫已連接至 Cloudflare Workers Builds；生產與預覽命令採用加密建置設定，不在版本庫保存資源識別資料。
+- [x] Feature-gated 私人 R2 直接上載切片：server-controlled key、短效且綁定 content type／不可覆寫條件的 PUT URL、R2 metadata 確認、owner 隔離、明確刪除、短效輸出下載簽名及本機整合測試。
 
 ## 目前未啟用 / Currently disabled
 
-- 瀏覽器直接上傳音訊至私人 R2。
-- 真實 AI 音訊生成、外部 callback 與輸出下載。
-- 自動清理、使用者刪除及正式保留期執行。
+- 正式環境的瀏覽器私人 R2 上載；`R2_TRANSFER_ENABLED` 預設及正式環境仍須保持 `false`，直至私人 staging bucket、CORS、到期失效及監察完成實測。
+- 真實 AI 音訊生成、外部 callback 與正式輸出交付。
+- 自動清理及正式保留期執行；目前只有 owner-scoped 單一上載明確刪除路徑。
 - 公開註冊、非受邀帳戶及公開使用者內容。
 
 介面可完整示範狀態流程，但不會把本機 mock 結果描述為正式雲端生成。
@@ -40,6 +41,7 @@ The interface demonstrates the state flow, but local mock results are never repr
 - Cloudflare Access 必須保護 `/app*` 及 `/api/*`；Worker 亦會再次驗證 Access JWT。公開主頁不得繞過任何私人 API 的驗證。
 - 法律聯絡方法必須在部署環境設定；佔位值會令相關 API fail closed。
 - 未完成私人 R2、刪除及供應商資料控制前，真實音訊生成保持停用。
+- R2 bucket 必須保持私人；staging 與 production 分離，且 CORS 只容許確切 web origins、`PUT/GET/HEAD`、`Content-Type` 及 `If-None-Match`。
 - `FAL_KEY`、signed URLs、Access assertions、音訊內容、檔名及完整 provider payload 不得寫入日誌或版本庫。
 
 ## 驗證指令 / Validation commands

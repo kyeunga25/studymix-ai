@@ -8,11 +8,11 @@ beta. The English and Traditional Chinese website documents are pre-release draf
 lawyer must confirm the operator identity, service address, consumer terms, liability wording,
 copyright position, cross-border disclosures, and complaint process before a public launch.
 
-The current release has authentication, owner-scoped D1 metadata, legal-document APIs, and the web
-shell. It does **not** have R2 audio upload, external AI generation, provider callbacks, output delivery,
-automatic object deletion, or a user deletion endpoint. Those capabilities must stay disabled until
-the corresponding release gates below pass. Public copy must not describe a planned control as already
-operational.
+The current production release has authentication, owner-scoped D1 metadata, legal-document APIs, and
+the web shell. The code also contains a default-off private-R2 staging slice with explicit owner-scoped
+upload deletion. Production R2 upload, external AI generation, provider callbacks, output delivery, and
+automatic object deletion remain disabled until their release gates pass. Public copy must not describe
+a planned or staging-only control as already operational.
 
 ## Versioned website documents
 
@@ -44,6 +44,7 @@ the job/upload-specific rights declaration. A client checkbox is not the control
 | Hashed Access subject and derived owner ID | Verified Access claims | Owner isolation and account status | Worker and D1 | Stored while the private-beta account and necessary audit records exist |
 | Legal document/version/time | User action plus server time | Evidence of governing versions | Worker and D1 | Retention schedule must be finalized; retain only while necessary for evidence/disputes |
 | File selected in current UI | User device | Local interface preview | Browser only | Not uploaded by the current release |
+| Feature-gated staging audio upload | Approved tester | Direct private-object upload and metadata confirmation | Cloudflare R2 and owner-scoped D1 metadata only | Default/production off; explicit single-upload deletion exists; automatic cleanup is not operational |
 | Operational event data | Worker | Security and troubleshooting | Cloudflare observability | Must exclude audio, filename, signed URL, assertion, secrets, and raw provider payloads |
 
 StudyMix AI does not ingest arbitrary remote URLs, scrape tracks or personal data from official sites,

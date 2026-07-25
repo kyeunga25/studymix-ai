@@ -49,9 +49,11 @@ async function createConfirmedUpload(
     declaredContentType: "audio/mpeg",
     expiresAt: later,
     id: uploadId,
+    maxActiveUploads: 3,
     objectKey: `owners/${owner.ownerId}/uploads/${uploadId}`,
     originalFilename: "fixture.mp3",
     ownerId: owner.ownerId,
+    sizeBytes: 1024,
   });
   await confirmOwnedUpload(env.DB, owner.ownerId, uploadId, 1024, now);
   return uploadId;

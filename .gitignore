@@ -15,6 +15,7 @@ test-results/
 .dev.vars
 .dev.vars.*
 wrangler.deploy.json
+wrangler.r2-cors.json
 
 pnpm-debug.log*
 npm-debug.log*

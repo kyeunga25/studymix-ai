@@ -129,8 +129,9 @@ pnpm build
 
 The checked-in Wrangler file contains placeholders only and is intentionally not a deployable production
 configuration. `pnpm deploy:cloudflare` generates an ignored deployment file from the protected
-`DEPLOY_WORKER_NAME`, `DEPLOY_D1_NAME`, and `DEPLOY_D1_ID` build settings. Runtime Access and legal
-settings stay in Cloudflare and are retained during deployment. Follow
+`DEPLOY_WORKER_NAME`, `DEPLOY_D1_NAME`, and `DEPLOY_D1_ID` build settings. The optional protected
+`DEPLOY_R2_BUCKET` setting adds the private R2 binding only for an approved staging deployment. Runtime
+Access, R2 signing, and legal settings stay in Cloudflare and are retained during deployment. Follow
 [`docs/CLOUDFLARE_ACCESS.md`](docs/CLOUDFLARE_ACCESS.md); never commit Cloudflare account IDs, D1 IDs,
 Access identifiers, actual resource names, contact details, or deployment tokens.
 
@@ -169,6 +170,10 @@ The repository currently includes:
   fail-closed production contact requirement.
 - Identifier-free deployment scripts for Cloudflare Workers Builds and one-time authenticated Wrangler
   deployment.
+- A feature-gated private R2 transfer slice with server-controlled keys, short-lived conditional PUT
+  signatures, direct browser transfer, R2 metadata confirmation, owner-negative tests, explicit upload
+  deletion, active-upload limits, and short-lived ready-output download signatures.
 
-Direct R2 transfer, external generation, deletion/cleanup, and provider callbacks remain disabled. See
+Production R2 transfer remains disabled until private staging CORS and expiry checks pass. External
+generation, automatic cleanup, and provider callbacks also remain disabled. See
 [`docs/TODO.md`](docs/TODO.md) for the current verified status without internal planning material.

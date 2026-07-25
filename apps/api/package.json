@@ -9,6 +9,7 @@
     "deploy": "pnpm deploy:cloudflare",
     "deploy:cloudflare": "node scripts/create-cloudflare-config.mjs && WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler deploy --config wrangler.deploy.json",
     "preview:cloudflare": "node scripts/create-cloudflare-config.mjs && WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler versions upload --config wrangler.deploy.json",
+    "r2:cors:prepare": "node scripts/create-r2-cors.mjs",
     "d1:migrate:local": "WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler d1 migrations apply DB --local",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "cf-typegen": "WRANGLER_LOG_PATH=.wrangler/wrangler.log wrangler types --strict-vars=false"
@@ -16,6 +17,7 @@
   "dependencies": {
     "@studymix/contracts": "workspace:*",
     "@studymix/core": "workspace:*",
+    "aws4fetch": "^1.0.20",
     "hono": "^4.12.31",
     "jose": "^6.2.4",
     "zod": "catalog:"

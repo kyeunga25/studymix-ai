@@ -248,6 +248,9 @@ async function handleMockRequest(
   if (method === "GET" && url.pathname === "/api/auth/me") {
     sendJson(response, 200, {
       data: {
+        capabilities: {
+          privateAudioUpload: false,
+        },
         kind: "development",
         ownerId: "own_0123456789abcdef0123456789abcdef",
       },

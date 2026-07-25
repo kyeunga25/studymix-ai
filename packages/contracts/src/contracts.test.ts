@@ -49,6 +49,10 @@ describe("upload contracts", () => {
       uploadMethod: "PUT",
       allowedContentTypes: ["audio/mpeg", "audio/wav"],
       maxUploadBytes: 524_288_000,
+      requiredHeaders: {
+        "Content-Type": "audio/wav",
+        "If-None-Match": "*",
+      },
       expiresAt: now,
     };
 

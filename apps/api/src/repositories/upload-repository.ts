@@ -1,6 +1,6 @@
 import { ownerIdSchema, uploadIdSchema } from "@studymix/contracts";
 import { z } from "zod";
-import { RepositoryNotFoundError } from "./errors";
+import { RepositoryConflictError, RepositoryNotFoundError, RepositoryQuotaError } from "./errors";
 
 const uploadStatusSchema = z.enum(["pending", "confirmed", "expired", "deleted"]);
 
@@ -22,9 +22,11 @@ const createUploadSchema = z.object({
   declaredContentType: z.string().trim().min(1).max(255),
   expiresAt: z.string().datetime({ offset: true }),
   id: uploadIdSchema,
+  maxActiveUploads: z.number().int().min(1).max(20),
   objectKey: z.string().trim().min(1).max(1024),
   originalFilename: z.string().trim().min(1).max(512),
   ownerId: ownerIdSchema,
+  sizeBytes: z.number().int().positive().safe(),
 });
 
 export type UploadRecord = {
@@ -68,7 +70,16 @@ export async function createUpload(
       `INSERT INTO uploads (
         id, owner_id, object_key, original_filename, declared_content_type,
         size_bytes, status, created_at, confirmed_at, expires_at
-      ) VALUES (?1, ?2, ?3, ?4, ?5, NULL, 'pending', ?6, NULL, ?7)
+      )
+      SELECT ?1, ?2, ?3, ?4, ?5, ?6, 'pending', ?7, NULL, ?8
+      WHERE (
+        SELECT COUNT(*) FROM uploads
+        WHERE owner_id = ?2
+          AND (
+            (status = 'pending' AND expires_at > ?7)
+            OR status = 'confirmed'
+          )
+      ) < ?9
       RETURNING *`,
     )
     .bind(
@@ -77,11 +88,16 @@ export async function createUpload(
       parsed.objectKey,
       parsed.originalFilename,
       parsed.declaredContentType,
+      parsed.sizeBytes,
       parsed.createdAt,
       parsed.expiresAt,
+      parsed.maxActiveUploads,
     )
     .first();
 
+  if (row === null) {
+    throw new RepositoryQuotaError("The active upload limit has been reached.");
+  }
   return mapUploadRow(row);
 }
 
@@ -126,4 +142,60 @@ export async function confirmOwnedUpload(
   }
 
   return mapUploadRow(row);
+}
+
+export async function expireOwnedUpload(
+  db: D1Database,
+  ownerId: string,
+  uploadId: string,
+  expiredAt: string,
+): Promise<UploadRecord> {
+  const parsedOwnerId = ownerIdSchema.parse(ownerId);
+  const parsedUploadId = uploadIdSchema.parse(uploadId);
+  const parsedExpiredAt = z.string().datetime({ offset: true }).parse(expiredAt);
+  const row = await db
+    .prepare(
+      `UPDATE uploads
+       SET status = 'expired'
+       WHERE id = ?1 AND owner_id = ?2 AND status = 'pending' AND expires_at <= ?3
+       RETURNING *`,
+    )
+    .bind(parsedUploadId, parsedOwnerId, parsedExpiredAt)
+    .first();
+
+  if (row === null) {
+    throw new RepositoryNotFoundError("Upload is not available for expiry.");
+  }
+  return mapUploadRow(row);
+}
+
+export async function markOwnedUploadDeleted(
+  db: D1Database,
+  ownerId: string,
+  uploadId: string,
+): Promise<UploadRecord> {
+  const parsedOwnerId = ownerIdSchema.parse(ownerId);
+  const parsedUploadId = uploadIdSchema.parse(uploadId);
+  const row = await db
+    .prepare(
+      `UPDATE uploads
+       SET status = 'deleted'
+       WHERE id = ?1
+         AND owner_id = ?2
+         AND status IN ('pending', 'confirmed', 'expired', 'deleted')
+         AND NOT EXISTS (SELECT 1 FROM jobs WHERE jobs.upload_id = uploads.id)
+       RETURNING *`,
+    )
+    .bind(parsedUploadId, parsedOwnerId)
+    .first();
+
+  if (row !== null) {
+    return mapUploadRow(row);
+  }
+
+  const existing = await getOwnedUpload(db, parsedOwnerId, parsedUploadId);
+  if (existing === null) {
+    throw new RepositoryNotFoundError("Upload was not found for this owner.");
+  }
+  throw new RepositoryConflictError("An upload used by a job cannot be deleted directly.");
 }

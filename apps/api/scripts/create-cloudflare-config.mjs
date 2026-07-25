@@ -10,6 +10,17 @@ function requiredEnvironment(name, pattern) {
   return value;
 }
 
+function optionalEnvironment(name, pattern) {
+  const value = process.env[name]?.trim();
+  if (value === undefined || value.length === 0) {
+    return undefined;
+  }
+  if (!pattern.test(value)) {
+    throw new Error(`Invalid protected build setting: ${name}`);
+  }
+  return value;
+}
+
 const workerName = requiredEnvironment(
   "DEPLOY_WORKER_NAME",
   /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/,
@@ -21,6 +32,10 @@ const databaseName = requiredEnvironment(
 const databaseId = requiredEnvironment(
   "DEPLOY_D1_ID",
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+);
+const r2BucketName = optionalEnvironment(
+  "DEPLOY_R2_BUCKET",
+  /^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])$/,
 );
 
 const config = {
@@ -45,6 +60,16 @@ const config = {
       migrations_dir: "migrations",
     },
   ],
+  ...(r2BucketName === undefined
+    ? {}
+    : {
+        r2_buckets: [
+          {
+            binding: "AUDIO_BUCKET",
+            bucket_name: r2BucketName,
+          },
+        ],
+      }),
   observability: {
     enabled: true,
   },

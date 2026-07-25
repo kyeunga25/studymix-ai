@@ -6,6 +6,7 @@ import {
   ownerIdSchema,
   type LegalDocumentId,
   type PublicJob,
+  type PublicUpload,
 } from "@studymix/contracts";
 import {
   useEffect,
@@ -20,6 +21,7 @@ import { LandingPage } from "./LandingPage";
 import { legalPageContent, legalPathToDocumentId, type Language } from "./legal-content";
 import { JobExperience, isPendingJob } from "./job-experience";
 import { getJob, toJobApiError, type JobApiError } from "./job-api";
+import { deleteUpload, uploadAndConfirmAudio } from "./upload-api";
 
 type PresetId = "soft-piano" | "music-box" | "lofi-study";
 
@@ -43,6 +45,8 @@ const copy = {
     replace: "Replace file",
     retention:
       "Audio upload is not active. Before activation, automatic deletion must be verified against the planned 72-hour source and 7-day output limits.",
+    retentionActive:
+      "Private upload testing is active. Delete the confirmed upload when finished; automatic retention cleanup is not active yet.",
     presetTitle: "Choose a study mix style",
     rights:
       "I own this recording or have permission to upload, process, and create an adapted version of it.",
@@ -51,11 +55,20 @@ const copy = {
     preset: "Preset",
     candidates: "Candidates",
     generate: "Generate 2 candidates",
+    upload: "Securely upload audio",
+    uploading: "Uploading directly to private Cloudflare R2…",
+    uploadSuccess: "Private upload confirmed. AI generation remains disabled.",
+    uploadFailed: "The private upload could not be confirmed. Check the file and try again.",
+    deleteUpload: "Delete private upload",
+    deletingUpload: "Deleting the private upload…",
+    deleteFailed: "The private upload could not be deleted. Please retry.",
+    replaceBlocked: "Delete the confirmed private upload before choosing another file.",
     legalAcceptanceLead: "I accept the current",
     legalAnd: "and",
     privacyAcknowledgement: "and acknowledge the",
     disabled: "Add a file, confirm your rights, and accept the current legal documents.",
     ready: "Ready to record legal acceptance. Real generation remains disabled.",
+    readyUpload: "Ready for private R2 upload. AI generation remains disabled.",
     saving: "Recording the current legal document versions…",
     demo: "Acceptance saved. Audio upload and AI generation remain disabled until release gates pass.",
     legalSaveFailed:
@@ -63,6 +76,8 @@ const copy = {
     privacy: "Private by default",
     privacyDetail:
       "This release keeps selected files in your browser; upload and external AI processing are disabled.",
+    privacyDetailActive:
+      "Audio goes directly to private R2 for upload testing and is not sent to an AI provider. Use the delete control when finished.",
     logout: "Sign out",
   },
   "zh-HK": {
@@ -77,6 +92,7 @@ const copy = {
     replace: "更換檔案",
     retention:
       "音訊上載尚未啟用。啟用前，必須先驗證自動刪除能符合來源 72 小時及輸出 7 日的預定上限。",
+    retentionActive: "私人上載測試已啟用。完成後請刪除已確認的上載；自動保留期清理尚未啟用。",
     presetTitle: "選擇你的 Study Mix 風格",
     rights: "我擁有此錄音，或已獲准上載、處理及製作其改編版本。",
     summary: "你的選擇",
@@ -84,16 +100,27 @@ const copy = {
     preset: "風格",
     candidates: "候選版本",
     generate: "生成 2 個候選版本",
+    upload: "安全上載音訊",
+    uploading: "正在直接上載至私人 Cloudflare R2……",
+    uploadSuccess: "私人上載已確認；AI 生成仍然關閉。",
+    uploadFailed: "未能確認私人上載。請檢查檔案後再試。",
+    deleteUpload: "刪除私人上載",
+    deletingUpload: "正在刪除私人上載……",
+    deleteFailed: "未能刪除私人上載，請重試。",
+    replaceBlocked: "請先刪除已確認的私人上載，然後再選擇另一個檔案。",
     legalAcceptanceLead: "我接受現行",
     legalAnd: "及",
     privacyAcknowledgement: "並確認已閱讀",
     disabled: "請加入檔案、確認權利，並接受現行法律文件。",
     ready: "可保存法律接受紀錄；真實生成仍然關閉。",
+    readyUpload: "可上載至私人 R2；AI 生成仍然關閉。",
     saving: "正在保存現行法律文件版本……",
     demo: "接受紀錄已保存。音訊上載及 AI 生成會維持關閉，直至全部上線關卡通過。",
     legalSaveFailed: "未能保存接受紀錄。請檢查法律設定後重試；生成功能仍被阻擋。",
     privacy: "預設保持私密",
     privacyDetail: "本版本只在瀏覽器處理所選檔案；上載及外部 AI 處理尚未啟用。",
+    privacyDetailActive:
+      "音訊會直接上載至私人 R2 作測試，不會送到 AI 供應商；完成後請使用刪除控制。",
     logout: "登出",
   },
 } satisfies Record<Language, Record<string, string>>;
@@ -117,6 +144,7 @@ const legalAcceptanceEnvelopeSchema = apiEnvelopeSchema(legalAcceptanceStatusSch
 const legalManifestEnvelopeSchema = apiEnvelopeSchema(legalDocumentsManifestSchema);
 const authMeEnvelopeSchema = apiEnvelopeSchema(
   z.object({
+    capabilities: z.object({ privateAudioUpload: z.boolean() }).strict(),
     kind: z.enum(["authenticated", "development"]),
     ownerId: ownerIdSchema,
   }),
@@ -187,10 +215,13 @@ function PrivateApp() {
   const [activeJob, setActiveJob] = useState<PublicJob | null>(null);
   const [jobError, setJobError] = useState<JobApiError | null>(null);
   const [candidateSources, setCandidateSources] = useState<readonly [string, string] | null>(null);
+  const [privateAudioUploadEnabled, setPrivateAudioUploadEnabled] = useState(false);
+  const [confirmedUpload, setConfirmedUpload] = useState<PublicUpload | null>(null);
   const strings = copy[language];
   const selectedPresetName =
     presets.find((item) => item.id === selectedPreset)?.name[language] ?? "Soft Piano";
-  const canGenerate = selectedFile !== null && rightsAccepted && legalAccepted;
+  const canGenerate =
+    selectedFile !== null && rightsAccepted && legalAccepted && confirmedUpload === null;
 
   useEffect(() => {
     document.documentElement.lang = language;
@@ -208,6 +239,7 @@ function PrivateApp() {
         const body: unknown = await response.json();
         const parsed = authMeEnvelopeSchema.safeParse(body);
         if (response.ok && parsed.success && parsed.data.error === null) {
+          setPrivateAudioUploadEnabled(parsed.data.data.capabilities.privateAudioUpload);
           setAccessStatus("verified");
           return;
         }
@@ -259,6 +291,10 @@ function PrivateApp() {
   }, [activeJobId, activeJobStatus]);
 
   const setFile = (fileList: FileList | null) => {
+    if (confirmedUpload !== null) {
+      setNotice(strings.replaceBlocked);
+      return;
+    }
     const file = fileList?.item(0) ?? null;
     setSelectedFile(file);
     setNotice(null);
@@ -310,6 +346,17 @@ function PrivateApp() {
         setNotice(strings.legalSaveFailed);
         return;
       }
+      if (privateAudioUploadEnabled && selectedFile !== null) {
+        setNotice(strings.uploading);
+        try {
+          const upload = await uploadAndConfirmAudio(selectedFile);
+          setConfirmedUpload(upload);
+          setNotice(strings.uploadSuccess);
+        } catch {
+          setNotice(strings.uploadFailed);
+        }
+        return;
+      }
       if (!mockApiEnabled) {
         setNotice(strings.demo);
         return;
@@ -321,6 +368,25 @@ function PrivateApp() {
       }
     } catch {
       setNotice(strings.legalSaveFailed);
+    } finally {
+      setIsSavingAcceptance(false);
+    }
+  };
+
+  const handleDeleteUpload = async () => {
+    if (confirmedUpload === null || isSavingAcceptance) {
+      return;
+    }
+    setIsSavingAcceptance(true);
+    setNotice(strings.deletingUpload);
+    try {
+      await deleteUpload(confirmedUpload.uploadId);
+      setConfirmedUpload(null);
+      setSelectedFile(null);
+      setRightsAccepted(false);
+      setNotice(null);
+    } catch {
+      setNotice(strings.deleteFailed);
     } finally {
       setIsSavingAcceptance(false);
     }
@@ -346,6 +412,7 @@ function PrivateApp() {
     setRightsAccepted(false);
     setLegalAccepted(false);
     setNotice(null);
+    setConfirmedUpload(null);
   };
 
   return (
@@ -394,6 +461,7 @@ function PrivateApp() {
               <form className="mix-workspace" onSubmit={(event) => void handleSubmit(event)}>
                 <UploadPanel
                   language={language}
+                  privateAudioUploadEnabled={privateAudioUploadEnabled}
                   selectedFile={selectedFile}
                   onFileChange={handleFileChange}
                   onDrop={handleDrop}
@@ -495,11 +563,28 @@ function PrivateApp() {
                     disabled={!canGenerate || isSavingAcceptance}
                   >
                     <SparkleIcon />
-                    <span>{strings.generate}</span>
+                    <span>{privateAudioUploadEnabled ? strings.upload : strings.generate}</span>
                   </button>
                   <p className={`form-status${canGenerate ? " is-ready" : ""}`} aria-live="polite">
-                    {notice ?? (canGenerate ? strings.ready : strings.disabled)}
+                    {notice ??
+                      (confirmedUpload !== null
+                        ? strings.uploadSuccess
+                        : canGenerate
+                          ? privateAudioUploadEnabled
+                            ? strings.readyUpload
+                            : strings.ready
+                          : strings.disabled)}
                   </p>
+                  {confirmedUpload !== null ? (
+                    <button
+                      className="text-button"
+                      disabled={isSavingAcceptance}
+                      type="button"
+                      onClick={() => void handleDeleteUpload()}
+                    >
+                      {strings.deleteUpload}
+                    </button>
+                  ) : null}
                 </section>
               </form>
 
@@ -507,7 +592,11 @@ function PrivateApp() {
                 <ShieldIcon />
                 <div>
                   <strong>{strings.privacy}</strong>
-                  <span>{strings.privacyDetail}</span>
+                  <span>
+                    {privateAudioUploadEnabled
+                      ? strings.privacyDetailActive
+                      : strings.privacyDetail}
+                  </span>
                 </div>
               </aside>
             </>
@@ -708,12 +797,19 @@ function SiteFooter({ language }: { language: Language }) {
 
 type UploadPanelProps = {
   language: Language;
+  privateAudioUploadEnabled: boolean;
   selectedFile: File | null;
   onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onDrop: (event: DragEvent<HTMLLabelElement>) => void;
 };
 
-function UploadPanel({ language, selectedFile, onFileChange, onDrop }: UploadPanelProps) {
+function UploadPanel({
+  language,
+  privateAudioUploadEnabled,
+  selectedFile,
+  onFileChange,
+  onDrop,
+}: UploadPanelProps) {
   const strings = copy[language];
 
   return (
@@ -780,7 +876,7 @@ function UploadPanel({ language, selectedFile, onFileChange, onDrop }: UploadPan
 
       <div className="retention-note">
         <ShieldIcon />
-        <span>{strings.retention}</span>
+        <span>{privateAudioUploadEnabled ? strings.retentionActive : strings.retention}</span>
       </div>
     </section>
   );

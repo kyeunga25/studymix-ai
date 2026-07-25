@@ -434,9 +434,11 @@ Generate Worker binding types using Wrangler. Do not hand-maintain an `Env` inte
 
 ## 14.1 Data lifecycle and disclosure status
 
-The current codebase does not collect audio in R2 and does not enable external generation. It therefore
-does not claim that audio retention, deletion, or provider controls are operational. Those capabilities
-remain disabled unless runtime deletion and owner-isolation checks are present.
+The codebase contains a feature-gated direct-to-private-R2 upload slice and owner-scoped single-upload
+deletion. The default and production setting remains `R2_TRANSFER_ENABLED=false`; no production audio
+collection is claimed until a separate staging bucket, exact-origin CORS, signed-URL expiry, monitoring,
+and browser checks pass. Automatic retention cleanup is not implemented, so the test UI discloses that
+limit and exposes explicit deletion. External generation remains disabled.
 
 Legal acceptance records are metadata evidence, not audio. Their final retention period must be
 documented before launch and limited to what is necessary for governing-version proof, security, and

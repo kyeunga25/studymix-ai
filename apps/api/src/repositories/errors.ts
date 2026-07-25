@@ -16,6 +16,15 @@ export class RepositoryNotFoundError extends Error {
   }
 }
 
+export class RepositoryQuotaError extends Error {
+  readonly code = "RATE_LIMITED";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "RepositoryQuotaError";
+  }
+}
+
 export class RepositoryLegalAcceptanceRequiredError extends Error {
   readonly code = "LEGAL_ACCEPTANCE_REQUIRED";
 

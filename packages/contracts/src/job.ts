@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  httpsUrlSchema,
   idempotencyKeySchema,
   isoDateTimeSchema,
   jobIdSchema,
@@ -68,6 +69,15 @@ export const publicJobSchema = z
   })
   .strict();
 
+export const downloadOutputResponseSchema = z
+  .object({
+    downloadMethod: z.literal("GET"),
+    downloadUrl: httpsUrlSchema,
+    expiresAt: isoDateTimeSchema,
+    outputId: outputIdSchema,
+  })
+  .strict();
+
 export type JobStatus = z.infer<typeof jobStatusSchema>;
 export type CandidateCount = z.infer<typeof candidateCountSchema>;
 export type CandidateIndex = z.infer<typeof candidateIndexSchema>;
@@ -75,3 +85,4 @@ export type OutputStatus = z.infer<typeof outputStatusSchema>;
 export type PublicOutput = z.infer<typeof publicOutputSchema>;
 export type CreateJobRequest = z.infer<typeof createJobRequestSchema>;
 export type PublicJob = z.infer<typeof publicJobSchema>;
+export type DownloadOutputResponse = z.infer<typeof downloadOutputResponseSchema>;

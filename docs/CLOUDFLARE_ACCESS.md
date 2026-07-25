@@ -25,6 +25,42 @@ pnpm --filter @studymix/api exec wrangler d1 migrations apply DB --remote --conf
 Do not use ad-hoc schema commands in production. Confirm the migration list before and after the
 apply operation.
 
+## 1.1 Prepare private R2 transfer in staging only
+
+Create separate private staging and production buckets. Do not enable an `r2.dev` URL or public custom
+domain. Keep `R2_TRANSFER_ENABLED=false` in production while automatic retention cleanup and live
+expiry monitoring are incomplete.
+
+The staging Worker needs:
+
+- an `AUDIO_BUCKET` binding to the staging bucket;
+- protected runtime values for `R2_ACCOUNT_ID`, `R2_BUCKET_NAME`, `MAX_UPLOAD_BYTES`,
+  `MAX_ACTIVE_UPLOADS_PER_OWNER`, `UPLOAD_URL_TTL_SECONDS`, and `DOWNLOAD_URL_TTL_SECONDS`;
+- bucket-scoped Object Read & Write credentials stored only as the Worker secrets
+  `R2_S3_ACCESS_KEY_ID` and `R2_S3_SECRET_ACCESS_KEY`.
+
+Generate the ignored exact-origin CORS file from the API directory, apply it to the staging bucket, and
+then verify the applied rule. Substitute values locally without placing them in repository files or
+public logs:
+
+```bash
+DEPLOY_ALLOWED_WEB_ORIGINS=https://staging.example.test pnpm r2:cors:prepare
+pnpm exec wrangler r2 bucket cors set BUCKET_NAME_PLACEHOLDER --file wrangler.r2-cors.json
+pnpm exec wrangler r2 bucket cors list BUCKET_NAME_PLACEHOLDER
+```
+
+The generated rule allows only the exact configured origin, `PUT/GET/HEAD`, `Content-Type`, and
+`If-None-Match`. The conditional header is signed as `*`, so a successful upload cannot be overwritten
+by reusing its PUT URL. CORS is a browser boundary, not authorization; presigned URLs remain short-lived
+bearer credentials and must never be logged. See Cloudflare's current
+[presigned URL](https://developers.cloudflare.com/r2/api/s3/presigned-urls/) and
+[R2 CORS](https://developers.cloudflare.com/r2/buckets/cors/) documentation.
+
+Before setting `R2_TRANSFER_ENABLED=true` in staging, verify that a browser uploads directly to the R2
+S3 hostname, a second PUT receives `412`, a wrong content type fails, an expired URL fails, another owner
+cannot confirm or delete the upload, explicit deletion removes the object, and no audio bytes traverse
+the Worker request body. Leave production disabled until automatic retention cleanup is implemented.
+
 ## 2. Protect the private paths with Access
 
 In Cloudflare Zero Trust:
@@ -114,9 +150,13 @@ Cloudflare deployment token in the repository or GitHub Actions secrets.
    `pnpm --filter @studymix/api deploy:cloudflare`, and preview command
    `pnpm --filter @studymix/api preview:cloudflare`.
 4. Add `DEPLOY_WORKER_NAME`, `DEPLOY_D1_NAME`, and `DEPLOY_D1_ID` as protected build settings in
-   Cloudflare. Their values must never be committed or printed in public build documentation.
-5. Keep `APP_ENV`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `LEGAL_CONTACT_EMAIL`,
-   `GENERATION_PROVIDER=mock`, and `REAL_GENERATION_ENABLED=false` as Worker runtime variables. The
+   Cloudflare. Add `DEPLOY_R2_BUCKET` only to an approved private staging build; omitting it leaves the
+   R2 binding out of the generated deployment config. Their values must never be committed or printed
+   in public build documentation.
+5. Keep `APP_ENV`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `LEGAL_CONTACT_EMAIL`, `R2_ACCOUNT_ID`,
+   `R2_BUCKET_NAME`, the R2 limits/TTLs, `R2_TRANSFER_ENABLED=false`,
+   `GENERATION_PROVIDER=mock`, and `REAL_GENERATION_ENABLED=false` as Worker runtime variables. Store
+   the two R2 S3 credentials only as Worker secrets. The
    generated deployment config uses `keep_vars` and does not redefine them.
 6. Require the GitHub `CI` check before merging to `main`. A merged production commit is then deployed
    by Workers Builds; non-production branch uploads do not receive production traffic.
