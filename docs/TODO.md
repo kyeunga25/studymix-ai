@@ -8,7 +8,7 @@ This document records only verifiable repository capabilities and public safety 
 
 ## 已驗證能力 / Verified capabilities
 
-- [x] pnpm monorepo、嚴格 TypeScript、ESLint、Prettier、Vitest、Playwright 與 GitHub Actions。
+- [x] pnpm monorepo、嚴格 TypeScript、ESLint、Prettier、Vitest、Playwright 與 GitHub Actions；CI 會執行 unit、Worker、build 及 Chromium E2E。
 - [x] React/Vite 雙語介面，支援鍵盤操作、狀態公告、錯誤提示及兩個候選結果比較。
 - [x] 公開雙語產品主頁、封閉測試狀態、無註冊入口，以及獨立 `/app` 受邀測試工作區。
 - [x] 僅限本機開發的 mock HTTP job API；正式 bundle 不包含 mock 路由或測試控制標記。
