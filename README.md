@@ -152,7 +152,9 @@ The checked-in Wrangler file contains placeholders only and is intentionally not
 configuration. `pnpm deploy:cloudflare` generates an ignored deployment file from the protected
 `DEPLOY_WORKER_NAME`, `DEPLOY_D1_NAME`, and `DEPLOY_D1_ID` build settings. The optional protected
 `DEPLOY_R2_BUCKET` setting adds the private R2 binding only for an approved staging deployment; optional
-`DEPLOY_WORKFLOW_NAME` does the same for the Workflow binding. Runtime
+`DEPLOY_WORKFLOW_NAME` does the same for the Workflow binding. The optional protected
+`DEPLOY_RATE_LIMIT_NAMESPACE_ID` setting adds the Cloudflare Rate Limiting binding required by real
+generation. Runtime
 Access, R2 signing, and legal settings stay in Cloudflare and are retained during deployment. Follow
 [`docs/CLOUDFLARE_ACCESS.md`](docs/CLOUDFLARE_ACCESS.md); never commit Cloudflare account IDs, D1 IDs,
 Access identifiers, actual resource names, contact details, or deployment tokens.
@@ -205,6 +207,10 @@ The repository currently includes:
 - A default-off fal Workflow path with strict runtime configuration, private-source validation and signing,
   at-most-once submission steps, bounded queue polling, safe provider-error mapping, streamed private-R2
   output ingestion, nullable provider metadata, and offline tests that make no paid requests.
+- One private browser flow for mock or real capability modes: direct R2 upload, bounded same-status job
+  polling, two private playback/download links, safe bilingual failures, and terminal data deletion.
+- A D1 rolling owner quota plus a Cloudflare Rate Limiting binding keyed by owner and hashed connecting IP
+  before a real-provider job can create metadata.
 - A feature-gated retention path with owner-scoped terminal-job deletion, hourly Cron handling, retry-safe
   private R2 purging, 24-hour unattached/failed-artifact cleanup, 72-hour completed-source cleanup, and
   7-day output expiry.

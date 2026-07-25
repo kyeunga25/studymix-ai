@@ -437,8 +437,11 @@ non-production value. Unknown environments and incomplete Access configuration f
 ## 13. Abuse controls
 
 - Turnstile token required to create a real-provider job.
-- Per-owner daily generation limit.
-- Per-IP coarse rate limit.
+- A rolling per-owner daily job limit is enforced in the same D1 `INSERT ... SELECT` that creates a job;
+  idempotent replays can still return the original job.
+- Real-provider job creation calls a Cloudflare Rate Limiting binding with separate owner and SHA-256
+  connecting-IP keys before metadata is created. This is a coarse, per-location, eventually consistent
+  abuse signal rather than an accounting system.
 - Maximum active jobs per owner.
 - Maximum upload size.
 - Maximum source duration when duration validation is available.
@@ -465,6 +468,7 @@ R2_TRANSFER_ENABLED
 MAX_UPLOAD_BYTES
 MAX_ACTIVE_UPLOADS_PER_OWNER
 MAX_ACTIVE_JOBS_PER_OWNER
+MAX_DAILY_JOBS_PER_OWNER
 UPLOAD_URL_TTL_SECONDS
 DOWNLOAD_URL_TTL_SECONDS
 OUTPUT_RETENTION_HOURS

@@ -1181,6 +1181,11 @@ main {
   min-height: 44px;
 }
 
+.candidate-download {
+  margin-top: 10px;
+  text-decoration: none;
+}
+
 .preference-control {
   display: inline-flex;
   align-items: center;

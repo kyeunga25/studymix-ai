@@ -41,6 +41,10 @@ const workflowName = optionalEnvironment(
   "DEPLOY_WORKFLOW_NAME",
   /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/,
 );
+const rateLimitNamespaceId = optionalEnvironment(
+  "DEPLOY_RATE_LIMIT_NAMESPACE_ID",
+  /^[1-9][0-9]{0,15}$/,
+);
 
 const config = {
   $schema: "../../node_modules/wrangler/config-schema.json",
@@ -85,6 +89,17 @@ const config = {
             binding: "GENERATION_WORKFLOW",
             name: workflowName,
             class_name: "GenerationWorkflow",
+          },
+        ],
+      }),
+  ...(rateLimitNamespaceId === undefined
+    ? {}
+    : {
+        ratelimits: [
+          {
+            name: "JOB_RATE_LIMITER",
+            namespace_id: rateLimitNamespaceId,
+            simple: { limit: 6, period: 60 },
           },
         ],
       }),

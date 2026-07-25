@@ -194,6 +194,42 @@ describe("D1 repositories", () => {
     ).rejects.toBeInstanceOf(RepositoryConflictError);
   });
 
+  it("enforces a rolling owner-scoped daily job limit", async () => {
+    const owner = ownerContext("1");
+    const uploadId = await createConfirmedUpload(owner);
+    const input = {
+      createdAt: now,
+      dailyWindowStartedAt: "2026-07-23T10:00:00.000Z",
+      expiresAt: later,
+      id: createSecureId("job"),
+      idempotencyKey: "daily-job-limit-0001",
+      maxActiveJobs: 20,
+      maxDailyJobs: 1,
+      ownerId: owner.ownerId,
+      presetId: "soft-piano" as const,
+      presetVersion: 1,
+      provider: "mock" as const,
+      requestFingerprint: "6".repeat(64),
+      uploadId,
+    };
+    const first = await createJobIdempotently(env.DB, input);
+    const repeated = await createJobIdempotently(env.DB, {
+      ...input,
+      id: createSecureId("job"),
+    });
+
+    expect(repeated.created).toBe(false);
+    expect(repeated.job.id).toBe(first.job.id);
+    await expect(
+      createJobIdempotently(env.DB, {
+        ...input,
+        id: createSecureId("job"),
+        idempotencyKey: "daily-job-limit-0002",
+        requestFingerprint: "5".repeat(64),
+      }),
+    ).rejects.toBeInstanceOf(RepositoryQuotaError);
+  });
+
   it("atomically limits active jobs without blocking an idempotent retry", async () => {
     const owner = ownerContext("1");
     const firstUploadId = await createConfirmedUpload(owner);
