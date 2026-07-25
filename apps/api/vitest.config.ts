@@ -19,6 +19,8 @@ export default defineConfig({
             GENERATION_PROVIDER: "mock",
             REAL_GENERATION_ENABLED: "false",
             FAL_KEY: "CHANGE_ME_FAL_KEY_000000",
+            FAL_WEBHOOK_URL: "https://studymix.example/api/webhooks/fal",
+            FAL_WEBHOOK_USER_ID: "test-fal-user",
             FAL_OUTPUT_EXPIRATION_SECONDS: "3600",
             FAL_QUEUE_START_TIMEOUT_SECONDS: "300",
             FAL_POLL_INTERVAL_SECONDS: "10",

@@ -74,6 +74,7 @@ describe("Worker authentication boundary", () => {
     expect(ownerCount?.total).toBe(0);
     expect(response.headers.get("x-frame-options")).toBe("DENY");
     expect(response.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+    expect(response.headers.get("content-security-policy")).not.toContain(env.R2_ACCOUNT_ID);
   });
 
   it("protects the application shell while leaving health checks public", async () => {
@@ -92,8 +93,16 @@ describe("Worker authentication boundary", () => {
     );
 
     expect(application.status).toBe(401);
+    expect(application.headers.get("content-security-policy")).not.toContain(env.R2_ACCOUNT_ID);
     expect(health.status).toBe(200);
     expect(privateHealth.status).toBe(401);
     expect(await health.json()).toMatchObject({ data: { status: "ok" }, error: null });
+  });
+
+  it("adds the private R2 origin only to a successful authenticated application response", async () => {
+    const response = await app.request("https://studymix.example/app", undefined, env);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-security-policy")).toContain(env.R2_ACCOUNT_ID);
   });
 });

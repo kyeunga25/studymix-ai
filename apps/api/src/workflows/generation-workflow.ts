@@ -14,6 +14,7 @@ import {
   type WorkflowStepConfig,
 } from "cloudflare:workers";
 import { NonRetryableError } from "cloudflare:workflows";
+import { falWebhookEventType } from "../fal-webhook";
 import {
   generationWorkflowPayloadSchema,
   resolveGenerationWorkflowConfiguration,
@@ -88,6 +89,7 @@ function createProvider(configuration: GenerationWorkflowConfiguration): MusicGe
       credentials: configuration.fal.credentials,
       outputExpirationSeconds: configuration.fal.outputExpirationSeconds,
       startTimeoutSeconds: configuration.fal.queueStartTimeoutSeconds,
+      webhookUrl: configuration.fal.webhookUrl,
     },
     provider: "fal",
   });
@@ -123,10 +125,21 @@ async function waitForProviderCompletion({
       throw new NonRetryableError("The provider request did not complete successfully.");
     }
     if (attempt < maxPollAttempts) {
-      await step.sleep(
-        `wait candidate ${candidateIndex.toString()} attempt ${attempt.toString()}`,
-        pollIntervalMilliseconds,
-      );
+      if (configuration.provider === "fal") {
+        try {
+          await step.waitForEvent(
+            `wait for candidate ${candidateIndex.toString()} signal attempt ${attempt.toString()}`,
+            { timeout: pollIntervalMilliseconds, type: falWebhookEventType },
+          );
+        } catch {
+          // Polling remains the source of truth when no callback signal arrives.
+        }
+      } else {
+        await step.sleep(
+          `wait candidate ${candidateIndex.toString()} attempt ${attempt.toString()}`,
+          pollIntervalMilliseconds,
+        );
+      }
     }
   }
   throw new NonRetryableError("The provider request exceeded the polling limit.");

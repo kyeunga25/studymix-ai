@@ -83,9 +83,7 @@ describe("private R2 transfer boundary", () => {
     expect(signedUrl.searchParams.get("X-Amz-SignedHeaders")).toContain("content-type");
     expect(signedUrl.searchParams.get("X-Amz-SignedHeaders")).toContain("if-none-match");
     expect(upload.uploadUrl).not.toContain(env.R2_S3_SECRET_ACCESS_KEY);
-    expect(response.headers.get("content-security-policy")).toContain(
-      "https://00000000000000000000000000000000.r2.cloudflarestorage.com",
-    );
+    expect(response.headers.get("content-security-policy")).not.toContain(env.R2_ACCOUNT_ID);
     expect(await env.AUDIO_BUCKET.head(upload.objectKey)).toBeNull();
     expect(row).toEqual({
       object_key: upload.objectKey,

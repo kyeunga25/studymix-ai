@@ -252,6 +252,11 @@ describe("feature-gated mock generation Workflow", () => {
 
     const configuration = resolveGenerationWorkflowConfiguration(falEnv);
     expect(configuration.provider).toBe("fal");
+    if (configuration.provider !== "fal") {
+      throw new TypeError("Expected fal configuration.");
+    }
+    expect(configuration.fal.webhookUrl).toBe("https://studymix.example/api/webhooks/fal");
+    expect(configuration.fal.webhookUserId).toBe("test-fal-user");
     expect(isRealGenerationAvailable(falEnv)).toBe(true);
     expect(isMockGenerationAvailable(falEnv)).toBe(false);
   });
@@ -326,6 +331,23 @@ describe("feature-gated mock generation Workflow", () => {
     const falEnv: Env = {
       ...env,
       DOWNLOAD_URL_TTL_SECONDS: "900",
+      GENERATION_PROVIDER: "fal",
+      REAL_GENERATION_ENABLED: "true",
+    };
+
+    expect(() => resolveGenerationWorkflowConfiguration(falEnv)).toThrow(
+      GenerationWorkflowConfigurationError,
+    );
+    expect(isRealGenerationAvailable(falEnv)).toBe(false);
+  });
+
+  it("fails closed when the signed webhook identity is not configured", () => {
+    const falEnv: Env = {
+      ...env,
+      DOWNLOAD_URL_TTL_SECONDS: "900",
+      FAL_KEY: "test-only-fal-credential-000001",
+      FAL_WEBHOOK_URL: "https://webhook.invalid/api/webhooks/fal",
+      FAL_WEBHOOK_USER_ID: "CHANGE_ME_FAL_WEBHOOK_USER_ID",
       GENERATION_PROVIDER: "fal",
       REAL_GENERATION_ENABLED: "true",
     };

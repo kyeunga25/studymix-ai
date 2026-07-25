@@ -129,9 +129,12 @@ Both `R2_TRANSFER_ENABLED` and `JOB_WORKFLOW_ENABLED` remain `false` by default.
 The provider package also contains an offline-tested fal ACE-Step audio-to-audio adapter. It uses the
 asynchronous queue, validates external responses, disables provider JSON payload storage, requests a
 bounded output lifetime, and returns only allowlisted result metadata. The feature-gated Workflow can
-select this adapter, issue a short-lived private source URL, poll with fixed bounds, and persist only
-minimal request metadata. It is disabled by default; local development and CI continue to use the
-credential-free mock provider and never make paid calls.
+select this adapter, issue a short-lived private source URL, use verified fal callbacks as wake-up
+signals, poll the queue API as the source of truth, and persist only minimal request metadata. Callback
+verification uses fal's rotating Ed25519 public keys, the exact raw body, a bounded timestamp window,
+the configured fal user, and a known provider request. Complete callback payloads are discarded. It is
+disabled by default; local development and CI continue to use the credential-free mock provider and
+never make paid calls.
 
 The Worker includes a separately tested provider-output ingestion boundary. It accepts only expected
 HTTPS provider hosts and audio media types, refuses redirects and encoded or unbounded bodies, and streams
@@ -142,7 +145,8 @@ until the staging, legal, abuse-control, and deletion gates are verified.
 The production build uses one Cloudflare Worker: Vite output is served through Workers Static Assets,
 while `/api/*` is routed to the Hono Worker. The product overview, legal pages, `/health`, and
 `/legal/documents.json` are public. Cloudflare Access and Worker-side JWT verification protect `/app*`
-and `/api/*`. Build it from the repository root:
+and user-facing `/api/*` routes. The exact `/api/webhooks/fal` path is separately authenticated with the
+provider signature and cannot create an owner. Build it from the repository root:
 
 ```bash
 pnpm build
@@ -205,8 +209,9 @@ The repository currently includes:
   to create two bounded synthetic WAV candidates in private R2, with idempotent metadata updates, active-job
   limits, persisted rights evidence, private playback URLs, and Workflow integration tests.
 - A default-off fal Workflow path with strict runtime configuration, private-source validation and signing,
-  at-most-once submission steps, bounded queue polling, safe provider-error mapping, streamed private-R2
-  output ingestion, nullable provider metadata, and offline tests that make no paid requests.
+  at-most-once submission steps, signed callback wake-ups with queue polling fallback, safe provider-error
+  mapping, streamed private-R2 output ingestion, nullable provider metadata, and offline tests that make no
+  paid requests.
 - One private browser flow for mock or real capability modes: direct R2 upload, bounded same-status job
   polling, two private playback/download links, safe bilingual failures, and terminal data deletion.
 - A D1 rolling owner quota plus a Cloudflare Rate Limiting binding keyed by owner and hashed connecting IP

@@ -92,15 +92,16 @@ reference.
 ## 1.3 Prepare real-provider generation in isolated staging
 
 The fal Workflow path is default-off and must reuse the approved private R2 and Workflow bindings above.
-Set `FAL_KEY` only as a Worker secret. The checked-in `FAL_KEY` value is an intentionally invalid
-type-generation placeholder; the protected deployment generator does not publish it and `keep_vars`
-preserves the runtime secret.
+Set `FAL_KEY` and the expected `FAL_WEBHOOK_USER_ID` only as Worker secrets. Their checked-in values are
+intentionally invalid type-generation placeholders; the protected deployment generator does not publish
+them and `keep_vars` preserves the runtime secrets.
 
 Configure these non-secret bounds in the staging Worker without printing their protected environment or
 resource values:
 
 ```text
 GENERATION_PROVIDER=fal
+FAL_WEBHOOK_URL
 FAL_OUTPUT_EXPIRATION_SECONDS
 FAL_QUEUE_START_TIMEOUT_SECONDS
 FAL_POLL_INTERVAL_SECONDS
@@ -109,6 +110,10 @@ MAX_PROVIDER_OUTPUT_BYTES
 PROVIDER_OUTPUT_TIMEOUT_SECONDS
 MAX_DAILY_JOBS_PER_OWNER
 ```
+
+Set `FAL_WEBHOOK_URL` to the protected staging hostname plus the exact `/api/webhooks/fal` path, with no
+query string. Do not copy the actual hostname into the repository or build logs. The real-generation
+capability fails closed when either the URL or expected webhook user is missing or still a placeholder.
 
 Provide a positive account-unique rate-limit namespace only through the protected
 `DEPLOY_RATE_LIMIT_NAMESPACE_ID` build setting. Omitting it leaves the binding out of the generated
@@ -122,10 +127,9 @@ must exceed the queue-start timeout by at least 60 seconds. When the staging gat
 confirm the API advertises real generation only while every required binding, secret, and bound is valid.
 
 Use a single authorized, non-sensitive audio fixture for the manual provider check. Verify two unique
-provider request IDs, bounded polling, streamed private-R2 outputs, no provider URL or signed URL in D1 or
-logs, owner-only playback/download, terminal deletion, and expiry cleanup. An ambiguous submission must
-fail closed rather than send a second request automatically. Do not enable callbacks until a separately
-verified callback mechanism exists; polling is the current correctness path.
+provider request IDs, verified callback wake-ups, polling fallback, streamed private-R2 outputs, no provider
+URL, signed URL, or complete callback body in D1 or logs, owner-only playback/download, terminal deletion,
+and expiry cleanup. An ambiguous submission must fail closed rather than send a second request automatically.
 
 ## 2. Protect the private paths with Access
 
@@ -133,6 +137,16 @@ In Cloudflare Zero Trust:
 
 1. Go to **Access controls → Applications** and add a **Self-hosted** application.
 2. Add the production custom hostname destinations for `/app*` and `/api/*` to the same application.
+3. Before enabling fal callbacks, add a separate, more-specific application for the exact
+   `/api/webhooks/fal` path with a narrowly scoped **Bypass / Everyone** policy. Do not add a wildcard or
+   change the parent private-path policy. The Worker independently rejects callbacks unless the Ed25519
+   signature, configured fal user, fresh timestamp, raw body, origin/path, and known request ID all match.
+
+Cloudflare documents that the more-specific application path takes precedence and that Bypass disables
+Access controls for only the matched traffic. Recheck the current
+[application-path](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/)
+and [Access policy](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/) guidance
+before applying this narrow exception.
    Do not add the bare hostname or `/`, because the product overview and legal notices are intentionally
    public. The checked-in deployment setting disables the default `workers.dev` hostname.
 3. Add an **Allow** policy for the exact beta-tester email addresses or approved identity-provider
@@ -200,11 +214,15 @@ Before production traffic is enabled:
    submit, repeat, and query acceptance for an approved test owner.
 11. Confirm a denied identity and a second approved identity cannot read or satisfy the first owner's
     legal or metadata state.
-12. Confirm an approved owner can delete a completed or failed job, its private R2 objects disappear,
+12. Confirm unsigned, stale, wrong-user, wrong-origin, query-bearing, and unknown-request fal callbacks are
+    rejected without creating an owner or storing the body; confirm a valid duplicate is harmless and queue
+    polling still completes when no callback arrives.
+13. Confirm an approved owner can delete a completed or failed job, its private R2 objects disappear,
     another owner receives `404`, and the hourly Cron reports only bounded aggregate counts.
 
-There must be no Bypass policy, broader conflicting application, preview hostname, or default Worker
-hostname that exposes `/app*` or `/api/*` outside the authentication boundary.
+There must be no Bypass policy except the exact signed fal callback path, no broader conflicting
+application, and no preview or default Worker hostname that exposes `/app*` or user-facing `/api/*`
+outside the authentication boundary.
 
 ## 6. Connect GitHub automatic deployment
 
