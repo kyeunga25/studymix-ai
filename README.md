@@ -4,7 +4,7 @@ StudyMix AI 是一個 Cloudflare-first、雙語及安全優先的音訊風格重
 
 StudyMix AI is a bilingual, security-first, Cloudflare-native application for restyling audio that the user owns or is authorized to process.
 
-公開首頁提供產品、運作方式及私隱安全概覽；AI 工作區位於 `/app`，只限受邀測試者經 Cloudflare Access 登入。沒有公開註冊，真實音訊上載及外部生成保持停用。公開程式碼可在不使用付費憑證的情況下展示完整介面狀態。
+公開首頁提供產品、運作方式及私隱安全概覽；AI 工作區位於 `/app`，只限受邀測試者經 Cloudflare Access 登入。沒有公開註冊，正式音訊上載及外部生成保持停用。公開程式碼可在不使用付費憑證的情況下，以本機 mock 或預設關閉的 Cloudflare Workflow 合成音調展示完整介面狀態。
 
 ## Target MVP outcome
 
@@ -21,10 +21,11 @@ The product contract supports an approved user who can:
 6. Preview the candidates and download the preferred result.
 7. Have source and output files deleted automatically after the retention period.
 
-The first implementation uses a provider adapter with:
+The verified implementation uses a provider adapter with:
 
 - `mock` provider for local development and automated tests.
-- `fal` provider for ACE-Step audio-to-audio generation.
+
+No external provider adapter is enabled in the current release.
 
 ## Recommended stack
 
@@ -118,6 +119,13 @@ or paid credentials. Open `http://localhost:5173/?mockScenario=failed` to verify
 `mockScenario=malformed` to verify invalid-response handling. This mock server is excluded from the
 production build; production upload and generation remain disabled until their security controls are verified.
 
+The Worker also contains a separate feature-gated mock job API and Cloudflare Workflow. When explicitly
+enabled in an isolated test environment with private R2, it validates the owner, current legal acceptance,
+confirmed upload, rights declaration, preset, idempotency key, and active-job limit before producing two
+small synthetic WAV tones. It does not send the source to an external provider or make a paid API call.
+Workflow integration tests exercise retries, D1 state, private R2 output metadata, and cross-owner denial.
+Both `R2_TRANSFER_ENABLED` and `JOB_WORKFLOW_ENABLED` remain `false` by default.
+
 The production build uses one Cloudflare Worker: Vite output is served through Workers Static Assets,
 while `/api/*` is routed to the Hono Worker. The product overview, legal pages, `/health`, and
 `/legal/documents.json` are public. Cloudflare Access and Worker-side JWT verification protect `/app*`
@@ -130,10 +138,15 @@ pnpm build
 The checked-in Wrangler file contains placeholders only and is intentionally not a deployable production
 configuration. `pnpm deploy:cloudflare` generates an ignored deployment file from the protected
 `DEPLOY_WORKER_NAME`, `DEPLOY_D1_NAME`, and `DEPLOY_D1_ID` build settings. The optional protected
-`DEPLOY_R2_BUCKET` setting adds the private R2 binding only for an approved staging deployment. Runtime
+`DEPLOY_R2_BUCKET` setting adds the private R2 binding only for an approved staging deployment; optional
+`DEPLOY_WORKFLOW_NAME` does the same for the Workflow binding. Runtime
 Access, R2 signing, and legal settings stay in Cloudflare and are retained during deployment. Follow
 [`docs/CLOUDFLARE_ACCESS.md`](docs/CLOUDFLARE_ACCESS.md); never commit Cloudflare account IDs, D1 IDs,
 Access identifiers, actual resource names, contact details, or deployment tokens.
+
+Workers Builds treats pushes to the configured production branch as production builds. Other branches
+remain preview-only when non-production builds are enabled, so a successful preview check must not be
+described as an active production deployment.
 
 Validation commands:
 
@@ -173,7 +186,10 @@ The repository currently includes:
 - A feature-gated private R2 transfer slice with server-controlled keys, short-lived conditional PUT
   signatures, direct browser transfer, R2 metadata confirmation, owner-negative tests, explicit upload
   deletion, active-upload limits, and short-lived ready-output download signatures.
+- A feature-gated owner-scoped job API and Cloudflare Workflow that uses the credential-free mock provider
+  to create two bounded synthetic WAV candidates in private R2, with idempotent metadata updates, active-job
+  limits, persisted rights evidence, private playback URLs, and Workflow integration tests.
 
-Production R2 transfer remains disabled until private staging CORS and expiry checks pass. External
-generation, automatic cleanup, and provider callbacks also remain disabled. See
+Production R2 transfer and the server-side mock Workflow remain disabled until private staging checks
+pass. External generation, automatic cleanup, and provider callbacks also remain disabled. See
 [`docs/TODO.md`](docs/TODO.md) for the current verified status without internal planning material.

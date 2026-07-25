@@ -25,7 +25,8 @@ Workflow
   │
   ├── Submit candidate 1 ───────────────► MusicGenerationProvider
   ├── Submit candidate 2 ───────────────► MusicGenerationProvider
-  │                                         └── fal.ai ACE-Step
+  │                                         ├── credential-free mock
+  │                                         └── fal.ai ACE-Step (disabled)
   ├── Poll/verify provider results
   ├── Stream outputs to R2
   ├── Update D1 state
@@ -262,6 +263,19 @@ Workflow.run
 
 Each `step.do` body must be safe to retry.
 
+### Verified mock Workflow slice
+
+The current server-side slice is deliberately limited to `GENERATION_PROVIDER=mock`. It validates the
+external Workflow payload with Zod, pins the preset version, uses the job ID as the Workflow instance ID,
+and stores two bounded synthetic WAV tones through the private R2 binding. Provider requests, outputs,
+rights evidence, usage, and every state transition are owner-scoped and idempotent. R2 writes use a
+create-only condition and verify existing object metadata on a retry. The source object is not read or
+sent to any external service in mock mode.
+
+`POST /api/jobs`, `GET /api/jobs/:jobId`, and the output-download route remain behind authentication.
+The client receives only public job metadata and short-lived signed playback URLs, never R2 object keys
+or Workflow internals. The production-default flags keep both R2 transfer and this Workflow disabled.
+
 ## 7.1 Legal-document and acceptance boundary
 
 The legal documents are versioned public contracts shared by the API and web build. The Worker exposes:
@@ -411,13 +425,14 @@ DEV_AUTH_SUBJECT          # local development only; ignored in production/stagin
 LEGAL_CONTACT_EMAIL       # real monitored address required outside local/test
 GENERATION_PROVIDER
 REAL_GENERATION_ENABLED
+JOB_WORKFLOW_ENABLED
+R2_TRANSFER_ENABLED
 MAX_UPLOAD_BYTES
+MAX_ACTIVE_UPLOADS_PER_OWNER
+MAX_ACTIVE_JOBS_PER_OWNER
 UPLOAD_URL_TTL_SECONDS
 DOWNLOAD_URL_TTL_SECONDS
-SOURCE_RETENTION_HOURS
 OUTPUT_RETENTION_HOURS
-MAX_DAILY_JOBS_PER_OWNER
-ALLOWED_WEB_ORIGINS
 ```
 
 Secrets:
@@ -434,11 +449,13 @@ Generate Worker binding types using Wrangler. Do not hand-maintain an `Env` inte
 
 ## 14.1 Data lifecycle and disclosure status
 
-The codebase contains a feature-gated direct-to-private-R2 upload slice and owner-scoped single-upload
-deletion. The default and production setting remains `R2_TRANSFER_ENABLED=false`; no production audio
-collection is claimed until a separate staging bucket, exact-origin CORS, signed-URL expiry, monitoring,
-and browser checks pass. Automatic retention cleanup is not implemented, so the test UI discloses that
-limit and exposes explicit deletion. External generation remains disabled.
+The codebase contains a feature-gated direct-to-private-R2 upload slice, owner-scoped single-upload
+deletion, and a feature-gated mock Workflow that writes two synthetic private outputs. The default and
+production settings remain `R2_TRANSFER_ENABLED=false` and `JOB_WORKFLOW_ENABLED=false`; no production
+audio collection or server-side generation is claimed until a separate staging bucket, exact-origin
+CORS, signed-URL expiry, monitoring, and browser checks pass. Automatic retention cleanup is not
+implemented, so the test UI discloses that limit and exposes explicit deletion before a job is attached.
+External generation remains disabled.
 
 Legal acceptance records are metadata evidence, not audio. Their final retention period must be
 documented before launch and limited to what is necessary for governing-version proof, security, and

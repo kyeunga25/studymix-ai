@@ -8,11 +8,12 @@ beta. The English and Traditional Chinese website documents are pre-release draf
 lawyer must confirm the operator identity, service address, consumer terms, liability wording,
 copyright position, cross-border disclosures, and complaint process before a public launch.
 
-The current production release has authentication, owner-scoped D1 metadata, legal-document APIs, and
-the web shell. The code also contains a default-off private-R2 staging slice with explicit owner-scoped
-upload deletion. Production R2 upload, external AI generation, provider callbacks, output delivery, and
-automatic object deletion remain disabled until their release gates pass. Public copy must not describe
-a planned or staging-only control as already operational.
+The current code has authentication, owner-scoped D1 metadata, legal-document APIs, and the web shell.
+It also contains default-off private-R2 upload and server-side mock Workflow slices. The mock Workflow
+creates synthetic tones without sending source audio to an external provider. Production R2 upload,
+server-side mock generation, external AI generation, provider callbacks, and automatic object deletion
+remain disabled until their release gates pass. Public copy must not describe a test-only control as
+already operational.
 
 ## Versioned website documents
 
@@ -33,8 +34,9 @@ acceptance time. Browser-supplied owner IDs, acceptance times, unknown fields, s
 bodies, and non-JSON bodies are rejected. Repeating the same versions is idempotent and preserves the
 original evidence timestamp.
 
-Before a job-creation route is added, it must call `hasCurrentLegalAcceptances()` and separately persist
-the job/upload-specific rights declaration. A client checkbox is not the control.
+The job-creation route calls the owner-scoped legal-acceptance repository before inserting a job and
+separately persists the job/upload-specific rights declaration with a server timestamp. Exact rights
+declaration versions are enforced by the shared Zod contract. A client checkbox alone is not the control.
 
 ## Current data map
 
@@ -43,8 +45,9 @@ the job/upload-specific rights declaration. A client checkbox is not the control
 | Access identity/session | Approved user and configured identity provider | Authentication | Cloudflare Access; verified by Worker | Application does not store JWT, password, or email in D1 |
 | Hashed Access subject and derived owner ID | Verified Access claims | Owner isolation and account status | Worker and D1 | Stored while the private-beta account and necessary audit records exist |
 | Legal document/version/time | User action plus server time | Evidence of governing versions | Worker and D1 | Retention schedule must be finalized; retain only while necessary for evidence/disputes |
-| File selected in current UI | User device | Local interface preview | Browser only | Not uploaded by the current release |
+| File selected in default public deployment | User device | Local interface preview | Browser only | Not uploaded while private R2 is disabled |
 | Feature-gated staging audio upload | Approved tester | Direct private-object upload and metadata confirmation | Cloudflare R2 and owner-scoped D1 metadata only | Default/production off; explicit single-upload deletion exists; automatic cleanup is not operational |
+| Feature-gated synthetic mock outputs | Approved tester action | Verify the private asynchronous job and delivery flow without external AI | Cloudflare Workflow, private R2, and owner-scoped D1 metadata | Default/production off; output expiry is recorded, but automatic object cleanup is not operational |
 | Operational event data | Worker | Security and troubleshooting | Cloudflare observability | Must exclude audio, filename, signed URL, assertion, secrets, and raw provider payloads |
 
 StudyMix AI does not ingest arbitrary remote URLs, scrape tracks or personal data from official sites,
