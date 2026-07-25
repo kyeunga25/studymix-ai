@@ -39,7 +39,7 @@ No external provider adapter is enabled in the current release.
 - Abuse prevention: Cloudflare Turnstile and server-side quotas
 - Authentication: Cloudflare Access with Worker-side JWT verification
 - AI provider: fal.ai ACE-Step audio-to-audio
-- Testing: Vitest + Playwright
+- Testing: Vitest + Playwright, including browser end-to-end coverage in CI
 - CI/CD: GitHub Actions validation + Cloudflare Workers Builds deployment
 - Package manager: pnpm
 

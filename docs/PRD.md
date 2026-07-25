@@ -494,5 +494,7 @@ The MVP is accepted when:
 12. The user must accept the rights declaration before any real provider request.
 13. The UI clearly states that output may not preserve every musical detail.
 14. The repository documents how to run locally, deploy staging, and configure production.
-15. Production and staging require a valid interactive Access JWT for `/app*` and `/api/*`; public
-    routes expose no owner state, audio, signed URLs, or private application data.
+15. Production and staging require a valid interactive Access JWT for `/app*` and user-facing
+    `/api/*`. The exact `/api/webhooks/fal` callback is the only provider-authenticated exception and
+    requires the strongest current fal signature verification. Public routes expose no owner state,
+    audio, signed URLs, or private application data.

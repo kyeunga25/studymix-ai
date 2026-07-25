@@ -1,3 +1,4 @@
+import type { ApiErrorCode } from "@studymix/contracts";
 import { z } from "zod";
 import {
   GenerationWorkflowConfigurationError,
@@ -83,7 +84,30 @@ type FalWebhookDependencies = Readonly<{
 }>;
 
 function webhookResponse(status: 202 | 400 | 401 | 404 | 413 | 415 | 503): Response {
-  return new Response(null, { status });
+  const requestId = crypto.randomUUID();
+  if (status === 202) {
+    return Response.json({ data: { accepted: true }, error: null, requestId }, { status });
+  }
+  const code: ApiErrorCode =
+    status === 401
+      ? "UNAUTHORIZED"
+      : status === 404
+        ? "NOT_FOUND"
+        : status === 503
+          ? "INTERNAL_ERROR"
+          : "VALIDATION_ERROR";
+  return Response.json(
+    {
+      data: null,
+      error: {
+        code,
+        message: "The callback was not accepted.",
+        retryable: status === 503,
+      },
+      requestId,
+    },
+    { status },
+  );
 }
 
 function toHex(bytes: Uint8Array): string {

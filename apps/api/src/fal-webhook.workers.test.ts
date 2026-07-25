@@ -154,6 +154,11 @@ describe("fal webhook boundary", () => {
 
     expect(response.status).toBe(401);
     expect(response.headers.get("content-security-policy")).not.toContain(env.R2_ACCOUNT_ID);
+    expect(await response.json()).toMatchObject({
+      data: null,
+      error: { code: "UNAUTHORIZED", retryable: false },
+      requestId: expect.any(String),
+    });
     expect(ownerCount?.total).toBe(0);
   });
 
@@ -171,6 +176,11 @@ describe("fal webhook boundary", () => {
     });
 
     expect(response.status).toBe(202);
+    expect(await response.json()).toMatchObject({
+      data: { accepted: true },
+      error: null,
+      requestId: expect.any(String),
+    });
     expect(signals).toEqual([{ candidateIndex: 0, providerRequestId }]);
     const persistedPayload = await env.DB.prepare(
       "SELECT COUNT(*) AS total FROM provider_requests WHERE error_code IS NOT NULL",
