@@ -131,6 +131,11 @@ asynchronous queue, validates external responses, disables provider JSON payload
 bounded output lifetime, and returns only allowlisted result metadata. It is not connected to the Worker
 or enabled in production; local development and CI continue to use the credential-free mock provider.
 
+The Worker includes a separately tested provider-output ingestion boundary. It accepts only expected
+HTTPS provider hosts and audio media types, refuses redirects and encoded or unbounded bodies, and streams
+a fixed-length response directly into private R2 with an idempotent conditional write. Real provider
+generation remains disconnected and disabled until the surrounding Workflow is verified.
+
 The production build uses one Cloudflare Worker: Vite output is served through Workers Static Assets,
 while `/api/*` is routed to the Hono Worker. The product overview, legal pages, `/health`, and
 `/legal/documents.json` are public. Cloudflare Access and Worker-side JWT verification protect `/app*`
