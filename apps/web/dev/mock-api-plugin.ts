@@ -251,6 +251,7 @@ async function handleMockRequest(
         capabilities: {
           mockGeneration: false,
           privateAudioUpload: false,
+          retentionCleanup: false,
         },
         kind: "development",
         ownerId: "own_0123456789abcdef0123456789abcdef",

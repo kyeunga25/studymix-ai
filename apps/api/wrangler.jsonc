@@ -36,6 +36,9 @@
   "observability": {
     "enabled": true,
   },
+  "triggers": {
+    "crons": ["17 * * * *"],
+  },
   "vars": {
     "APP_ENV": "production",
     "ACCESS_TEAM_DOMAIN": "https://CHANGE-ME.cloudflareaccess.com",
@@ -46,6 +49,7 @@
     "REAL_GENERATION_ENABLED": "false",
     "JOB_WORKFLOW_ENABLED": "false",
     "R2_TRANSFER_ENABLED": "false",
+    "RETENTION_CLEANUP_ENABLED": "false",
     "R2_ACCOUNT_ID": "00000000000000000000000000000000",
     "R2_BUCKET_NAME": "change-me-private-audio",
     "R2_S3_ACCESS_KEY_ID": "CHANGE_ME_ACCESS_KEY",
@@ -53,7 +57,11 @@
     "MAX_UPLOAD_BYTES": "524288000",
     "MAX_ACTIVE_UPLOADS_PER_OWNER": "3",
     "MAX_ACTIVE_JOBS_PER_OWNER": "2",
+    "ABANDONED_UPLOAD_RETENTION_HOURS": "24",
+    "SOURCE_RETENTION_HOURS": "72",
+    "FAILED_ARTIFACT_RETENTION_HOURS": "24",
     "OUTPUT_RETENTION_HOURS": "168",
+    "RETENTION_CLEANUP_BATCH_SIZE": "50",
     "UPLOAD_URL_TTL_SECONDS": "900",
     "DOWNLOAD_URL_TTL_SECONDS": "900",
   },

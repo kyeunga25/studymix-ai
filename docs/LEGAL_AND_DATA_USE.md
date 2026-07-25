@@ -46,8 +46,8 @@ declaration versions are enforced by the shared Zod contract. A client checkbox 
 | Hashed Access subject and derived owner ID | Verified Access claims | Owner isolation and account status | Worker and D1 | Stored while the private-beta account and necessary audit records exist |
 | Legal document/version/time | User action plus server time | Evidence of governing versions | Worker and D1 | Retention schedule must be finalized; retain only while necessary for evidence/disputes |
 | File selected in default public deployment | User device | Local interface preview | Browser only | Not uploaded while private R2 is disabled |
-| Feature-gated staging audio upload | Approved tester | Direct private-object upload and metadata confirmation | Cloudflare R2 and owner-scoped D1 metadata only | Default/production off; explicit single-upload deletion exists; automatic cleanup is not operational |
-| Feature-gated synthetic mock outputs | Approved tester action | Verify the private asynchronous job and delivery flow without external AI | Cloudflare Workflow, private R2, and owner-scoped D1 metadata | Default/production off; output expiry is recorded, but automatic object cleanup is not operational |
+| Feature-gated staging audio upload | Approved tester | Direct private-object upload and metadata confirmation | Cloudflare R2 and owner-scoped D1 metadata only | Default/production off; explicit upload and terminal-job deletion plus scheduled cleanup are implemented and locally tested, but live Cron monitoring is not yet verified |
+| Feature-gated synthetic mock outputs | Approved tester action | Verify the private asynchronous job and delivery flow without external AI | Cloudflare Workflow, private R2, and owner-scoped D1 metadata | Default/production off; output expiry and retry-safe scheduled object cleanup are locally tested, but not yet enabled in production |
 | Operational event data | Worker | Security and troubleshooting | Cloudflare observability | Must exclude audio, filename, signed URL, assertion, secrets, and raw provider payloads |
 
 StudyMix AI does not ingest arbitrary remote URLs, scrape tracks or personal data from official sites,

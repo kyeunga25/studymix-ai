@@ -132,6 +132,20 @@ test("moves from a pending mock HTTP job to two playable result candidates", asy
   await expect(page.getByText(/AI output may not preserve every musical detail/)).toBeVisible();
 });
 
+test("lets a user delete a completed private mix and return to a clean workspace", async ({
+  page,
+}) => {
+  await prepareAuthorizedMix(page);
+  await page.getByRole("button", { name: "Generate 2 candidates" }).click();
+  await expect(page.getByRole("heading", { name: "Your study mix is ready" })).toBeVisible({
+    timeout: 5_000,
+  });
+
+  await page.getByRole("button", { name: "Delete this private mix" }).click();
+  await expect(page.getByRole("heading", { name: "Upload your audio" })).toBeVisible();
+  await expect(page.locator('input[type="file"]')).toHaveValue("");
+});
+
 test("shows a retryable error summary when the mock job fails", async ({ page }) => {
   await prepareAuthorizedMix(page, "/app?mockScenario=failed");
   await page.getByRole("button", { name: "Generate 2 candidates" }).click();
@@ -141,7 +155,8 @@ test("shows a retryable error summary when the mock job fails", async ({ page })
   await expect(alert).toContainText("We could not finish this study mix");
   await expect(alert).toContainText("Retry is available");
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Start another mix" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Delete this private mix" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start another mix" })).toHaveCount(0);
 });
 
 test("rejects a malformed mock job response with safe retry guidance", async ({ page }) => {

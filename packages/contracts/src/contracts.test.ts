@@ -4,6 +4,7 @@ import {
   apiEnvelopeSchema,
   acceptLegalDocumentsRequestSchema,
   createJobRequestSchema,
+  deleteJobResponseSchema,
   createUploadRequestSchema,
   createUploadResponseSchema,
   publicJobSchema,
@@ -68,6 +69,15 @@ describe("upload contracts", () => {
 });
 
 describe("preset and job contracts", () => {
+  it("validates the minimal private job deletion response", () => {
+    expect(deleteJobResponseSchema.parse({ jobId, status: "deleted" })).toEqual({
+      jobId,
+      status: "deleted",
+    });
+    expect(
+      deleteJobResponseSchema.safeParse({ jobId, status: "deleted", objectKey: "private" }).success,
+    ).toBe(false);
+  });
   it("requires bilingual public preset text", () => {
     expect(
       publicPresetSchema.safeParse({

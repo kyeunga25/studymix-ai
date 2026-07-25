@@ -189,7 +189,11 @@ The repository currently includes:
 - A feature-gated owner-scoped job API and Cloudflare Workflow that uses the credential-free mock provider
   to create two bounded synthetic WAV candidates in private R2, with idempotent metadata updates, active-job
   limits, persisted rights evidence, private playback URLs, and Workflow integration tests.
+- A feature-gated retention path with owner-scoped terminal-job deletion, hourly Cron handling, retry-safe
+  private R2 purging, 24-hour unattached/failed-artifact cleanup, 72-hour completed-source cleanup, and
+  7-day output expiry.
 
 Production R2 transfer and the server-side mock Workflow remain disabled until private staging checks
-pass. External generation, automatic cleanup, and provider callbacks also remain disabled. See
+pass. External generation and provider callbacks remain disabled. Production retention cleanup also stays
+off until its staging Cron, retry, and monitoring checks pass. See
 [`docs/TODO.md`](docs/TODO.md) for the current verified status without internal planning material.

@@ -73,6 +73,9 @@ const config = {
             bucket_name: r2BucketName,
           },
         ],
+        triggers: {
+          crons: ["17 * * * *"],
+        },
       }),
   ...(workflowName === undefined
     ? {}

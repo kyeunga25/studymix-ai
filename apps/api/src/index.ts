@@ -31,6 +31,7 @@ import {
   RepositoryLegalAcceptanceRequiredError,
   RepositoryNotFoundError,
   RepositoryQuotaError,
+  RepositoryStateError,
   attachOwnedJobWorkflow,
   confirmOwnedUpload,
   createJobIdempotently,
@@ -59,6 +60,13 @@ import {
   resolveMaxUploadBytes,
   resolveR2TransferConfiguration,
 } from "./r2-transfer";
+import {
+  RetentionCleanupConfigurationError,
+  isRetentionCleanupAvailable,
+  purgeOwnedTerminalJob,
+  resolveAbandonedUploadRetentionHours,
+  runRetentionCleanup,
+} from "./retention";
 
 export { GenerationWorkflow } from "./workflows/generation-workflow";
 
@@ -311,6 +319,7 @@ app.get("/api/auth/me", (context) => {
       capabilities: {
         mockGeneration: isMockGenerationAvailable(context.env),
         privateAudioUpload: isR2TransferAvailable(context.env),
+        retentionCleanup: isRetentionCleanupAvailable(context.env),
       },
       kind: owner.kind,
       ownerId: owner.ownerId,
@@ -601,6 +610,9 @@ app.post("/api/uploads/:uploadId/confirm", async (context) => {
     upload.id,
     object.size,
     now.toISOString(),
+    new Date(
+      now.getTime() + resolveAbandonedUploadRetentionHours(context.env) * 60 * 60 * 1_000,
+    ).toISOString(),
   );
   return context.json({
     data: toPublicUpload(confirmed),
@@ -775,6 +787,45 @@ app.get("/api/jobs/:jobId", async (context) => {
   return context.json({ data: job, error: null, requestId: createRequestId() });
 });
 
+app.delete("/api/jobs/:jobId", async (context) => {
+  const parsedJobId = jobIdSchema.safeParse(context.req.param("jobId"));
+  if (!parsedJobId.success) {
+    return errorResponse(context, 404, "NOT_FOUND", "The job was not found.", false);
+  }
+  const owner = context.get("owner");
+  try {
+    await purgeOwnedTerminalJob(context.env, owner.ownerId, parsedJobId.data, new Date());
+  } catch (error) {
+    if (error instanceof RepositoryNotFoundError) {
+      return errorResponse(context, 404, "NOT_FOUND", "The job was not found.", false);
+    }
+    if (error instanceof RepositoryStateError) {
+      return errorResponse(
+        context,
+        409,
+        "CONFLICT",
+        "Only a completed, failed, cancelled, or expired job can be deleted.",
+        false,
+      );
+    }
+    if (error instanceof RetentionCleanupConfigurationError) {
+      return errorResponse(
+        context,
+        503,
+        "INTERNAL_ERROR",
+        "Private deletion is not configured.",
+        true,
+      );
+    }
+    throw error;
+  }
+  return context.json({
+    data: { jobId: parsedJobId.data, status: "deleted" as const },
+    error: null,
+    requestId: createRequestId(),
+  });
+});
+
 app.post("/api/outputs/:outputId/download", async (context) => {
   const parsedOutputId = outputIdSchema.safeParse(context.req.param("outputId"));
   if (!parsedOutputId.success) {
@@ -866,4 +917,23 @@ app.onError((error, context) => {
   return errorResponse(context, 500, "INTERNAL_ERROR", "The request could not be completed.", true);
 });
 
-export default app;
+const worker = {
+  fetch(request, env, executionContext) {
+    return app.fetch(request, env, executionContext);
+  },
+  async scheduled(controller, env) {
+    const result = await runRetentionCleanup(env, new Date(controller.scheduledTime));
+    console.log(
+      JSON.stringify({
+        deletedJobs: result.deletedJobs,
+        deletedObjects: result.deletedObjects,
+        deletedSources: result.deletedSources,
+        deletedUnattachedUploads: result.deletedUnattachedUploads,
+        event: "retention_cleanup_completed",
+        skipped: result.skipped,
+      }),
+    );
+  },
+} satisfies ExportedHandler<Env>;
+
+export default worker;

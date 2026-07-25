@@ -216,10 +216,10 @@ export const legalPageContent: Record<LegalDocumentId, LegalPageContent> = {
         heading: { en: "6. Retention and deletion status", "zh-HK": "6. 保留及刪除狀態" },
         paragraphs: {
           en: [
-            "The intended policy after storage activation is: abandoned uploads and failed-job artifacts within 24 hours; source audio no later than 72 hours after completion; generated outputs after 7 days; and longer retention only for minimal metadata needed for security, cost, legal evidence, or disputes. These automatic object-deletion jobs and user deletion routes are not implemented in the current release, so audio upload and real generation must remain disabled. Legal acceptance records may be retained while needed to prove the governing version and resolve a dispute, then securely deleted or de-identified according to the final retention schedule.",
+            "The feature-gated retention implementation removes abandoned uploads and failed-job artifacts within 24 hours, source audio no later than 72 hours after completion, and generated outputs after 7 days. A signed-in owner can also delete a completed private mix immediately. Production audio upload and real generation remain disabled until the scheduled cleanup and deletion retry path are verified in staging. Minimal metadata may be retained only when needed for security, cost, legal evidence, or disputes. Legal acceptance records may be retained while needed to prove the governing version and resolve a dispute, then securely deleted or de-identified according to the final retention schedule.",
           ],
           "zh-HK": [
-            "儲存功能啟用後的預定政策為：放棄的上載及失敗工作產物於 24 小時內、來源音訊不遲於完成後 72 小時、生成輸出於 7 日後刪除；只有保安、成本、法律證據或爭議所需的最少元數據才可保留較久。現版本尚未實作自動物件刪除工作及用戶刪除路由，因此音訊上載及真實生成必須維持關閉。法律接受紀錄只會在證明適用版本及處理爭議所需期間保留，其後按最終保留表安全刪除或去識別化。",
+            "已加上功能開關的保留期實作會於 24 小時內移除放棄的上載及失敗工作產物、不遲於完成後 72 小時移除來源音訊，並於 7 日後移除生成輸出；已登入的擁有者亦可立即刪除已完成的私人 Mix。正式環境的音訊上載及真實生成會保持關閉，直至排程清理及刪除重試流程在 staging 完成驗證。只有保安、成本、法律證據或爭議所需的最少元數據才可保留較久。法律接受紀錄只會在證明適用版本及處理爭議所需期間保留，其後按最終保留表安全刪除或去識別化。",
           ],
         },
       },

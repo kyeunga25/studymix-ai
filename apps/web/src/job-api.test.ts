@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createJob, getJob, getOutputDownload } from "./job-api";
+import { createJob, deleteJob, getJob, getOutputDownload } from "./job-api";
 
 const now = "2026-07-25T10:00:00.000Z";
 const mockUploadId = "upl_00000000000000000000000000000001";
@@ -112,6 +112,56 @@ describe("job API client", () => {
     expect(fetchMock).toHaveBeenCalledWith(`/api/outputs/${outputId}/download`, {
       credentials: "same-origin",
       method: "POST",
+    });
+  });
+
+  it("requests owner-scoped private job deletion", async () => {
+    const fetchMock = vi.fn(async () =>
+      Promise.resolve(
+        Response.json({
+          data: { jobId: validJob.jobId, status: "deleted" },
+          error: null,
+          requestId: "req_delete",
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(deleteJob(validJob.jobId)).resolves.toEqual({
+      jobId: validJob.jobId,
+      status: "deleted",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(`/api/jobs/${validJob.jobId}`, {
+      credentials: "same-origin",
+      method: "DELETE",
+    });
+  });
+
+  it("preserves safe retry guidance when private deletion is unavailable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Promise.resolve(
+          Response.json(
+            {
+              data: null,
+              error: {
+                code: "INTERNAL_ERROR",
+                message: "Private deletion is temporarily unavailable.",
+                retryable: true,
+              },
+              requestId: "req_delete_retry",
+            },
+            { status: 503 },
+          ),
+        ),
+      ),
+    );
+
+    await expect(deleteJob(validJob.jobId)).rejects.toMatchObject({
+      code: "INTERNAL_ERROR",
+      requestId: "req_delete_retry",
+      retryable: true,
     });
   });
 
