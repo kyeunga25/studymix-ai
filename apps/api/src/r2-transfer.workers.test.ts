@@ -237,6 +237,9 @@ describe("private R2 transfer boundary", () => {
     expect(denied.status).toBe(404);
     expect(response.status).toBe(200);
     expect(new URL(body.data.downloadUrl).searchParams.get("X-Amz-Expires")).toBe("60");
+    expect(new URL(body.data.downloadUrl).searchParams.get("X-Amz-SignedHeaders")).not.toContain(
+      "content-type",
+    );
     expect(body.data.downloadUrl).not.toContain(env.R2_S3_SECRET_ACCESS_KEY);
   });
 

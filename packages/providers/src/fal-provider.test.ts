@@ -112,6 +112,42 @@ describe("fal music generation provider", () => {
     });
   });
 
+  it("maps completed queue errors without exposing provider messages", async () => {
+    const retryable = createProvider(
+      createQueue({
+        status: vi.fn(async (providerRequestId) => ({
+          error: "Sensitive upstream detail.",
+          error_type: "runner_connection_timeout",
+          request_id: providerRequestId,
+          status: "COMPLETED",
+        })),
+      }),
+    );
+    const terminal = createProvider(
+      createQueue({
+        status: vi.fn(async (providerRequestId) => ({
+          error: "Sensitive validation detail.",
+          error_type: "bad_request",
+          request_id: providerRequestId,
+          status: "COMPLETED",
+        })),
+      }),
+    );
+
+    await expect(retryable.getStatus("fal-request-1")).resolves.toEqual({
+      errorCode: "FAL_RUNNER_CONNECTION_TIMEOUT",
+      providerRequestId: "fal-request-1",
+      retryable: true,
+      status: "failed",
+    });
+    await expect(terminal.getStatus("fal-request-1")).resolves.toEqual({
+      errorCode: "FAL_BAD_REQUEST",
+      providerRequestId: "fal-request-1",
+      retryable: false,
+      status: "failed",
+    });
+  });
+
   it("returns only allowlisted output data and minimal provider metadata", async () => {
     const provider = createProvider(createQueue());
 

@@ -104,27 +104,29 @@ function objectUrl(configuration: R2TransferConfiguration, objectKey: string): s
   return `https://${configuration.accountId}.r2.cloudflarestorage.com/${configuration.bucketName}/${encodedKey}`;
 }
 
-export async function createSignedR2ObjectUrl({
-  configuration,
-  contentType,
-  method,
-  now,
-  objectKey,
-}: {
-  configuration: R2TransferConfiguration;
-  contentType?: string;
-  method: "GET" | "PUT";
-  now: Date;
-  objectKey: string;
-}): Promise<{ expiresAt: string; url: string }> {
+export async function createSignedR2ObjectUrl(
+  input:
+    | {
+        configuration: R2TransferConfiguration;
+        method: "GET";
+        now: Date;
+        objectKey: string;
+      }
+    | {
+        configuration: R2TransferConfiguration;
+        contentType: string;
+        method: "PUT";
+        now: Date;
+        objectKey: string;
+      },
+): Promise<{ expiresAt: string; url: string }> {
+  const { configuration, method, now, objectKey } = input;
   const parsedObjectKey = objectKeySchema.parse(objectKey);
   const ttlSeconds =
     method === "PUT" ? configuration.uploadUrlTtlSeconds : configuration.downloadUrlTtlSeconds;
   const headers = new Headers();
-  if (contentType !== undefined) {
-    headers.set("Content-Type", contentType);
-  }
-  if (method === "PUT") {
+  if (input.method === "PUT") {
+    headers.set("Content-Type", input.contentType);
     headers.set("If-None-Match", "*");
   }
 

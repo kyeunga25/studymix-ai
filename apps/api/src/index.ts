@@ -23,6 +23,7 @@ import {
   ensureWorkflowStarted,
   getOwnedPublicJob,
   isMockGenerationAvailable,
+  isRealGenerationAvailable,
   resolveGenerationWorkflowConfiguration,
 } from "./job-service";
 import { LegalConfigurationError, resolveLegalDocumentsManifest } from "./legal-documents";
@@ -319,6 +320,7 @@ app.get("/api/auth/me", (context) => {
       capabilities: {
         mockGeneration: isMockGenerationAvailable(context.env),
         privateAudioUpload: isR2TransferAvailable(context.env),
+        realGeneration: isRealGenerationAvailable(context.env),
         retentionCleanup: isRetentionCleanupAvailable(context.env),
       },
       kind: owner.kind,
@@ -667,7 +669,7 @@ app.post("/api/jobs", async (context) => {
         context,
         503,
         "PROVIDER_UNAVAILABLE",
-        "Private mock generation is not enabled.",
+        "Private generation is not enabled.",
         false,
       );
     }
@@ -705,7 +707,7 @@ app.post("/api/jobs", async (context) => {
       ownerId: owner.ownerId,
       presetId: preset.id,
       presetVersion: preset.version,
-      provider: "mock",
+      provider: configuration.provider,
       requestFingerprint,
       uploadId: parsed.data.uploadId,
     });
@@ -762,7 +764,7 @@ app.post("/api/jobs", async (context) => {
       context,
       503,
       "PROVIDER_UNAVAILABLE",
-      "Private mock generation could not be started. Retry the same request.",
+      "Private generation could not be started. Retry the same request.",
       true,
     );
   }

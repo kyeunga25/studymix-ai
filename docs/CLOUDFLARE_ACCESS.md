@@ -89,6 +89,38 @@ cleanup, 7-day output expiry, and safe retries before the feature is described a
 [Workers API](https://developers.cloudflare.com/workflows/build/workers-api/) remain the implementation
 reference.
 
+## 1.3 Prepare real-provider generation in isolated staging
+
+The fal Workflow path is default-off and must reuse the approved private R2 and Workflow bindings above.
+Set `FAL_KEY` only as a Worker secret. The checked-in `FAL_KEY` value is an intentionally invalid
+type-generation placeholder; the protected deployment generator does not publish it and `keep_vars`
+preserves the runtime secret.
+
+Configure these non-secret bounds in the staging Worker without printing their protected environment or
+resource values:
+
+```text
+GENERATION_PROVIDER=fal
+FAL_OUTPUT_EXPIRATION_SECONDS
+FAL_QUEUE_START_TIMEOUT_SECONDS
+FAL_POLL_INTERVAL_SECONDS
+FAL_MAX_POLL_ATTEMPTS
+MAX_PROVIDER_OUTPUT_BYTES
+PROVIDER_OUTPUT_TIMEOUT_SECONDS
+```
+
+Keep `REAL_GENERATION_ENABLED=false` until Turnstile verification, owner usage limits, authorized test
+audio, provider-account terms, retention, and deletion checks are ready. The private source download TTL
+must exceed the queue-start timeout by at least 60 seconds. When the staging gate is opened, enable
+`R2_TRANSFER_ENABLED`, `JOB_WORKFLOW_ENABLED`, and `REAL_GENERATION_ENABLED` only in that environment and
+confirm the API advertises real generation only while every required binding, secret, and bound is valid.
+
+Use a single authorized, non-sensitive audio fixture for the manual provider check. Verify two unique
+provider request IDs, bounded polling, streamed private-R2 outputs, no provider URL or signed URL in D1 or
+logs, owner-only playback/download, terminal deletion, and expiry cleanup. An ambiguous submission must
+fail closed rather than send a second request automatically. Do not enable callbacks until a separately
+verified callback mechanism exists; polling is the current correctness path.
+
 ## 2. Protect the private paths with Access
 
 In Cloudflare Zero Trust:

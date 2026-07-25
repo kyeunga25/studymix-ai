@@ -251,6 +251,7 @@ async function handleMockRequest(
         capabilities: {
           mockGeneration: false,
           privateAudioUpload: false,
+          realGeneration: false,
           retentionCleanup: false,
         },
         kind: "development",

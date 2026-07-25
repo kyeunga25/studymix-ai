@@ -128,13 +128,16 @@ Both `R2_TRANSFER_ENABLED` and `JOB_WORKFLOW_ENABLED` remain `false` by default.
 
 The provider package also contains an offline-tested fal ACE-Step audio-to-audio adapter. It uses the
 asynchronous queue, validates external responses, disables provider JSON payload storage, requests a
-bounded output lifetime, and returns only allowlisted result metadata. It is not connected to the Worker
-or enabled in production; local development and CI continue to use the credential-free mock provider.
+bounded output lifetime, and returns only allowlisted result metadata. The feature-gated Workflow can
+select this adapter, issue a short-lived private source URL, poll with fixed bounds, and persist only
+minimal request metadata. It is disabled by default; local development and CI continue to use the
+credential-free mock provider and never make paid calls.
 
 The Worker includes a separately tested provider-output ingestion boundary. It accepts only expected
 HTTPS provider hosts and audio media types, refuses redirects and encoded or unbounded bodies, and streams
 a fixed-length response directly into private R2 with an idempotent conditional write. Real provider
-generation remains disconnected and disabled until the surrounding Workflow is verified.
+generation uses this boundary before marking an output ready. The real-provider path remains disabled
+until the staging, legal, abuse-control, and deletion gates are verified.
 
 The production build uses one Cloudflare Worker: Vite output is served through Workers Static Assets,
 while `/api/*` is routed to the Hono Worker. The product overview, legal pages, `/health`, and
@@ -199,11 +202,14 @@ The repository currently includes:
 - A feature-gated owner-scoped job API and Cloudflare Workflow that uses the credential-free mock provider
   to create two bounded synthetic WAV candidates in private R2, with idempotent metadata updates, active-job
   limits, persisted rights evidence, private playback URLs, and Workflow integration tests.
+- A default-off fal Workflow path with strict runtime configuration, private-source validation and signing,
+  at-most-once submission steps, bounded queue polling, safe provider-error mapping, streamed private-R2
+  output ingestion, nullable provider metadata, and offline tests that make no paid requests.
 - A feature-gated retention path with owner-scoped terminal-job deletion, hourly Cron handling, retry-safe
   private R2 purging, 24-hour unattached/failed-artifact cleanup, 72-hour completed-source cleanup, and
   7-day output expiry.
 
-Production R2 transfer and the server-side mock Workflow remain disabled until private staging checks
-pass. External generation and provider callbacks remain disabled. Production retention cleanup also stays
-off until its staging Cron, retry, and monitoring checks pass. See
+Production R2 transfer and both server-side Workflow modes remain disabled until private staging checks
+pass. External generation and provider callbacks remain disabled in production. Production retention
+cleanup also stays off until its staging Cron, retry, and monitoring checks pass. See
 [`docs/TODO.md`](docs/TODO.md) for the current verified status without internal planning material.

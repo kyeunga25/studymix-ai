@@ -9,11 +9,11 @@ lawyer must confirm the operator identity, service address, consumer terms, liab
 copyright position, cross-border disclosures, and complaint process before a public launch.
 
 The current code has authentication, owner-scoped D1 metadata, legal-document APIs, and the web shell.
-It also contains default-off private-R2 upload and server-side mock Workflow slices. The mock Workflow
-creates synthetic tones without sending source audio to an external provider. Production R2 upload,
-server-side mock generation, external AI generation, provider callbacks, and automatic object deletion
-remain disabled until their release gates pass. Public copy must not describe a test-only control as
-already operational.
+It also contains default-off private-R2 upload plus mock and fal Workflow modes. The mock Workflow creates
+synthetic tones without sending source audio to an external provider. The fal mode is locally wired and
+offline-tested but has not made a paid or real-audio request. Production R2 upload, server-side
+generation, provider callbacks, and automatic object deletion remain disabled until their release gates
+pass. Public copy must not describe a test-only control as already operational.
 
 ## Versioned website documents
 
@@ -48,6 +48,7 @@ declaration versions are enforced by the shared Zod contract. A client checkbox 
 | File selected in default public deployment | User device | Local interface preview | Browser only | Not uploaded while private R2 is disabled |
 | Feature-gated staging audio upload | Approved tester | Direct private-object upload and metadata confirmation | Cloudflare R2 and owner-scoped D1 metadata only | Default/production off; explicit upload and terminal-job deletion plus scheduled cleanup are implemented and locally tested, but live Cron monitoring is not yet verified |
 | Feature-gated synthetic mock outputs | Approved tester action | Verify the private asynchronous job and delivery flow without external AI | Cloudflare Workflow, private R2, and owner-scoped D1 metadata | Default/production off; output expiry and retry-safe scheduled object cleanup are locally tested, but not yet enabled in production |
+| Feature-gated real-provider audio | Approved tester using authorized audio | Private audio-to-audio generation and result delivery | Cloudflare, fal.ai, private R2, and owner-scoped D1 metadata | Default/production off; Workflow mapping and bounded private ingestion are offline-tested, but no paid or real-audio staging check has run |
 | Operational event data | Worker | Security and troubleshooting | Cloudflare observability | Must exclude audio, filename, signed URL, assertion, secrets, and raw provider payloads |
 
 StudyMix AI does not ingest arbitrary remote URLs, scrape tracks or personal data from official sites,

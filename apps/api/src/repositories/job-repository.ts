@@ -155,6 +155,7 @@ export async function createJobIdempotently(
       WHERE uploads.id = ?3
         AND uploads.owner_id = ?2
         AND uploads.status = 'confirmed'
+        AND uploads.expires_at > ?9
         AND (
           SELECT COUNT(*) FROM jobs
           WHERE jobs.owner_id = ?2
@@ -193,8 +194,14 @@ export async function createJobIdempotently(
   }
 
   const confirmedUpload = await db
-    .prepare("SELECT id FROM uploads WHERE id = ?1 AND owner_id = ?2 AND status = 'confirmed'")
-    .bind(parsed.uploadId, parsed.ownerId)
+    .prepare(
+      `SELECT id FROM uploads
+       WHERE id = ?1
+         AND owner_id = ?2
+         AND status = 'confirmed'
+         AND expires_at > ?3`,
+    )
+    .bind(parsed.uploadId, parsed.ownerId, parsed.createdAt)
     .first();
   if (confirmedUpload === null) {
     throw new RepositoryNotFoundError("Confirmed upload was not found for this owner.");

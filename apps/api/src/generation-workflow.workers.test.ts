@@ -8,7 +8,14 @@ import { env, introspectWorkflow } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { app } from "./index";
+import {
+  GenerationWorkflowConfigurationError,
+  isMockGenerationAvailable,
+  isRealGenerationAvailable,
+  resolveGenerationWorkflowConfiguration,
+} from "./job-service";
 import { recordCurrentLegalAcceptances } from "./repositories";
+import { ensureFirstProviderSubmissionAttempt } from "./workflows/generation-workflow";
 
 const uploadEnvelopeSchema = apiEnvelopeSchema(createUploadResponseSchema);
 const jobEnvelopeSchema = apiEnvelopeSchema(publicJobSchema);
@@ -231,5 +238,41 @@ describe("feature-gated mock generation Workflow", () => {
       "PROVIDER_UNAVAILABLE",
     );
     expect(count?.total).toBe(0);
+  });
+
+  it("resolves valid fal configuration without making a provider request", () => {
+    const falEnv: Env = {
+      ...env,
+      DOWNLOAD_URL_TTL_SECONDS: "900",
+      FAL_KEY: "test-only-fal-credential-000001",
+      GENERATION_PROVIDER: "fal",
+      REAL_GENERATION_ENABLED: "true",
+    };
+
+    const configuration = resolveGenerationWorkflowConfiguration(falEnv);
+    expect(configuration.provider).toBe("fal");
+    expect(isRealGenerationAvailable(falEnv)).toBe(true);
+    expect(isMockGenerationAvailable(falEnv)).toBe(false);
+  });
+
+  it("fails closed for a placeholder fal credential", () => {
+    const falEnv: Env = {
+      ...env,
+      DOWNLOAD_URL_TTL_SECONDS: "900",
+      GENERATION_PROVIDER: "fal",
+      REAL_GENERATION_ENABLED: "true",
+    };
+
+    expect(() => resolveGenerationWorkflowConfiguration(falEnv)).toThrow(
+      GenerationWorkflowConfigurationError,
+    );
+    expect(isRealGenerationAvailable(falEnv)).toBe(false);
+  });
+
+  it("blocks duplicate provider submission attempts", () => {
+    expect(() => ensureFirstProviderSubmissionAttempt(1)).not.toThrow();
+    expect(() => ensureFirstProviderSubmissionAttempt(2)).toThrow(
+      "a duplicate request was not sent",
+    );
   });
 });

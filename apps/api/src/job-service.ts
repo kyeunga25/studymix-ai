@@ -9,18 +9,22 @@ import {
 } from "@studymix/contracts";
 import { z } from "zod";
 import { getOwnedJob, listOwnedOutputs } from "./repositories";
-import { isR2TransferAvailable } from "./r2-transfer";
+import {
+  isR2TransferAvailable,
+  resolveR2TransferConfiguration,
+  type R2TransferConfiguration,
+} from "./r2-transfer";
 
 export class GenerationWorkflowDisabledError extends Error {
   constructor() {
-    super("Mock generation Workflow is disabled.");
+    super("Generation Workflow is disabled.");
     this.name = "GenerationWorkflowDisabledError";
   }
 }
 
 export class GenerationWorkflowConfigurationError extends Error {
   constructor() {
-    super("Mock generation Workflow is not configured.");
+    super("Generation Workflow is not configured.");
     this.name = "GenerationWorkflowConfigurationError";
   }
 }
@@ -34,11 +38,27 @@ export const generationWorkflowPayloadSchema = z
 
 export type GenerationWorkflowPayload = z.infer<typeof generationWorkflowPayloadSchema>;
 
-export type GenerationWorkflowConfiguration = Readonly<{
+type GenerationWorkflowBaseConfiguration = Readonly<{
   maxActiveJobs: number;
   outputRetentionHours: number;
   workflow: Workflow<GenerationWorkflowPayload>;
 }>;
+
+export type FalGenerationConfiguration = Readonly<{
+  credentials: string;
+  maxOutputBytes: number;
+  maxPollAttempts: number;
+  outputExpirationSeconds: number;
+  outputTimeoutMilliseconds: number;
+  pollIntervalMilliseconds: number;
+  queueStartTimeoutSeconds: number;
+  r2: R2TransferConfiguration;
+}>;
+
+export type GenerationWorkflowConfiguration =
+  | (GenerationWorkflowBaseConfiguration & Readonly<{ provider: "mock" }>)
+  | (GenerationWorkflowBaseConfiguration &
+      Readonly<{ fal: FalGenerationConfiguration; provider: "fal" }>);
 
 function parseInteger(value: string, minimum: number, maximum: number): number {
   const parsed = Number(value);
@@ -48,30 +68,74 @@ function parseInteger(value: string, minimum: number, maximum: number): number {
   return parsed;
 }
 
-export function resolveGenerationWorkflowConfiguration(env: Env): GenerationWorkflowConfiguration {
-  if (env.JOB_WORKFLOW_ENABLED !== "true") {
-    throw new GenerationWorkflowDisabledError();
+function resolveFalGenerationConfiguration(env: Env): FalGenerationConfiguration {
+  const credentials = z
+    .string()
+    .trim()
+    .min(20)
+    .max(512)
+    .refine((value) => !/^change[-_]?me/i.test(value))
+    .safeParse(env.FAL_KEY);
+  if (!credentials.success) {
+    throw new GenerationWorkflowConfigurationError();
   }
-  if (
-    env.GENERATION_PROVIDER !== "mock" ||
-    env.REAL_GENERATION_ENABLED !== "false" ||
-    !isR2TransferAvailable(env) ||
-    env.GENERATION_WORKFLOW === undefined
-  ) {
+
+  let r2: R2TransferConfiguration;
+  try {
+    r2 = resolveR2TransferConfiguration(env);
+  } catch {
+    throw new GenerationWorkflowConfigurationError();
+  }
+  const queueStartTimeoutSeconds = parseInteger(env.FAL_QUEUE_START_TIMEOUT_SECONDS, 30, 3_600);
+  if (r2.downloadUrlTtlSeconds < queueStartTimeoutSeconds + 60) {
     throw new GenerationWorkflowConfigurationError();
   }
 
   return {
+    credentials: credentials.data,
+    maxOutputBytes: parseInteger(env.MAX_PROVIDER_OUTPUT_BYTES, 1, 524_288_000),
+    maxPollAttempts: parseInteger(env.FAL_MAX_POLL_ATTEMPTS, 1, 240),
+    outputExpirationSeconds: parseInteger(env.FAL_OUTPUT_EXPIRATION_SECONDS, 300, 604_800),
+    outputTimeoutMilliseconds: parseInteger(env.PROVIDER_OUTPUT_TIMEOUT_SECONDS, 5, 120) * 1_000,
+    pollIntervalMilliseconds: parseInteger(env.FAL_POLL_INTERVAL_SECONDS, 2, 60) * 1_000,
+    queueStartTimeoutSeconds,
+    r2,
+  };
+}
+
+export function resolveGenerationWorkflowConfiguration(env: Env): GenerationWorkflowConfiguration {
+  if (env.JOB_WORKFLOW_ENABLED !== "true") {
+    throw new GenerationWorkflowDisabledError();
+  }
+  if (!isR2TransferAvailable(env) || env.GENERATION_WORKFLOW === undefined) {
+    throw new GenerationWorkflowConfigurationError();
+  }
+
+  const base = {
     maxActiveJobs: parseInteger(env.MAX_ACTIVE_JOBS_PER_OWNER, 1, 20),
     outputRetentionHours: parseInteger(env.OUTPUT_RETENTION_HOURS, 1, 720),
     workflow: env.GENERATION_WORKFLOW,
   };
+  if (env.GENERATION_PROVIDER === "mock" && env.REAL_GENERATION_ENABLED === "false") {
+    return { ...base, provider: "mock" };
+  }
+  if (env.GENERATION_PROVIDER === "fal" && env.REAL_GENERATION_ENABLED === "true") {
+    return { ...base, fal: resolveFalGenerationConfiguration(env), provider: "fal" };
+  }
+  throw new GenerationWorkflowConfigurationError();
 }
 
 export function isMockGenerationAvailable(env: Env): boolean {
   try {
-    resolveGenerationWorkflowConfiguration(env);
-    return true;
+    return resolveGenerationWorkflowConfiguration(env).provider === "mock";
+  } catch {
+    return false;
+  }
+}
+
+export function isRealGenerationAvailable(env: Env): boolean {
+  try {
+    return resolveGenerationWorkflowConfiguration(env).provider === "fal";
   } catch {
     return false;
   }

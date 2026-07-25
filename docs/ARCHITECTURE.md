@@ -26,7 +26,7 @@ Workflow
   ├── Submit candidate 1 ───────────────► MusicGenerationProvider
   ├── Submit candidate 2 ───────────────► MusicGenerationProvider
   │                                         ├── credential-free mock
-  │                                         └── fal.ai ACE-Step (disabled)
+  │                                         └── fal.ai ACE-Step (default-off)
   ├── Poll/verify provider results
   ├── Stream outputs to R2
   ├── Update D1 state
@@ -278,18 +278,28 @@ Workflow.run
 
 Each `step.do` body must be safe to retry.
 
-### Verified mock Workflow slice
+### Verified generation Workflow slices
 
-The current server-side slice is deliberately limited to `GENERATION_PROVIDER=mock`. It validates the
-external Workflow payload with Zod, pins the preset version, uses the job ID as the Workflow instance ID,
-and stores two bounded synthetic WAV tones through the private R2 binding. Provider requests, outputs,
-rights evidence, usage, and every state transition are owner-scoped and idempotent. R2 writes use a
-create-only condition and verify existing object metadata on a retry. The source object is not read or
-sent to any external service in mock mode.
+The credential-free `GENERATION_PROVIDER=mock` mode validates the external Workflow payload with Zod,
+pins the preset version, uses the job ID as the Workflow instance ID, and stores two bounded synthetic
+WAV tones through the private R2 binding. Provider requests, outputs, rights evidence, usage, and every
+state transition are owner-scoped and idempotent. R2 writes use a create-only condition and verify
+existing object metadata on a retry. The source object is not read or sent to any external service in
+mock mode.
+
+The same feature-gated Workflow can select `GENERATION_PROVIDER=fal` only when the real-generation kill
+switch, private R2 transfer, Workflow binding, server secret, and bounded queue/output settings are all
+valid. It re-verifies the confirmed, unexpired source object; creates the short-lived signed source URL
+inside the sensitive submission step; prevents automatic retry after an ambiguous external submission;
+persists the returned request ID; polls with fixed attempt and sleep limits; and streams the allowlisted
+provider result into private R2 before recording completion. Neither the signed source URL nor the
+provider output URL is returned from a Workflow step or stored in D1. CI configuration is deliberately
+invalid for real generation and no automated test makes a provider request.
 
 `POST /api/jobs`, `GET /api/jobs/:jobId`, and the output-download route remain behind authentication.
 The client receives only public job metadata and short-lived signed playback URLs, never R2 object keys
-or Workflow internals. The production-default flags keep both R2 transfer and this Workflow disabled.
+or Workflow internals. The production-default flags keep R2 transfer, the Workflow, and real generation
+disabled.
 
 ## 7.1 Legal-document and acceptance boundary
 
@@ -395,8 +405,9 @@ streams through a byte-counting transform and a Cloudflare `FixedLengthStream` i
 `etagDoesNotMatch: "*"` conditional write. The stored object contains only content type and an ingestion
 version marker. Replays first verify the existing private object so an expired provider URL is not fetched
 again. Empty, oversized, encoded, redirected, mismatched, or non-audio responses fail closed; no code path
-buffers a complete provider audio response in Worker memory. This boundary has Miniflare integration tests
-but is not yet connected to real generation.
+buffers a complete provider audio response in Worker memory. This boundary is connected to the
+default-off fal Workflow and has Miniflare integration tests. It is not a claim that external generation
+is enabled or production-ready.
 
 ## 12. Authentication strategy
 
@@ -457,6 +468,12 @@ MAX_ACTIVE_JOBS_PER_OWNER
 UPLOAD_URL_TTL_SECONDS
 DOWNLOAD_URL_TTL_SECONDS
 OUTPUT_RETENTION_HOURS
+FAL_OUTPUT_EXPIRATION_SECONDS
+FAL_QUEUE_START_TIMEOUT_SECONDS
+FAL_POLL_INTERVAL_SECONDS
+FAL_MAX_POLL_ATTEMPTS
+MAX_PROVIDER_OUTPUT_BYTES
+PROVIDER_OUTPUT_TIMEOUT_SECONDS
 ```
 
 Secrets:
@@ -474,14 +491,14 @@ Generate Worker binding types using Wrangler. Do not hand-maintain an `Env` inte
 ## 14.1 Data lifecycle and disclosure status
 
 The codebase contains a feature-gated direct-to-private-R2 upload slice, owner-scoped upload and
-terminal-job deletion, a feature-gated mock Workflow that writes two synthetic private outputs, and an
-hourly retention handler. The default and production settings remain `R2_TRANSFER_ENABLED=false`,
-`JOB_WORKFLOW_ENABLED=false`, and `RETENTION_CLEANUP_ENABLED=false`; no production audio collection or
-server-side generation is claimed until a separate staging bucket, exact-origin CORS, signed-URL expiry,
-Cron monitoring, and browser checks pass. Cleanup first makes metadata inaccessible, deletes private R2
-objects, then marks object metadata deleted; interrupted deletion remains eligible for the next run. The
-configured windows cover unattached uploads and failed artifacts after 24 hours, completed sources after
-72 hours, and outputs after 7 days. External generation remains disabled.
+terminal-job deletion, mock and fal Workflow modes, and an hourly retention handler. The default and
+production settings remain `R2_TRANSFER_ENABLED=false`, `JOB_WORKFLOW_ENABLED=false`,
+`REAL_GENERATION_ENABLED=false`, and `RETENTION_CLEANUP_ENABLED=false`; no production audio collection
+or server-side generation is claimed until a separate staging bucket, exact-origin CORS, signed-URL
+expiry, Cron monitoring, and browser checks pass. Cleanup first makes metadata inaccessible, deletes
+private R2 objects, then marks object metadata deleted; interrupted deletion remains eligible for the
+next run. The configured windows cover unattached uploads and failed artifacts after 24 hours, completed
+sources after 72 hours, and outputs after 7 days. External generation remains disabled in production.
 
 Legal acceptance records are metadata evidence, not audio. Their final retention period must be
 documented before launch and limited to what is necessary for governing-version proof, security, and
@@ -491,9 +508,10 @@ live disputes.
 
 - Cloudflare is the current identity, Worker, and D1 processor. Automatic placement and
   location hints do not justify a Hong Kong-only residency claim.
-- External generation is disabled. The fal adapter requests no JSON payload storage and a bounded media
-  expiry, but real generation must remain disabled until provider terms, staging output ingestion,
-  duplicate-submission recovery, and deletion behavior are verified end to end.
+- External generation is disabled in production. The fal adapter requests no JSON payload storage and a
+  bounded media expiry, and the Workflow streams outputs into private R2. Real generation must remain
+  disabled until provider terms, authorized-audio staging checks, abuse controls, output delivery, and
+  deletion behavior are verified end to end.
 - The application never ingests user-supplied URLs or scrapes official/third-party data-source sites or
   APIs for tracks.
 - A provider URL is untrusted transport input, not a public result or proof of rights. Verified output is

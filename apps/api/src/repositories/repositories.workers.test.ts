@@ -138,6 +138,35 @@ describe("D1 repositories", () => {
     expect(rowCount?.total).toBe(0);
   });
 
+  it("rejects an expired confirmed upload when creating a job", async () => {
+    const owner = ownerContext("1");
+    const uploadId = await createConfirmedUpload(owner);
+    await env.DB.prepare("UPDATE uploads SET expires_at = ?1 WHERE id = ?2")
+      .bind("2026-07-24T09:59:59.000Z", uploadId)
+      .run();
+
+    await expect(
+      createJobIdempotently(env.DB, {
+        createdAt: now,
+        expiresAt: later,
+        id: createSecureId("job"),
+        idempotencyKey: "job-request-expired-upload",
+        maxActiveJobs: 2,
+        ownerId: owner.ownerId,
+        presetId: "soft-piano",
+        presetVersion: 1,
+        provider: "mock",
+        requestFingerprint: "8".repeat(64),
+        uploadId,
+      }),
+    ).rejects.toBeInstanceOf(RepositoryNotFoundError);
+
+    const rowCount = await env.DB.prepare("SELECT COUNT(*) AS total FROM jobs").first<{
+      total: number;
+    }>();
+    expect(rowCount?.total).toBe(0);
+  });
+
   it("rejects reusing an idempotency key for a different request", async () => {
     const owner = ownerContext("1");
     const uploadId = await createConfirmedUpload(owner);
@@ -474,13 +503,18 @@ describe("D1 repositories", () => {
       jobId: created.job.id,
       ownerId: owner.ownerId,
       providerRequestId,
+      seed: 42,
     };
-    await markOwnedProviderRequestCompleted(env.DB, completed);
-    await markOwnedProviderRequestCompleted(env.DB, completed);
+    await expect(markOwnedProviderRequestCompleted(env.DB, completed)).resolves.toMatchObject({
+      seed: 42,
+    });
+    await expect(markOwnedProviderRequestCompleted(env.DB, completed)).resolves.toMatchObject({
+      seed: 42,
+    });
     const ready = {
       candidateIndex: 0 as const,
       contentType: "audio/wav",
-      durationSeconds: 1,
+      durationSeconds: null,
       jobId: created.job.id,
       ownerId: owner.ownerId,
       sizeBytes: 16_044,
