@@ -18,6 +18,7 @@ export default defineConfig({
             LEGAL_CONTACT_EMAIL: "privacy@example.test",
             GENERATION_PROVIDER: "mock",
             REAL_GENERATION_ENABLED: "false",
+            JOB_WORKFLOW_ENABLED: "true",
             R2_TRANSFER_ENABLED: "true",
             R2_ACCOUNT_ID: "00000000000000000000000000000000",
             R2_BUCKET_NAME: "change-me-private-audio",
@@ -25,6 +26,8 @@ export default defineConfig({
             R2_S3_SECRET_ACCESS_KEY: "test-secret-access-key-000000000001",
             MAX_UPLOAD_BYTES: "524288000",
             MAX_ACTIVE_UPLOADS_PER_OWNER: "3",
+            MAX_ACTIVE_JOBS_PER_OWNER: "2",
+            OUTPUT_RETENTION_HOURS: "168",
             UPLOAD_URL_TTL_SECONDS: "60",
             DOWNLOAD_URL_TTL_SECONDS: "60",
             TEST_MIGRATIONS: migrations,
@@ -33,6 +36,12 @@ export default defineConfig({
           compatibilityFlags: ["nodejs_compat"],
           d1Databases: ["DB"],
           r2Buckets: ["AUDIO_BUCKET"],
+          workflows: {
+            GENERATION_WORKFLOW: {
+              className: "GenerationWorkflow",
+              name: "change-me-generation-workflow",
+            },
+          },
           serviceBindings: {
             ASSETS: () => new Response("test asset", { status: 200 }),
           },

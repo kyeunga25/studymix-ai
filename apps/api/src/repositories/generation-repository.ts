@@ -8,7 +8,7 @@ import {
   uploadIdSchema,
 } from "@studymix/contracts";
 import { z } from "zod";
-import { RepositoryNotFoundError } from "./errors";
+import { RepositoryConflictError, RepositoryNotFoundError, RepositoryStateError } from "./errors";
 
 const providerSchema = z.enum(["mock", "fal", "self-hosted"]);
 const providerRequestIdSchema = z.string().regex(/^req_[0-9a-f]{32}$/);
@@ -165,6 +165,26 @@ function mapUsageEventRow(value: unknown): UsageEventRecord {
   };
 }
 
+async function getOwnedProviderRequestForCandidate(
+  db: D1Database,
+  ownerId: string,
+  jobId: string,
+  candidateIndex: 0 | 1,
+): Promise<ProviderRequestRecord | null> {
+  const row = await db
+    .prepare(
+      `SELECT provider_requests.*
+       FROM provider_requests
+       INNER JOIN jobs ON jobs.id = provider_requests.job_id
+       WHERE jobs.owner_id = ?1
+         AND jobs.id = ?2
+         AND provider_requests.candidate_index = ?3`,
+    )
+    .bind(ownerId, jobId, candidateIndex)
+    .first();
+  return row === null ? null : mapProviderRequestRow(row);
+}
+
 export async function createProviderRequest(
   db: D1Database,
   input: {
@@ -193,15 +213,29 @@ export async function createProviderRequest(
       SELECT ?1, jobs.id, ?4, ?5, NULL, 'pending', NULL, NULL, NULL, NULL, NULL
       FROM jobs
       WHERE jobs.id = ?2 AND jobs.owner_id = ?3
+      ON CONFLICT (job_id, candidate_index) DO NOTHING
       RETURNING *`,
     )
     .bind(parsed.id, parsed.jobId, parsed.ownerId, parsed.candidateIndex, parsed.provider)
     .first();
 
-  if (row === null) {
+  if (row !== null) {
+    return mapProviderRequestRow(row);
+  }
+
+  const existing = await getOwnedProviderRequestForCandidate(
+    db,
+    parsed.ownerId,
+    parsed.jobId,
+    parsed.candidateIndex,
+  );
+  if (existing === null) {
     throw new RepositoryNotFoundError("Job was not found for this owner.");
   }
-  return mapProviderRequestRow(row);
+  if (existing.provider !== parsed.provider) {
+    throw new RepositoryConflictError("Candidate provider does not match the existing request.");
+  }
+  return existing;
 }
 
 export async function createOutput(
@@ -236,6 +270,7 @@ export async function createOutput(
       SELECT ?1, jobs.id, ?4, ?5, NULL, NULL, NULL, 'pending', ?6, ?7
       FROM jobs
       WHERE jobs.id = ?2 AND jobs.owner_id = ?3
+      ON CONFLICT (job_id, candidate_index) DO NOTHING
       RETURNING *`,
     )
     .bind(
@@ -249,10 +284,243 @@ export async function createOutput(
     )
     .first();
 
-  if (row === null) {
+  if (row !== null) {
+    return mapOutputRow(row);
+  }
+
+  const existing = await getOwnedOutputForCandidate(
+    db,
+    parsed.ownerId,
+    parsed.jobId,
+    parsed.candidateIndex,
+  );
+  if (existing === null) {
     throw new RepositoryNotFoundError("Job was not found for this owner.");
   }
-  return mapOutputRow(row);
+  return existing;
+}
+
+async function getOwnedOutputForCandidate(
+  db: D1Database,
+  ownerId: string,
+  jobId: string,
+  candidateIndex: 0 | 1,
+): Promise<OutputRecord | null> {
+  const row = await db
+    .prepare(
+      `SELECT outputs.*
+       FROM outputs
+       INNER JOIN jobs ON jobs.id = outputs.job_id
+       WHERE jobs.owner_id = ?1 AND jobs.id = ?2 AND outputs.candidate_index = ?3`,
+    )
+    .bind(ownerId, jobId, candidateIndex)
+    .first();
+  return row === null ? null : mapOutputRow(row);
+}
+
+export async function listOwnedOutputs(
+  db: D1Database,
+  ownerId: string,
+  jobId: string,
+): Promise<OutputRecord[]> {
+  const parsedOwnerId = ownerIdSchema.parse(ownerId);
+  const parsedJobId = jobIdSchema.parse(jobId);
+  const result = await db
+    .prepare(
+      `SELECT outputs.*
+       FROM outputs
+       INNER JOIN jobs ON jobs.id = outputs.job_id
+       WHERE jobs.owner_id = ?1 AND jobs.id = ?2
+       ORDER BY outputs.candidate_index`,
+    )
+    .bind(parsedOwnerId, parsedJobId)
+    .all();
+  return result.results.map(mapOutputRow);
+}
+
+export async function markOwnedProviderRequestSubmitted(
+  db: D1Database,
+  input: {
+    candidateIndex: 0 | 1;
+    jobId: string;
+    ownerId: string;
+    providerRequestId: string;
+    submittedAt: string;
+  },
+): Promise<ProviderRequestRecord> {
+  const parsed = z
+    .object({
+      candidateIndex: candidateIndexSchema,
+      jobId: jobIdSchema,
+      ownerId: ownerIdSchema,
+      providerRequestId: z.string().trim().min(1).max(256),
+      submittedAt: isoDateTimeSchema,
+    })
+    .parse(input);
+  const row = await db
+    .prepare(
+      `UPDATE provider_requests
+       SET provider_request_id = ?1, status = 'submitted', submitted_at = ?2
+       WHERE job_id = ?3
+         AND candidate_index = ?4
+         AND status = 'pending'
+         AND EXISTS (
+           SELECT 1 FROM jobs
+           WHERE jobs.id = provider_requests.job_id AND jobs.owner_id = ?5
+         )
+       RETURNING *`,
+    )
+    .bind(
+      parsed.providerRequestId,
+      parsed.submittedAt,
+      parsed.jobId,
+      parsed.candidateIndex,
+      parsed.ownerId,
+    )
+    .first();
+  if (row !== null) {
+    return mapProviderRequestRow(row);
+  }
+
+  const existing = await getOwnedProviderRequestForCandidate(
+    db,
+    parsed.ownerId,
+    parsed.jobId,
+    parsed.candidateIndex,
+  );
+  if (
+    existing !== null &&
+    (existing.status === "submitted" || existing.status === "completed") &&
+    existing.providerRequestId === parsed.providerRequestId
+  ) {
+    return existing;
+  }
+  throw new RepositoryStateError("Provider request is not available for submission.");
+}
+
+export async function markOwnedProviderRequestCompleted(
+  db: D1Database,
+  input: {
+    candidateIndex: 0 | 1;
+    completedAt: string;
+    jobId: string;
+    ownerId: string;
+    providerRequestId: string;
+  },
+): Promise<ProviderRequestRecord> {
+  const parsed = z
+    .object({
+      candidateIndex: candidateIndexSchema,
+      completedAt: isoDateTimeSchema,
+      jobId: jobIdSchema,
+      ownerId: ownerIdSchema,
+      providerRequestId: z.string().trim().min(1).max(256),
+    })
+    .parse(input);
+  const row = await db
+    .prepare(
+      `UPDATE provider_requests
+       SET status = 'completed', completed_at = ?1
+       WHERE job_id = ?2
+         AND candidate_index = ?3
+         AND provider_request_id = ?4
+         AND status = 'submitted'
+         AND EXISTS (
+           SELECT 1 FROM jobs
+           WHERE jobs.id = provider_requests.job_id AND jobs.owner_id = ?5
+         )
+       RETURNING *`,
+    )
+    .bind(
+      parsed.completedAt,
+      parsed.jobId,
+      parsed.candidateIndex,
+      parsed.providerRequestId,
+      parsed.ownerId,
+    )
+    .first();
+  if (row !== null) {
+    return mapProviderRequestRow(row);
+  }
+
+  const existing = await getOwnedProviderRequestForCandidate(
+    db,
+    parsed.ownerId,
+    parsed.jobId,
+    parsed.candidateIndex,
+  );
+  if (
+    existing !== null &&
+    existing.status === "completed" &&
+    existing.providerRequestId === parsed.providerRequestId
+  ) {
+    return existing;
+  }
+  throw new RepositoryStateError("Provider request is not available for completion.");
+}
+
+export async function markOwnedOutputReady(
+  db: D1Database,
+  input: {
+    candidateIndex: 0 | 1;
+    contentType: string;
+    durationSeconds: number;
+    jobId: string;
+    ownerId: string;
+    sizeBytes: number;
+  },
+): Promise<OutputRecord> {
+  const parsed = z
+    .object({
+      candidateIndex: candidateIndexSchema,
+      contentType: z.string().trim().min(1).max(255),
+      durationSeconds: z.number().nonnegative().finite(),
+      jobId: jobIdSchema,
+      ownerId: ownerIdSchema,
+      sizeBytes: z.number().int().positive().safe(),
+    })
+    .parse(input);
+  const row = await db
+    .prepare(
+      `UPDATE outputs
+       SET status = 'ready', content_type = ?1, size_bytes = ?2, duration_seconds = ?3
+       WHERE job_id = ?4
+         AND candidate_index = ?5
+         AND status = 'pending'
+         AND EXISTS (
+           SELECT 1 FROM jobs WHERE jobs.id = outputs.job_id AND jobs.owner_id = ?6
+         )
+       RETURNING *`,
+    )
+    .bind(
+      parsed.contentType,
+      parsed.sizeBytes,
+      parsed.durationSeconds,
+      parsed.jobId,
+      parsed.candidateIndex,
+      parsed.ownerId,
+    )
+    .first();
+  if (row !== null) {
+    return mapOutputRow(row);
+  }
+
+  const existing = await getOwnedOutputForCandidate(
+    db,
+    parsed.ownerId,
+    parsed.jobId,
+    parsed.candidateIndex,
+  );
+  if (
+    existing !== null &&
+    existing.status === "ready" &&
+    existing.contentType === parsed.contentType &&
+    existing.sizeBytes === parsed.sizeBytes &&
+    existing.durationSeconds === parsed.durationSeconds
+  ) {
+    return existing;
+  }
+  throw new RepositoryStateError("Output is not available for completion.");
 }
 
 export async function getOwnedOutput(
@@ -307,6 +575,7 @@ export async function recordRightsDeclaration(
         AND jobs.owner_id = ?3
         AND uploads.id = ?4
         AND uploads.owner_id = ?3
+      ON CONFLICT (job_id) DO NOTHING
       RETURNING *`,
     )
     .bind(
@@ -319,10 +588,25 @@ export async function recordRightsDeclaration(
     )
     .first();
 
-  if (row === null) {
+  if (row !== null) {
+    return mapRightsRow(row);
+  }
+
+  const existingRow = await db
+    .prepare("SELECT * FROM rights_declarations WHERE job_id = ?1 AND owner_id = ?2")
+    .bind(parsed.jobId, parsed.ownerId)
+    .first();
+  if (existingRow === null) {
     throw new RepositoryNotFoundError("Job and upload were not found for this owner.");
   }
-  return mapRightsRow(row);
+  const existing = mapRightsRow(existingRow);
+  if (
+    existing.uploadId !== parsed.uploadId ||
+    existing.declarationVersion !== parsed.declarationVersion
+  ) {
+    throw new RepositoryConflictError("Rights declaration does not match the existing job.");
+  }
+  return existing;
 }
 
 export async function recordUsageEvent(
@@ -359,6 +643,7 @@ export async function recordUsageEvent(
             SELECT ?1, owners.id, NULL, ?3, ?4, ?5, ?6
             FROM owners
             WHERE owners.id = ?2
+            ON CONFLICT (id) DO NOTHING
             RETURNING *`,
           )
           .bind(
@@ -378,6 +663,7 @@ export async function recordUsageEvent(
             SELECT ?1, jobs.owner_id, jobs.id, ?4, ?5, ?6, ?7
             FROM jobs
             WHERE jobs.id = ?3 AND jobs.owner_id = ?2
+            ON CONFLICT (id) DO NOTHING
             RETURNING *`,
           )
           .bind(
@@ -391,8 +677,25 @@ export async function recordUsageEvent(
           )
           .first();
 
-  if (row === null) {
+  if (row !== null) {
+    return mapUsageEventRow(row);
+  }
+
+  const existingRow = await db
+    .prepare("SELECT * FROM usage_events WHERE id = ?1 AND owner_id = ?2")
+    .bind(parsed.id, parsed.ownerId)
+    .first();
+  if (existingRow === null) {
     throw new RepositoryNotFoundError("Owner or owned job was not found.");
   }
-  return mapUsageEventRow(row);
+  const existing = mapUsageEventRow(existingRow);
+  if (
+    existing.jobId !== parsed.jobId ||
+    existing.eventType !== parsed.eventType ||
+    existing.quantity !== parsed.quantity ||
+    existing.estimatedCostUsd !== parsed.estimatedCostUsd
+  ) {
+    throw new RepositoryConflictError("Usage event does not match the existing record.");
+  }
+  return existing;
 }

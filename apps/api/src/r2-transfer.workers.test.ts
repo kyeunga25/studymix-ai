@@ -193,6 +193,7 @@ describe("private R2 transfer boundary", () => {
       expiresAt: new Date(Date.now() + 86_400_000).toISOString(),
       id: createSecureId("job"),
       idempotencyKey: "output-download-test",
+      maxActiveJobs: 2,
       ownerId: owner.id,
       presetId: "soft-piano",
       presetVersion: 1,

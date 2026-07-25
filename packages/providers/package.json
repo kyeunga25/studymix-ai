@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@studymix/contracts": "workspace:*",
-    "@studymix/presets": "workspace:*"
+    "@studymix/presets": "workspace:*",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "typescript": "^6.0.3",

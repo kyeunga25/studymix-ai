@@ -28,6 +28,9 @@ export const candidateIndexSchema = z.union([z.literal(0), z.literal(1)]);
 
 export const outputStatusSchema = z.enum(["pending", "ready", "failed", "expired", "deleted"]);
 
+export const currentRightsDeclarationVersion = "v1" as const;
+export const rightsDeclarationVersionSchema = z.literal(currentRightsDeclarationVersion);
+
 export const publicOutputSchema = z
   .object({
     outputId: outputIdSchema,
@@ -47,7 +50,7 @@ export const createJobRequestSchema = z
     presetId: presetIdSchema,
     presetVersion: presetVersionSchema,
     candidateCount: candidateCountSchema,
-    rightsDeclarationVersion: z.string().trim().min(1).max(64),
+    rightsDeclarationVersion: rightsDeclarationVersionSchema,
     idempotencyKey: idempotencyKeySchema.optional(),
   })
   .strict();

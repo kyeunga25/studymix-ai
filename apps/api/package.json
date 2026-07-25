@@ -17,6 +17,8 @@
   "dependencies": {
     "@studymix/contracts": "workspace:*",
     "@studymix/core": "workspace:*",
+    "@studymix/presets": "workspace:*",
+    "@studymix/providers": "workspace:*",
     "aws4fetch": "^1.0.20",
     "hono": "^4.12.31",
     "jose": "^6.2.4",
@@ -24,6 +26,6 @@
   },
   "devDependencies": {
     "typescript": "^6.0.3",
-    "wrangler": "^4.113.0"
+    "wrangler": "^4.114.0"
   }
 }

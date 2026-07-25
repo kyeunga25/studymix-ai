@@ -37,6 +37,10 @@ const r2BucketName = optionalEnvironment(
   "DEPLOY_R2_BUCKET",
   /^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])$/,
 );
+const workflowName = optionalEnvironment(
+  "DEPLOY_WORKFLOW_NAME",
+  /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/,
+);
 
 const config = {
   $schema: "../../node_modules/wrangler/config-schema.json",
@@ -67,6 +71,17 @@ const config = {
           {
             binding: "AUDIO_BUCKET",
             bucket_name: r2BucketName,
+          },
+        ],
+      }),
+  ...(workflowName === undefined
+    ? {}
+    : {
+        workflows: [
+          {
+            binding: "GENERATION_WORKFLOW",
+            name: workflowName,
+            class_name: "GenerationWorkflow",
           },
         ],
       }),

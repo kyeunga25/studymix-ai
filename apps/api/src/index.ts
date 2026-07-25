@@ -2,28 +2,45 @@ import {
   acceptLegalDocumentsRequestSchema,
   audioContentTypeSchema,
   audioContentTypes,
+  createJobRequestSchema,
   createUploadRequestSchema,
   currentLegalAcceptanceDocuments,
+  jobIdSchema,
   outputIdSchema,
+  publicPresetsSchema,
   uploadIdSchema,
   type ApiErrorCode,
   type PublicUpload,
 } from "@studymix/contracts";
 import { createSecureId } from "@studymix/core";
+import { listPresets, resolvePreset, toPublicPreset } from "@studymix/presets";
 import { Hono, type Context } from "hono";
 import { AuthenticationError, resolveOwnerContext, type OwnerContext } from "./auth/owner-context";
+import {
+  GenerationWorkflowConfigurationError,
+  GenerationWorkflowDisabledError,
+  createJobRequestFingerprint,
+  ensureWorkflowStarted,
+  getOwnedPublicJob,
+  isMockGenerationAvailable,
+  resolveGenerationWorkflowConfiguration,
+} from "./job-service";
 import { LegalConfigurationError, resolveLegalDocumentsManifest } from "./legal-documents";
 import {
   RepositoryConflictError,
+  RepositoryLegalAcceptanceRequiredError,
   RepositoryNotFoundError,
   RepositoryQuotaError,
+  attachOwnedJobWorkflow,
   confirmOwnedUpload,
+  createJobIdempotently,
   createUpload,
   expireOwnedUpload,
   getCurrentLegalAcceptanceStatus,
   getOwnedOutput,
   getOwnedUpload,
   markOwnedUploadDeleted,
+  recordRightsDeclaration,
   recordCurrentLegalAcceptances,
   upsertOwner,
 } from "./repositories";
@@ -42,6 +59,8 @@ import {
   resolveMaxUploadBytes,
   resolveR2TransferConfiguration,
 } from "./r2-transfer";
+
+export { GenerationWorkflow } from "./workflows/generation-workflow";
 
 type AppBindings = {
   Bindings: Env;
@@ -138,6 +157,41 @@ async function readUploadJson(context: Context<AppBindings>): Promise<unknown | 
         413,
         "VALIDATION_ERROR",
         "The upload request is too large.",
+        false,
+      );
+    }
+    if (error instanceof InvalidJsonBodyError) {
+      return errorResponse(
+        context,
+        400,
+        "VALIDATION_ERROR",
+        "The request body must be valid JSON.",
+        false,
+      );
+    }
+    throw error;
+  }
+}
+
+async function readJobJson(context: Context<AppBindings>): Promise<unknown | Response> {
+  try {
+    return await readBoundedJson(context.req.raw, 4_096);
+  } catch (error) {
+    if (error instanceof UnsupportedJsonMediaTypeError) {
+      return errorResponse(
+        context,
+        415,
+        "VALIDATION_ERROR",
+        "The request must use application/json.",
+        false,
+      );
+    }
+    if (error instanceof JsonBodyTooLargeError) {
+      return errorResponse(
+        context,
+        413,
+        "VALIDATION_ERROR",
+        "The job request is too large.",
         false,
       );
     }
@@ -255,6 +309,7 @@ app.get("/api/auth/me", (context) => {
   return context.json({
     data: {
       capabilities: {
+        mockGeneration: isMockGenerationAvailable(context.env),
         privateAudioUpload: isR2TransferAvailable(context.env),
       },
       kind: owner.kind,
@@ -264,6 +319,14 @@ app.get("/api/auth/me", (context) => {
     requestId: createRequestId(),
   });
 });
+
+app.get("/api/presets", (context) =>
+  context.json({
+    data: publicPresetsSchema.parse(listPresets().map(toPublicPreset)),
+    error: null,
+    requestId: createRequestId(),
+  }),
+);
 
 app.get("/api/legal/acceptances", async (context) => {
   try {
@@ -579,6 +642,139 @@ app.delete("/api/uploads/:uploadId", async (context) => {
   });
 });
 
+app.post("/api/jobs", async (context) => {
+  let configuration;
+  try {
+    configuration = resolveGenerationWorkflowConfiguration(context.env);
+  } catch (error) {
+    if (
+      error instanceof GenerationWorkflowConfigurationError ||
+      error instanceof GenerationWorkflowDisabledError
+    ) {
+      return errorResponse(
+        context,
+        503,
+        "PROVIDER_UNAVAILABLE",
+        "Private mock generation is not enabled.",
+        false,
+      );
+    }
+    throw error;
+  }
+
+  const body = await readJobJson(context);
+  if (body instanceof Response) {
+    return body;
+  }
+  const parsed = createJobRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return errorResponse(context, 400, "VALIDATION_ERROR", "The job request is invalid.", false);
+  }
+  const preset = resolvePreset(parsed.data.presetId, parsed.data.presetVersion);
+  if (preset === undefined) {
+    return errorResponse(context, 404, "PRESET_NOT_FOUND", "The preset was not found.", false);
+  }
+
+  const owner = context.get("owner");
+  const now = new Date();
+  const requestedJobId = createSecureId("job");
+  const idempotencyKey = parsed.data.idempotencyKey ?? `ui:${crypto.randomUUID()}`;
+  const requestFingerprint = await createJobRequestFingerprint(parsed.data);
+  let jobResult;
+  try {
+    jobResult = await createJobIdempotently(context.env.DB, {
+      createdAt: now.toISOString(),
+      expiresAt: new Date(
+        now.getTime() + configuration.outputRetentionHours * 60 * 60 * 1_000,
+      ).toISOString(),
+      id: requestedJobId,
+      idempotencyKey,
+      maxActiveJobs: configuration.maxActiveJobs,
+      ownerId: owner.ownerId,
+      presetId: preset.id,
+      presetVersion: preset.version,
+      provider: "mock",
+      requestFingerprint,
+      uploadId: parsed.data.uploadId,
+    });
+    await recordRightsDeclaration(context.env.DB, {
+      acceptedAt: now.toISOString(),
+      declarationVersion: parsed.data.rightsDeclarationVersion,
+      id: createSecureId("rgt"),
+      jobId: jobResult.job.id,
+      ownerId: owner.ownerId,
+      uploadId: parsed.data.uploadId,
+    });
+    await attachOwnedJobWorkflow(context.env.DB, owner.ownerId, jobResult.job.id, jobResult.job.id);
+  } catch (error) {
+    if (error instanceof RepositoryLegalAcceptanceRequiredError) {
+      return errorResponse(
+        context,
+        409,
+        "LEGAL_ACCEPTANCE_REQUIRED",
+        "Accept the current legal documents before creating a job.",
+        false,
+      );
+    }
+    if (error instanceof RepositoryNotFoundError) {
+      return errorResponse(context, 404, "NOT_FOUND", "The confirmed upload was not found.", false);
+    }
+    if (error instanceof RepositoryQuotaError) {
+      return errorResponse(
+        context,
+        429,
+        "RATE_LIMITED",
+        "Wait for an active job to finish before creating another.",
+        true,
+      );
+    }
+    if (error instanceof RepositoryConflictError) {
+      return errorResponse(
+        context,
+        409,
+        "CONFLICT",
+        "The idempotency key is already attached to a different request.",
+        false,
+      );
+    }
+    throw error;
+  }
+
+  try {
+    await ensureWorkflowStarted(configuration.workflow, {
+      jobId: jobResult.job.id,
+      ownerId: owner.ownerId,
+    });
+  } catch {
+    return errorResponse(
+      context,
+      503,
+      "PROVIDER_UNAVAILABLE",
+      "Private mock generation could not be started. Retry the same request.",
+      true,
+    );
+  }
+
+  const publicJob = await getOwnedPublicJob(context.env.DB, owner.ownerId, jobResult.job.id);
+  if (publicJob === null) {
+    throw new RepositoryNotFoundError("The created job could not be read.");
+  }
+  return context.json({ data: publicJob, error: null, requestId: createRequestId() }, 202);
+});
+
+app.get("/api/jobs/:jobId", async (context) => {
+  const parsedJobId = jobIdSchema.safeParse(context.req.param("jobId"));
+  if (!parsedJobId.success) {
+    return errorResponse(context, 404, "NOT_FOUND", "The job was not found.", false);
+  }
+  const owner = context.get("owner");
+  const job = await getOwnedPublicJob(context.env.DB, owner.ownerId, parsedJobId.data);
+  if (job === null) {
+    return errorResponse(context, 404, "NOT_FOUND", "The job was not found.", false);
+  }
+  return context.json({ data: job, error: null, requestId: createRequestId() });
+});
+
 app.post("/api/outputs/:outputId/download", async (context) => {
   const parsedOutputId = outputIdSchema.safeParse(context.req.param("outputId"));
   if (!parsedOutputId.success) {
@@ -655,11 +851,16 @@ app.post("/api/outputs/:outputId/download", async (context) => {
 app.get("*", (context) => context.env.ASSETS.fetch(context.req.raw));
 
 app.onError((error, context) => {
+  const requestSurface = context.req.path.startsWith("/api/")
+    ? "api"
+    : context.req.path.startsWith("/app")
+      ? "app"
+      : "public";
   console.error(
     JSON.stringify({
       errorName: error instanceof Error ? error.name : "UnknownError",
       event: "request_failed",
-      route: context.req.path,
+      requestSurface,
     }),
   );
   return errorResponse(context, 500, "INTERNAL_ERROR", "The request could not be completed.", true);

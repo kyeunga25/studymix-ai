@@ -7,6 +7,7 @@ import {
   presetVersionSchema,
   uploadIdSchema,
   type JobStatus,
+  type PresetId,
 } from "@studymix/contracts";
 import { transitionJobState } from "@studymix/core";
 import { z } from "zod";
@@ -14,6 +15,7 @@ import {
   RepositoryConflictError,
   RepositoryLegalAcceptanceRequiredError,
   RepositoryNotFoundError,
+  RepositoryQuotaError,
   RepositoryStateError,
 } from "./errors";
 import { hasCurrentLegalAcceptances } from "./legal-acceptance-repository";
@@ -44,6 +46,7 @@ const createJobSchema = z.object({
   expiresAt: z.string().datetime({ offset: true }),
   id: jobIdSchema,
   idempotencyKey: idempotencyKeySchema,
+  maxActiveJobs: z.number().int().min(1).max(20),
   ownerId: ownerIdSchema,
   presetId: presetIdSchema,
   presetVersion: presetVersionSchema,
@@ -63,7 +66,7 @@ export type JobRecord = {
   id: string;
   idempotencyKey: string;
   ownerId: string;
-  presetId: string;
+  presetId: PresetId;
   presetVersion: number;
   provider: z.infer<typeof providerSchema>;
   requestFingerprint: string;
@@ -149,7 +152,14 @@ export async function createJobIdempotently(
       SELECT ?1, ?2, uploads.id, ?4, ?5, 'created', ?6, ?7, NULL,
              2, ?8, NULL, ?9, ?9, NULL, ?10
       FROM uploads
-      WHERE uploads.id = ?3 AND uploads.owner_id = ?2 AND uploads.status = 'confirmed'
+      WHERE uploads.id = ?3
+        AND uploads.owner_id = ?2
+        AND uploads.status = 'confirmed'
+        AND (
+          SELECT COUNT(*) FROM jobs
+          WHERE jobs.owner_id = ?2
+            AND jobs.status IN ('created', 'validating', 'queued', 'generating', 'processing_output')
+        ) < ?11
       ON CONFLICT (owner_id, idempotency_key) DO NOTHING
       RETURNING *`,
     )
@@ -164,6 +174,7 @@ export async function createJobIdempotently(
       parsed.provider,
       parsed.createdAt,
       parsed.expiresAt,
+      parsed.maxActiveJobs,
     )
     .first();
 
@@ -172,15 +183,66 @@ export async function createJobIdempotently(
   }
 
   const existing = await getJobByIdempotencyKey(db, parsed.ownerId, parsed.idempotencyKey);
-  if (existing === null) {
+  if (existing !== null) {
+    if (existing.requestFingerprint !== parsed.requestFingerprint) {
+      throw new RepositoryConflictError(
+        "Idempotency key was already used for a different request.",
+      );
+    }
+    return { created: false, job: existing };
+  }
+
+  const confirmedUpload = await db
+    .prepare("SELECT id FROM uploads WHERE id = ?1 AND owner_id = ?2 AND status = 'confirmed'")
+    .bind(parsed.uploadId, parsed.ownerId)
+    .first();
+  if (confirmedUpload === null) {
     throw new RepositoryNotFoundError("Confirmed upload was not found for this owner.");
   }
 
-  if (existing.requestFingerprint !== parsed.requestFingerprint) {
-    throw new RepositoryConflictError("Idempotency key was already used for a different request.");
+  const active = await db
+    .prepare(
+      `SELECT COUNT(*) AS total FROM jobs
+       WHERE owner_id = ?1
+         AND status IN ('created', 'validating', 'queued', 'generating', 'processing_output')`,
+    )
+    .bind(parsed.ownerId)
+    .first<{ total: number }>();
+  if ((active?.total ?? 0) >= parsed.maxActiveJobs) {
+    throw new RepositoryQuotaError("The active job limit has been reached.");
+  }
+  throw new RepositoryStateError("Job creation could not be completed.");
+}
+
+export async function attachOwnedJobWorkflow(
+  db: D1Database,
+  ownerId: string,
+  jobId: string,
+  workflowInstanceId: string,
+): Promise<JobRecord> {
+  const parsedOwnerId = ownerIdSchema.parse(ownerId);
+  const parsedJobId = jobIdSchema.parse(jobId);
+  const parsedWorkflowInstanceId = z.string().trim().min(1).max(100).parse(workflowInstanceId);
+  const row = await db
+    .prepare(
+      `UPDATE jobs
+       SET workflow_instance_id = ?1
+       WHERE id = ?2
+         AND owner_id = ?3
+         AND (workflow_instance_id IS NULL OR workflow_instance_id = ?1)
+       RETURNING *`,
+    )
+    .bind(parsedWorkflowInstanceId, parsedJobId, parsedOwnerId)
+    .first();
+  if (row !== null) {
+    return mapJobRow(row);
   }
 
-  return { created: false, job: existing };
+  const existing = await getOwnedJob(db, parsedOwnerId, parsedJobId);
+  if (existing === null) {
+    throw new RepositoryNotFoundError("Job was not found for this owner.");
+  }
+  throw new RepositoryConflictError("Job is already attached to a different Workflow instance.");
 }
 
 export async function transitionOwnedJob(
@@ -206,6 +268,9 @@ export async function transitionOwnedJob(
   const current = await getOwnedJob(db, parsedOwnerId, parsedJobId);
   if (current === null) {
     throw new RepositoryNotFoundError("Job was not found for this owner.");
+  }
+  if (current.status === parsedNextState) {
+    return current;
   }
   if (!parsedExpectedStates.includes(current.status)) {
     throw new RepositoryStateError("Job is not in an expected current state.");

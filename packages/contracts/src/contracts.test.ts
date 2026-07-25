@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  currentRightsDeclarationVersion,
   apiEnvelopeSchema,
   acceptLegalDocumentsRequestSchema,
   createJobRequestSchema,
@@ -84,7 +85,7 @@ describe("preset and job contracts", () => {
       presetId: "soft-piano",
       presetVersion: 1,
       candidateCount: 2,
-      rightsDeclarationVersion: "v1",
+      rightsDeclarationVersion: currentRightsDeclarationVersion,
       idempotencyKey: "client-request-001",
     };
 
@@ -94,6 +95,9 @@ describe("preset and job contracts", () => {
     );
     expect(
       createJobRequestSchema.safeParse({ ...validRequest, rightsDeclarationVersion: "" }).success,
+    ).toBe(false);
+    expect(
+      createJobRequestSchema.safeParse({ ...validRequest, rightsDeclarationVersion: "v2" }).success,
     ).toBe(false);
   });
 

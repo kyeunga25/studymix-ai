@@ -26,6 +26,13 @@
       "bucket_name": "change-me-private-audio",
     },
   ],
+  "workflows": [
+    {
+      "binding": "GENERATION_WORKFLOW",
+      "name": "change-me-generation-workflow",
+      "class_name": "GenerationWorkflow",
+    },
+  ],
   "observability": {
     "enabled": true,
   },
@@ -37,6 +44,7 @@
     "LEGAL_CONTACT_EMAIL": "CHANGE_ME",
     "GENERATION_PROVIDER": "mock",
     "REAL_GENERATION_ENABLED": "false",
+    "JOB_WORKFLOW_ENABLED": "false",
     "R2_TRANSFER_ENABLED": "false",
     "R2_ACCOUNT_ID": "00000000000000000000000000000000",
     "R2_BUCKET_NAME": "change-me-private-audio",
@@ -44,6 +52,8 @@
     "R2_S3_SECRET_ACCESS_KEY": "CHANGE_ME_SECRET_ACCESS_KEY_000000",
     "MAX_UPLOAD_BYTES": "524288000",
     "MAX_ACTIVE_UPLOADS_PER_OWNER": "3",
+    "MAX_ACTIVE_JOBS_PER_OWNER": "2",
+    "OUTPUT_RETENTION_HOURS": "168",
     "UPLOAD_URL_TTL_SECONDS": "900",
     "DOWNLOAD_URL_TTL_SECONDS": "900",
   },
