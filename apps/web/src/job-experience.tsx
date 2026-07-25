@@ -14,6 +14,7 @@ const copy = {
     errorLead: "Your source remains private. Follow the guidance below before trying again.",
     expires: "Expires",
     failedStatus: "Generation failed",
+    loadingOutputs: "Preparing private playback links…",
     pendingHeading: "Creating your study mix",
     pendingLead:
       "The service is preparing two candidates. You can keep using this page; no fixed completion time is promised.",
@@ -40,6 +41,7 @@ const copy = {
     errorLead: "你的來源仍保持私密。請按以下指引處理後再試。",
     expires: "到期時間",
     failedStatus: "生成失敗",
+    loadingOutputs: "正在準備私人播放連結……",
     pendingHeading: "正在製作你的 Study Mix",
     pendingLead: "服務正在準備兩個候選版本。你可以繼續使用此頁；系統不承諾固定完成時間。",
     prefer: "我較喜歡此版本",
@@ -180,6 +182,11 @@ function ResultPage({
           {formatDate(job.expiresAt, language)}
         </SummaryItem>
       </div>
+      {candidateSources === null ? (
+        <p className="form-status is-ready" role="status">
+          {strings.loadingOutputs}
+        </p>
+      ) : null}
       <div className="candidate-list">
         {job.outputs.map((output) => {
           const candidateNumber = output.candidateIndex + 1;
@@ -195,12 +202,14 @@ function ResultPage({
                 </h2>
                 {isPreferred ? <span className="preferred-label">{strings.preferred}</span> : null}
               </div>
-              <audio
-                aria-label={`${strings.candidate} ${candidateNumber}`}
-                controls
-                preload="metadata"
-                src={candidateSources?.[output.candidateIndex]}
-              />
+              {candidateSources === null ? null : (
+                <audio
+                  aria-label={`${strings.candidate} ${candidateNumber}`}
+                  controls
+                  preload="metadata"
+                  src={candidateSources[output.candidateIndex]}
+                />
+              )}
               <label className="preference-control">
                 <input
                   checked={isPreferred}

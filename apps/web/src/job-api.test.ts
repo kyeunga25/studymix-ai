@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createJob, getJob } from "./job-api";
+import { createJob, getJob, getOutputDownload } from "./job-api";
 
 const now = "2026-07-25T10:00:00.000Z";
 const mockUploadId = "upl_00000000000000000000000000000001";
@@ -85,6 +85,34 @@ describe("job API client", () => {
         retryable: true,
       }),
     );
+  });
+
+  it("requests a short-lived private output URL", async () => {
+    const outputId = "out_00000000000000000000000000000001";
+    const fetchMock = vi.fn(async () =>
+      Promise.resolve(
+        Response.json({
+          data: {
+            downloadMethod: "GET",
+            downloadUrl: "https://00000000000000000000000000000000.r2.cloudflarestorage.com/test",
+            expiresAt: "2026-07-25T10:15:00.000Z",
+            outputId,
+          },
+          error: null,
+          requestId: "req_download",
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getOutputDownload(outputId)).resolves.toMatchObject({
+      downloadMethod: "GET",
+      outputId,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(`/api/outputs/${outputId}/download`, {
+      credentials: "same-origin",
+      method: "POST",
+    });
   });
 
   it("rejects an invalid job request before calling fetch", async () => {

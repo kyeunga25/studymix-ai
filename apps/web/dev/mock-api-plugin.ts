@@ -249,6 +249,7 @@ async function handleMockRequest(
     sendJson(response, 200, {
       data: {
         capabilities: {
+          mockGeneration: false,
           privateAudioUpload: false,
         },
         kind: "development",

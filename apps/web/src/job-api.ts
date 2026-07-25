@@ -1,13 +1,17 @@
 import {
   apiEnvelopeSchema,
   createJobRequestSchema,
+  downloadOutputResponseSchema,
+  outputIdSchema,
   publicJobSchema,
   type ApiErrorCode,
   type CreateJobRequest,
+  type DownloadOutputResponse,
   type PublicJob,
 } from "@studymix/contracts";
 
 const jobEnvelopeSchema = apiEnvelopeSchema(publicJobSchema);
+const downloadEnvelopeSchema = apiEnvelopeSchema(downloadOutputResponseSchema);
 
 export class JobApiError extends Error {
   readonly code: ApiErrorCode | "INVALID_RESPONSE" | "NETWORK_ERROR";
@@ -50,6 +54,31 @@ async function parseJobResponse(response: Response): Promise<PublicJob> {
   }
 
   const parsed = jobEnvelopeSchema.safeParse(body);
+  if (!parsed.success) {
+    throw invalidResponseError();
+  }
+  if (parsed.data.error !== null) {
+    throw new JobApiError({
+      code: parsed.data.error.code,
+      message: parsed.data.error.message,
+      requestId: parsed.data.requestId,
+      retryable: parsed.data.error.retryable,
+    });
+  }
+  if (!response.ok) {
+    throw invalidResponseError();
+  }
+  return parsed.data.data;
+}
+
+async function parseDownloadResponse(response: Response): Promise<DownloadOutputResponse> {
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw invalidResponseError();
+  }
+  const parsed = downloadEnvelopeSchema.safeParse(body);
   if (!parsed.success) {
     throw invalidResponseError();
   }
@@ -111,6 +140,33 @@ export async function getJob(jobId: string, signal: AbortSignal): Promise<Public
       signal,
     });
     return await parseJobResponse(response);
+  } catch (error) {
+    normalizeFetchError(error);
+  }
+}
+
+export async function getOutputDownload(
+  outputId: string,
+  signal?: AbortSignal,
+): Promise<DownloadOutputResponse> {
+  const parsedOutputId = outputIdSchema.safeParse(outputId);
+  if (!parsedOutputId.success) {
+    throw new JobApiError({
+      code: "VALIDATION_ERROR",
+      message: "The output request is invalid.",
+      retryable: false,
+    });
+  }
+  try {
+    const response = await fetch(
+      `/api/outputs/${encodeURIComponent(parsedOutputId.data)}/download`,
+      {
+        credentials: "same-origin",
+        method: "POST",
+        ...(signal === undefined ? {} : { signal }),
+      },
+    );
+    return await parseDownloadResponse(response);
   } catch (error) {
     normalizeFetchError(error);
   }

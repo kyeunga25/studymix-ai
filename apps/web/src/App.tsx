@@ -1,6 +1,7 @@
 import {
   apiEnvelopeSchema,
   currentLegalAcceptanceDocuments,
+  currentRightsDeclarationVersion,
   legalAcceptanceStatusSchema,
   legalDocumentsManifestSchema,
   ownerIdSchema,
@@ -10,6 +11,7 @@ import {
 } from "@studymix/contracts";
 import {
   useEffect,
+  useRef,
   useState,
   type ChangeEvent,
   type DragEvent,
@@ -20,7 +22,7 @@ import { z } from "zod";
 import { LandingPage } from "./LandingPage";
 import { legalPageContent, legalPathToDocumentId, type Language } from "./legal-content";
 import { JobExperience, isPendingJob } from "./job-experience";
-import { getJob, toJobApiError, type JobApiError } from "./job-api";
+import { createJob, getJob, getOutputDownload, toJobApiError, type JobApiError } from "./job-api";
 import { deleteUpload, uploadAndConfirmAudio } from "./upload-api";
 
 type PresetId = "soft-piano" | "music-box" | "lofi-study";
@@ -58,10 +60,14 @@ const copy = {
     upload: "Securely upload audio",
     uploading: "Uploading directly to private Cloudflare R2…",
     uploadSuccess: "Private upload confirmed. AI generation remains disabled.",
+    uploadSuccessMock:
+      "Private upload confirmed. You can now create two synthetic test candidates; external AI remains disabled.",
     uploadFailed: "The private upload could not be confirmed. Check the file and try again.",
     deleteUpload: "Delete private upload",
     deletingUpload: "Deleting the private upload…",
     deleteFailed: "The private upload could not be deleted. Please retry.",
+    createMock: "Create 2 test candidates",
+    creatingMock: "Creating two private synthetic test candidates…",
     replaceBlocked: "Delete the confirmed private upload before choosing another file.",
     legalAcceptanceLead: "I accept the current",
     legalAnd: "and",
@@ -78,6 +84,8 @@ const copy = {
       "This release keeps selected files in your browser; upload and external AI processing are disabled.",
     privacyDetailActive:
       "Audio goes directly to private R2 for upload testing and is not sent to an AI provider. Use the delete control when finished.",
+    privacyDetailMock:
+      "Audio stays in private R2. Test candidates are synthetic tones created without an external AI provider and remain private.",
     logout: "Sign out",
   },
   "zh-HK": {
@@ -103,10 +111,13 @@ const copy = {
     upload: "安全上載音訊",
     uploading: "正在直接上載至私人 Cloudflare R2……",
     uploadSuccess: "私人上載已確認；AI 生成仍然關閉。",
+    uploadSuccessMock: "私人上載已確認；現可建立兩個合成測試候選版本，外部 AI 仍然關閉。",
     uploadFailed: "未能確認私人上載。請檢查檔案後再試。",
     deleteUpload: "刪除私人上載",
     deletingUpload: "正在刪除私人上載……",
     deleteFailed: "未能刪除私人上載，請重試。",
+    createMock: "建立 2 個測試候選版本",
+    creatingMock: "正在建立兩個私人合成測試候選版本……",
     replaceBlocked: "請先刪除已確認的私人上載，然後再選擇另一個檔案。",
     legalAcceptanceLead: "我接受現行",
     legalAnd: "及",
@@ -121,6 +132,8 @@ const copy = {
     privacyDetail: "本版本只在瀏覽器處理所選檔案；上載及外部 AI 處理尚未啟用。",
     privacyDetailActive:
       "音訊會直接上載至私人 R2 作測試，不會送到 AI 供應商；完成後請使用刪除控制。",
+    privacyDetailMock:
+      "音訊只存於私人 R2；測試候選版本是無需外部 AI 供應商的合成音調，並保持私密。",
     logout: "登出",
   },
 } satisfies Record<Language, Record<string, string>>;
@@ -144,7 +157,9 @@ const legalAcceptanceEnvelopeSchema = apiEnvelopeSchema(legalAcceptanceStatusSch
 const legalManifestEnvelopeSchema = apiEnvelopeSchema(legalDocumentsManifestSchema);
 const authMeEnvelopeSchema = apiEnvelopeSchema(
   z.object({
-    capabilities: z.object({ privateAudioUpload: z.boolean() }).strict(),
+    capabilities: z
+      .object({ mockGeneration: z.boolean(), privateAudioUpload: z.boolean() })
+      .strict(),
     kind: z.enum(["authenticated", "development"]),
     ownerId: ownerIdSchema,
   }),
@@ -215,13 +230,18 @@ function PrivateApp() {
   const [activeJob, setActiveJob] = useState<PublicJob | null>(null);
   const [jobError, setJobError] = useState<JobApiError | null>(null);
   const [candidateSources, setCandidateSources] = useState<readonly [string, string] | null>(null);
+  const [downloadRetryVersion, setDownloadRetryVersion] = useState(0);
+  const [mockGenerationEnabled, setMockGenerationEnabled] = useState(false);
   const [privateAudioUploadEnabled, setPrivateAudioUploadEnabled] = useState(false);
   const [confirmedUpload, setConfirmedUpload] = useState<PublicUpload | null>(null);
+  const jobIdempotencyKey = useRef<string | null>(null);
   const strings = copy[language];
   const selectedPresetName =
     presets.find((item) => item.id === selectedPreset)?.name[language] ?? "Soft Piano";
   const canGenerate =
     selectedFile !== null && rightsAccepted && legalAccepted && confirmedUpload === null;
+  const canStartMockGeneration =
+    confirmedUpload !== null && mockGenerationEnabled && rightsAccepted && legalAccepted;
 
   useEffect(() => {
     document.documentElement.lang = language;
@@ -239,6 +259,7 @@ function PrivateApp() {
         const body: unknown = await response.json();
         const parsed = authMeEnvelopeSchema.safeParse(body);
         if (response.ok && parsed.success && parsed.data.error === null) {
+          setMockGenerationEnabled(parsed.data.data.capabilities.mockGeneration);
           setPrivateAudioUploadEnabled(parsed.data.data.capabilities.privateAudioUpload);
           setAccessStatus("verified");
           return;
@@ -290,6 +311,42 @@ function PrivateApp() {
     };
   }, [activeJobId, activeJobStatus]);
 
+  useEffect(() => {
+    if (
+      activeJob?.status !== "completed" ||
+      activeJob.outputs.length !== 2 ||
+      candidateSources !== null
+    ) {
+      return;
+    }
+    const controller = new AbortController();
+    const loadPrivateOutputs = async () => {
+      try {
+        const outputs = [...activeJob.outputs].sort(
+          (first, second) => first.candidateIndex - second.candidateIndex,
+        );
+        const downloads = await Promise.all(
+          outputs.map(
+            async (output) => await getOutputDownload(output.outputId, controller.signal),
+          ),
+        );
+        const first = downloads[0];
+        const second = downloads[1];
+        if (first === undefined || second === undefined) {
+          throw new Error("Private output URLs are unavailable.");
+        }
+        setCandidateSources([first.downloadUrl, second.downloadUrl]);
+        setJobError(null);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setJobError(toJobApiError(error));
+        }
+      }
+    };
+    void loadPrivateOutputs();
+    return () => controller.abort();
+  }, [activeJob, candidateSources, downloadRetryVersion]);
+
   const setFile = (fileList: FileList | null) => {
     if (confirmedUpload !== null) {
       setNotice(strings.replaceBlocked);
@@ -298,6 +355,7 @@ function PrivateApp() {
     const file = fileList?.item(0) ?? null;
     setSelectedFile(file);
     setNotice(null);
+    jobIdempotencyKey.current = null;
   };
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -317,6 +375,25 @@ function PrivateApp() {
     const result = await startLocalMockJob(selectedPreset);
     setActiveJob(result.job);
     setCandidateSources(result.candidateSources);
+    setJobError(null);
+    setNotice(null);
+  };
+
+  const startPrivateMockJob = async () => {
+    if (confirmedUpload === null || !mockGenerationEnabled) {
+      return;
+    }
+    jobIdempotencyKey.current ??= `ui:${crypto.randomUUID()}`;
+    const job = await createJob({
+      candidateCount: 2,
+      idempotencyKey: jobIdempotencyKey.current,
+      presetId: selectedPreset,
+      presetVersion: 1,
+      rightsDeclarationVersion: currentRightsDeclarationVersion,
+      uploadId: confirmedUpload.uploadId,
+    });
+    setActiveJob(job);
+    setCandidateSources(null);
     setJobError(null);
     setNotice(null);
   };
@@ -351,7 +428,7 @@ function PrivateApp() {
         try {
           const upload = await uploadAndConfirmAudio(selectedFile);
           setConfirmedUpload(upload);
-          setNotice(strings.uploadSuccess);
+          setNotice(mockGenerationEnabled ? strings.uploadSuccessMock : strings.uploadSuccess);
         } catch {
           setNotice(strings.uploadFailed);
         }
@@ -373,6 +450,21 @@ function PrivateApp() {
     }
   };
 
+  const handleCreatePrivateMockJob = async () => {
+    if (!canStartMockGeneration || isSavingAcceptance) {
+      return;
+    }
+    setIsSavingAcceptance(true);
+    setNotice(strings.creatingMock);
+    try {
+      await startPrivateMockJob();
+    } catch (error) {
+      setJobError(toJobApiError(error));
+    } finally {
+      setIsSavingAcceptance(false);
+    }
+  };
+
   const handleDeleteUpload = async () => {
     if (confirmedUpload === null || isSavingAcceptance) {
       return;
@@ -385,6 +477,7 @@ function PrivateApp() {
       setSelectedFile(null);
       setRightsAccepted(false);
       setNotice(null);
+      jobIdempotencyKey.current = null;
     } catch {
       setNotice(strings.deleteFailed);
     } finally {
@@ -396,7 +489,13 @@ function PrivateApp() {
     setIsSavingAcceptance(true);
     setJobError(null);
     try {
-      await startMockJob();
+      if (activeJob?.status === "completed") {
+        setDownloadRetryVersion((version) => version + 1);
+      } else if (confirmedUpload !== null && mockGenerationEnabled) {
+        await startPrivateMockJob();
+      } else {
+        await startMockJob();
+      }
     } catch (error) {
       setJobError(toJobApiError(error));
     } finally {
@@ -413,6 +512,8 @@ function PrivateApp() {
     setLegalAccepted(false);
     setNotice(null);
     setConfirmedUpload(null);
+    setDownloadRetryVersion(0);
+    jobIdempotencyKey.current = null;
   };
 
   return (
@@ -557,18 +658,35 @@ function PrivateApp() {
                     </SummaryRow>
                   </div>
 
-                  <button
-                    className="generate-button"
-                    type="submit"
-                    disabled={!canGenerate || isSavingAcceptance}
+                  {confirmedUpload === null ? (
+                    <button
+                      className="generate-button"
+                      type="submit"
+                      disabled={!canGenerate || isSavingAcceptance}
+                    >
+                      <SparkleIcon />
+                      <span>{privateAudioUploadEnabled ? strings.upload : strings.generate}</span>
+                    </button>
+                  ) : mockGenerationEnabled ? (
+                    <button
+                      className="generate-button"
+                      type="button"
+                      disabled={!canStartMockGeneration || isSavingAcceptance}
+                      onClick={() => void handleCreatePrivateMockJob()}
+                    >
+                      <SparkleIcon />
+                      <span>{strings.createMock}</span>
+                    </button>
+                  ) : null}
+                  <p
+                    className={`form-status${canGenerate || canStartMockGeneration ? " is-ready" : ""}`}
+                    aria-live="polite"
                   >
-                    <SparkleIcon />
-                    <span>{privateAudioUploadEnabled ? strings.upload : strings.generate}</span>
-                  </button>
-                  <p className={`form-status${canGenerate ? " is-ready" : ""}`} aria-live="polite">
                     {notice ??
                       (confirmedUpload !== null
-                        ? strings.uploadSuccess
+                        ? mockGenerationEnabled
+                          ? strings.uploadSuccessMock
+                          : strings.uploadSuccess
                         : canGenerate
                           ? privateAudioUploadEnabled
                             ? strings.readyUpload
@@ -594,7 +712,9 @@ function PrivateApp() {
                   <strong>{strings.privacy}</strong>
                   <span>
                     {privateAudioUploadEnabled
-                      ? strings.privacyDetailActive
+                      ? mockGenerationEnabled
+                        ? strings.privacyDetailMock
+                        : strings.privacyDetailActive
                       : strings.privacyDetail}
                   </span>
                 </div>
