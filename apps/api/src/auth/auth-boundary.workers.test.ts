@@ -46,6 +46,7 @@ describe("Worker authentication boundary", () => {
         capabilities: {
           mockGeneration: true,
           privateAudioUpload: true,
+          realGeneration: false,
           retentionCleanup: true,
         },
         kind: "development",

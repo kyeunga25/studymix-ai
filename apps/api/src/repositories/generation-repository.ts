@@ -406,6 +406,7 @@ export async function markOwnedProviderRequestCompleted(
     jobId: string;
     ownerId: string;
     providerRequestId: string;
+    seed?: number;
   },
 ): Promise<ProviderRequestRecord> {
   const parsed = z
@@ -415,23 +416,30 @@ export async function markOwnedProviderRequestCompleted(
       jobId: jobIdSchema,
       ownerId: ownerIdSchema,
       providerRequestId: z.string().trim().min(1).max(256),
+      seed: z
+        .number()
+        .int()
+        .safe()
+        .optional()
+        .transform((value) => value ?? null),
     })
     .parse(input);
   const row = await db
     .prepare(
       `UPDATE provider_requests
-       SET status = 'completed', completed_at = ?1
-       WHERE job_id = ?2
-         AND candidate_index = ?3
-         AND provider_request_id = ?4
+       SET status = 'completed', seed = ?1, completed_at = ?2
+       WHERE job_id = ?3
+         AND candidate_index = ?4
+         AND provider_request_id = ?5
          AND status = 'submitted'
          AND EXISTS (
            SELECT 1 FROM jobs
-           WHERE jobs.id = provider_requests.job_id AND jobs.owner_id = ?5
+           WHERE jobs.id = provider_requests.job_id AND jobs.owner_id = ?6
          )
        RETURNING *`,
     )
     .bind(
+      parsed.seed,
       parsed.completedAt,
       parsed.jobId,
       parsed.candidateIndex,
@@ -452,7 +460,8 @@ export async function markOwnedProviderRequestCompleted(
   if (
     existing !== null &&
     existing.status === "completed" &&
-    existing.providerRequestId === parsed.providerRequestId
+    existing.providerRequestId === parsed.providerRequestId &&
+    existing.seed === parsed.seed
   ) {
     return existing;
   }
@@ -464,7 +473,7 @@ export async function markOwnedOutputReady(
   input: {
     candidateIndex: 0 | 1;
     contentType: string;
-    durationSeconds: number;
+    durationSeconds: number | null;
     jobId: string;
     ownerId: string;
     sizeBytes: number;
@@ -474,7 +483,7 @@ export async function markOwnedOutputReady(
     .object({
       candidateIndex: candidateIndexSchema,
       contentType: z.string().trim().min(1).max(255),
-      durationSeconds: z.number().nonnegative().finite(),
+      durationSeconds: z.number().nonnegative().finite().nullable(),
       jobId: jobIdSchema,
       ownerId: ownerIdSchema,
       sizeBytes: z.number().int().positive().safe(),

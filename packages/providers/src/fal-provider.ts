@@ -26,10 +26,25 @@ const falSubmissionResponseSchema = z
 
 const falStatusResponseSchema = z
   .object({
+    error: z.string().max(4_096).nullish(),
+    error_type: z.string().trim().min(1).max(128).nullish(),
     request_id: falProviderRequestIdSchema,
     status: z.enum(["IN_QUEUE", "IN_PROGRESS", "COMPLETED"]),
   })
   .passthrough();
+
+const retryableFalErrorTypes = new Set([
+  "internal_error",
+  "request_timeout",
+  "runner_connection_error",
+  "runner_connection_refused",
+  "runner_connection_timeout",
+  "runner_disconnected",
+  "runner_incomplete_response",
+  "runner_scheduling_failure",
+  "runner_server_error",
+  "startup_timeout",
+]);
 
 const falResultResponseSchema = z
   .object({
@@ -159,6 +174,13 @@ function assertMatchingRequestId(expected: string, actual: string): void {
   }
 }
 
+function falErrorCode(errorType: string | null | undefined): string {
+  if (errorType === null || errorType === undefined || !/^[a-z0-9_]+$/.test(errorType)) {
+    return "FAL_PROVIDER_FAILED";
+  }
+  return `FAL_${errorType.toUpperCase()}`;
+}
+
 export class FalMusicGenerationProvider implements MusicGenerationProvider {
   readonly name = "fal" as const;
 
@@ -212,6 +234,21 @@ export class FalMusicGenerationProvider implements MusicGenerationProvider {
     const parsedRequestId = falProviderRequestIdSchema.parse(providerRequestId);
     const response = falStatusResponseSchema.parse(await this.#queue.status(parsedRequestId));
     assertMatchingRequestId(parsedRequestId, response.request_id);
+
+    if (
+      (response.error !== null && response.error !== undefined) ||
+      (response.error_type !== null && response.error_type !== undefined)
+    ) {
+      return {
+        errorCode: falErrorCode(response.error_type),
+        providerRequestId: parsedRequestId,
+        retryable:
+          response.error_type !== null &&
+          response.error_type !== undefined &&
+          retryableFalErrorTypes.has(response.error_type),
+        status: "failed",
+      };
+    }
 
     const status =
       response.status === "IN_QUEUE"

@@ -173,6 +173,7 @@ const authMeEnvelopeSchema = apiEnvelopeSchema(
       .object({
         mockGeneration: z.boolean(),
         privateAudioUpload: z.boolean(),
+        realGeneration: z.boolean(),
         retentionCleanup: z.boolean(),
       })
       .strict(),
