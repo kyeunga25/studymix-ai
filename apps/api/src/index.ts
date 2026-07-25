@@ -16,6 +16,7 @@ import { createSecureId } from "@studymix/core";
 import { listPresets, resolvePreset, toPublicPreset } from "@studymix/presets";
 import { Hono, type Context } from "hono";
 import { AuthenticationError, resolveOwnerContext, type OwnerContext } from "./auth/owner-context";
+import { handleFalWebhook } from "./fal-webhook";
 import {
   GenerationWorkflowConfigurationError,
   GenerationWorkflowDisabledError,
@@ -89,10 +90,11 @@ const securityHeaders = {
   "X-Frame-Options": "DENY",
 } as const;
 
-function contentSecurityPolicy(env: Env): string {
-  const r2Origin = isR2TransferAvailable(env)
-    ? ` https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`
-    : "";
+function contentSecurityPolicy(env: Env, includePrivateR2Origin: boolean): string {
+  const r2Origin =
+    includePrivateR2Origin && isR2TransferAvailable(env)
+      ? ` https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`
+      : "";
   return `default-src 'self'; base-uri 'none'; connect-src 'self'${r2Origin}; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; media-src 'self' blob:${r2Origin}; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'`;
 }
 
@@ -222,7 +224,13 @@ export const app = new Hono<AppBindings>();
 
 app.use("*", async (context, next) => {
   await next();
-  context.header("Content-Security-Policy", contentSecurityPolicy(context.env));
+  const path = context.req.path;
+  const isSuccessfulPrivateAppResponse =
+    (path === "/app" || path.startsWith("/app/")) && context.res.status < 400;
+  context.header(
+    "Content-Security-Policy",
+    contentSecurityPolicy(context.env, isSuccessfulPrivateAppResponse),
+  );
   for (const [name, value] of Object.entries(securityHeaders)) {
     context.header(name, value);
   }
@@ -290,6 +298,10 @@ const legalDocumentsHandler = (context: Context<AppBindings>) => {
 
 app.get("/health", healthHandler);
 app.get("/legal/documents.json", legalDocumentsHandler);
+app.post(
+  "/api/webhooks/fal",
+  async (context) => await handleFalWebhook(context.req.raw, context.env),
+);
 
 app.use("/app", requireAuthentication);
 app.use("/app/*", requireAuthentication);

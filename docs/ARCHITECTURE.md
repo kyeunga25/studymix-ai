@@ -370,13 +370,23 @@ POST /api/webhooks/fal
 
 Handler:
 
-1. Read only within configured payload limits.
-2. Verify the callback if supported.
-3. Extract provider request ID.
-4. Find the known provider request row.
-5. Store a minimal completion signal.
-6. Trigger or allow the Workflow to continue.
-7. Respond quickly.
+1. Require the configured HTTPS origin and exact path, with no query string.
+2. Read the raw JSON body only within the configured payload limit.
+3. Require fal's request ID, user ID, timestamp, and signature headers.
+4. Enforce the configured fal user and a five-minute timestamp window.
+5. Fetch the bounded fal JWKS response and verify the Ed25519 signature over the header values and raw-body
+   SHA-256 digest.
+6. Require the signed header request ID to match the body and a known fal provider-request row.
+7. Send only the request ID and candidate index to the matching Workflow instance; discard the provider
+   payload and respond quickly.
+
+The Workflow uses `waitForEvent` only to wake a bounded polling iteration. It always verifies status and
+results through the fal queue API, so missing, duplicate, early, or late callbacks are harmless and polling
+remains the correctness fallback.
+
+Current implementation references: [fal webhook verification](https://fal.ai/docs/documentation/model-apis/inference/webhooks),
+[Cloudflare Web Crypto](https://developers.cloudflare.com/workers/runtime-apis/web-crypto/), and
+[Workflow events](https://developers.cloudflare.com/workflows/build/events-and-parameters/).
 
 Never trust an output URL solely because it appeared in a webhook.
 
@@ -422,9 +432,14 @@ Do not make authentication vendor-specific in domain logic.
 
 Production and staging have no anonymous owner mode. The product overview, legal pages, `/health`, and
 `/legal/documents.json` are public and never resolve or create an owner. Cloudflare Access protects
-`/app*` and `/api/*`, and the Worker separately verifies the Access JWT signature, algorithm, issuer,
+`/app*` and user-facing `/api/*`, and the Worker separately verifies the Access JWT signature, algorithm, issuer,
 audience, expiry, application-token type, user subject, and verified email claim. Service tokens are not
 accepted as interactive user identities.
+
+The exact `/api/webhooks/fal` path is the only provider callback exception to user authentication. A
+more-specific Access application may bypass interactive login for that path only; the Worker then requires
+fal's Ed25519 signature, expected fal user, fresh timestamp, matching raw body, and known request ID before
+signaling a Workflow. The callback route never resolves or creates an owner.
 
 Derive the stable owner ID from a SHA-256 digest of the verified issuer and subject. Store only the
 subject hash and owner ID in D1. Never trust `X-User-Id`, `X-Owner-Id`, request bodies, URL parameters,
@@ -476,6 +491,7 @@ FAL_OUTPUT_EXPIRATION_SECONDS
 FAL_QUEUE_START_TIMEOUT_SECONDS
 FAL_POLL_INTERVAL_SECONDS
 FAL_MAX_POLL_ATTEMPTS
+FAL_WEBHOOK_URL
 MAX_PROVIDER_OUTPUT_BYTES
 PROVIDER_OUTPUT_TIMEOUT_SECONDS
 ```
@@ -484,10 +500,10 @@ Secrets:
 
 ```text
 FAL_KEY
+FAL_WEBHOOK_USER_ID
 R2_S3_ACCESS_KEY_ID
 R2_S3_SECRET_ACCESS_KEY
 TURNSTILE_SECRET_KEY
-FAL_WEBHOOK_SECRET      # only if provider supports it
 ```
 
 Generate Worker binding types using Wrangler. Do not hand-maintain an `Env` interface.

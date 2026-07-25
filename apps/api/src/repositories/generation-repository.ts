@@ -29,6 +29,24 @@ const providerRequestRowSchema = z.object({
   submitted_at: isoDateTimeSchema.nullable(),
 });
 
+const falWebhookTargetRowSchema = z.object({
+  candidate_index: candidateIndexSchema,
+  job_id: jobIdSchema,
+  job_status: z.enum([
+    "created",
+    "validating",
+    "queued",
+    "generating",
+    "processing_output",
+    "completed",
+    "failed",
+    "cancelled",
+    "expired",
+  ]),
+  request_status: z.enum(["pending", "submitted", "completed", "failed"]),
+  workflow_instance_id: z.string().trim().min(1).max(100),
+});
+
 const outputRowSchema = z.object({
   candidate_index: candidateIndexSchema,
   content_type: z.string().min(1).max(255).nullable(),
@@ -73,6 +91,14 @@ export type ProviderRequestRecord = {
   seed: number | null;
   status: "pending" | "submitted" | "completed" | "failed";
   submittedAt: string | null;
+};
+
+export type FalWebhookTarget = {
+  candidateIndex: 0 | 1;
+  jobId: string;
+  jobStatus: z.infer<typeof falWebhookTargetRowSchema>["job_status"];
+  requestStatus: z.infer<typeof falWebhookTargetRowSchema>["request_status"];
+  workflowInstanceId: string;
 };
 
 export type OutputRecord = {
@@ -121,6 +147,17 @@ function mapProviderRequestRow(value: unknown): ProviderRequestRecord {
     seed: row.seed,
     status: row.status,
     submittedAt: row.submitted_at,
+  };
+}
+
+function mapFalWebhookTargetRow(value: unknown): FalWebhookTarget {
+  const row = falWebhookTargetRowSchema.parse(value);
+  return {
+    candidateIndex: row.candidate_index,
+    jobId: row.job_id,
+    jobStatus: row.job_status,
+    requestStatus: row.request_status,
+    workflowInstanceId: row.workflow_instance_id,
   };
 }
 
@@ -183,6 +220,31 @@ async function getOwnedProviderRequestForCandidate(
     .bind(ownerId, jobId, candidateIndex)
     .first();
   return row === null ? null : mapProviderRequestRow(row);
+}
+
+export async function getFalWebhookTarget(
+  db: D1Database,
+  providerRequestId: string,
+): Promise<FalWebhookTarget | null> {
+  const parsedProviderRequestId = z.string().trim().min(1).max(256).parse(providerRequestId);
+  const row = await db
+    .prepare(
+      `SELECT
+         provider_requests.candidate_index,
+         provider_requests.status AS request_status,
+         jobs.id AS job_id,
+         jobs.status AS job_status,
+         jobs.workflow_instance_id
+       FROM provider_requests
+       INNER JOIN jobs ON jobs.id = provider_requests.job_id
+       WHERE provider_requests.provider = 'fal'
+         AND provider_requests.provider_request_id = ?1
+         AND jobs.workflow_instance_id IS NOT NULL
+       LIMIT 1`,
+    )
+    .bind(parsedProviderRequestId)
+    .first();
+  return row === null ? null : mapFalWebhookTargetRow(row);
 }
 
 export async function createProviderRequest(

@@ -55,6 +55,8 @@ export type FalGenerationConfiguration = Readonly<{
   queueStartTimeoutSeconds: number;
   rateLimiter: RateLimit;
   r2: R2TransferConfiguration;
+  webhookUrl: string;
+  webhookUserId: string;
 }>;
 
 export type GenerationWorkflowConfiguration =
@@ -84,6 +86,35 @@ function resolveFalGenerationConfiguration(env: Env): FalGenerationConfiguration
   if (env.JOB_RATE_LIMITER === undefined) {
     throw new GenerationWorkflowConfigurationError();
   }
+  const webhookUrl = z
+    .string()
+    .trim()
+    .url()
+    .refine((value) => {
+      const parsed = new URL(value);
+      return (
+        parsed.protocol === "https:" &&
+        parsed.username === "" &&
+        parsed.password === "" &&
+        parsed.port === "" &&
+        parsed.pathname === "/api/webhooks/fal" &&
+        parsed.search === "" &&
+        parsed.hash === "" &&
+        !parsed.hostname.toLowerCase().endsWith(".invalid")
+      );
+    })
+    .safeParse(env.FAL_WEBHOOK_URL);
+  const webhookUserId = z
+    .string()
+    .trim()
+    .min(1)
+    .max(256)
+    .refine((value) => !/\p{Cc}/u.test(value))
+    .refine((value) => !/^change[-_]?me/i.test(value))
+    .safeParse(env.FAL_WEBHOOK_USER_ID);
+  if (!webhookUrl.success || !webhookUserId.success) {
+    throw new GenerationWorkflowConfigurationError();
+  }
 
   let r2: R2TransferConfiguration;
   try {
@@ -106,6 +137,8 @@ function resolveFalGenerationConfiguration(env: Env): FalGenerationConfiguration
     queueStartTimeoutSeconds,
     rateLimiter: env.JOB_RATE_LIMITER,
     r2,
+    webhookUrl: webhookUrl.data,
+    webhookUserId: webhookUserId.data,
   };
 }
 
