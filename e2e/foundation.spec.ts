@@ -1,5 +1,48 @@
 import { expect, test, type Page } from "@playwright/test";
 
+const fixtureUploadId = "upl_11111111111111111111111111111111";
+const fixtureJobId = "job_22222222222222222222222222222222";
+const fixtureOutputIds = [
+  "out_33333333333333333333333333333333",
+  "out_44444444444444444444444444444444",
+] as const;
+const fixtureCreatedAt = "2026-07-26T00:00:00.000Z";
+const fixtureExpiresAt = "2026-08-02T00:00:00.000Z";
+
+function fixtureJob(status: "completed" | "created") {
+  return {
+    candidateCount: 2,
+    completedAt: status === "completed" ? "2026-07-26T00:01:00.000Z" : null,
+    createdAt: fixtureCreatedAt,
+    errorCode: null,
+    expiresAt: fixtureExpiresAt,
+    jobId: fixtureJobId,
+    outputs: fixtureOutputIds.map((outputId, candidateIndex) => ({
+      candidateIndex,
+      contentType: status === "completed" ? "audio/wav" : null,
+      createdAt: fixtureCreatedAt,
+      durationSeconds: status === "completed" ? 2 : null,
+      expiresAt: fixtureExpiresAt,
+      outputId,
+      sizeBytes: status === "completed" ? 32_044 : null,
+      status: status === "completed" ? "ready" : "pending",
+    })),
+    preset: { id: "soft-piano", version: 1 },
+    retryPermitted: false,
+    status,
+    updatedAt: status === "completed" ? "2026-07-26T00:01:00.000Z" : fixtureCreatedAt,
+    uploadId: fixtureUploadId,
+  };
+}
+
+function successEnvelope(data: unknown) {
+  return {
+    data,
+    error: null,
+    requestId: "req_55555555555555555555555555555555",
+  };
+}
+
 async function openPrivateAppInEnglish(page: Page, path = "/app") {
   await page.goto(path);
   await page.getByRole("button", { name: "EN" }).click();
@@ -130,6 +173,146 @@ test("moves from a pending mock HTTP job to two playable result candidates", asy
   await page.getByRole("radio", { name: "I prefer this version" }).nth(1).check();
   await expect(page.getByText("Preferred", { exact: true })).toBeVisible();
   await expect(page.getByText(/AI output may not preserve every musical detail/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Download candidate" })).toHaveCount(2);
+});
+
+test("continues polling when the provider job remains in the same state", async ({ page }) => {
+  let pollCount = 0;
+  await page.route("**/api/jobs", async (route) => {
+    if (route.request().method() !== "POST") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      body: JSON.stringify(successEnvelope(fixtureJob("created"))),
+      contentType: "application/json",
+      status: 202,
+    });
+  });
+  await page.route(`**/api/jobs/${fixtureJobId}`, async (route) => {
+    pollCount += 1;
+    await route.fulfill({
+      body: JSON.stringify(successEnvelope(fixtureJob(pollCount >= 2 ? "completed" : "created"))),
+      contentType: "application/json",
+      status: 200,
+    });
+  });
+
+  await prepareAuthorizedMix(page);
+  await page.getByRole("button", { name: "Generate 2 candidates" }).click();
+
+  await expect(page.getByRole("heading", { name: "Your study mix is ready" })).toBeVisible({
+    timeout: 6_000,
+  });
+  expect(pollCount).toBeGreaterThanOrEqual(2);
+});
+
+test("uses the private real-provider API flow without browser-to-provider calls", async ({
+  page,
+}) => {
+  let directUploadSeen = false;
+  let submittedJob: unknown;
+  await page.route("**/api/auth/me", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify(
+        successEnvelope({
+          capabilities: {
+            mockGeneration: false,
+            privateAudioUpload: true,
+            realGeneration: true,
+            retentionCleanup: true,
+          },
+          kind: "development",
+          ownerId: "own_66666666666666666666666666666666",
+        }),
+      ),
+      contentType: "application/json",
+      status: 200,
+    });
+  });
+  await page.route("**/api/uploads", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify(
+        successEnvelope({
+          allowedContentTypes: ["audio/wav"],
+          expiresAt: "2026-07-26T00:15:00.000Z",
+          maxUploadBytes: 524_288_000,
+          objectKey: "owners/opaque/uploads/opaque/source",
+          requiredHeaders: { "Content-Type": "audio/wav", "If-None-Match": "*" },
+          uploadId: fixtureUploadId,
+          uploadMethod: "PUT",
+          uploadUrl: "https://uploads.example.test/private-source",
+        }),
+      ),
+      contentType: "application/json",
+      status: 201,
+    });
+  });
+  await page.route("https://uploads.example.test/private-source", async (route) => {
+    expect(route.request().method()).toBe("PUT");
+    expect(route.request().headers()["content-type"]).toBe("audio/wav");
+    expect(route.request().headers()["if-none-match"]).toBe("*");
+    directUploadSeen = true;
+    await route.fulfill({ status: 200 });
+  });
+  await page.route(`**/api/uploads/${fixtureUploadId}/confirm`, async (route) => {
+    await route.fulfill({
+      body: JSON.stringify(
+        successEnvelope({
+          confirmedAt: fixtureCreatedAt,
+          createdAt: fixtureCreatedAt,
+          declaredContentType: "audio/wav",
+          expiresAt: fixtureExpiresAt,
+          originalFilename: "authorized-recording.wav",
+          sizeBytes: 22,
+          status: "confirmed",
+          uploadId: fixtureUploadId,
+        }),
+      ),
+      contentType: "application/json",
+      status: 200,
+    });
+  });
+  await page.route("**/api/jobs", async (route) => {
+    submittedJob = route.request().postDataJSON();
+    await route.fulfill({
+      body: JSON.stringify(successEnvelope(fixtureJob("completed"))),
+      contentType: "application/json",
+      status: 202,
+    });
+  });
+  for (const [candidateIndex, outputId] of fixtureOutputIds.entries()) {
+    await page.route(`**/api/outputs/${outputId}/download`, async (route) => {
+      await route.fulfill({
+        body: JSON.stringify(
+          successEnvelope({
+            downloadMethod: "GET",
+            downloadUrl: `https://downloads.example.test/candidate-${candidateIndex.toString()}.wav`,
+            expiresAt: "2026-07-26T00:15:00.000Z",
+            outputId,
+          }),
+        ),
+        contentType: "application/json",
+        status: 200,
+      });
+    });
+  }
+
+  await prepareAuthorizedMix(page);
+  await page.getByRole("button", { name: "Securely upload audio" }).click();
+  await expect(page.getByText("Private upload confirmed.", { exact: false })).toBeVisible();
+  expect(directUploadSeen).toBe(true);
+  await page.getByRole("button", { name: "Generate 2 private AI candidates" }).click();
+
+  await expect(page.getByRole("heading", { name: "Your study mix is ready" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Download candidate" })).toHaveCount(2);
+  expect(submittedJob).toMatchObject({
+    candidateCount: 2,
+    presetId: "soft-piano",
+    rightsDeclarationVersion: "v1",
+    uploadId: fixtureUploadId,
+  });
+  expect(JSON.stringify(submittedJob)).not.toContain("fal");
 });
 
 test("lets a user delete a completed private mix and return to a clean workspace", async ({
@@ -165,7 +348,7 @@ test("rejects a malformed mock job response with safe retry guidance", async ({ 
 
   const alert = page.getByRole("alert");
   await expect(alert).toBeVisible({ timeout: 5_000 });
-  await expect(alert).toContainText("The job service returned an invalid response.");
+  await expect(alert).toContainText("The request or service response was invalid.");
   await expect(alert).toContainText("Retry is available");
 });
 

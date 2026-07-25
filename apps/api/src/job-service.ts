@@ -40,6 +40,7 @@ export type GenerationWorkflowPayload = z.infer<typeof generationWorkflowPayload
 
 type GenerationWorkflowBaseConfiguration = Readonly<{
   maxActiveJobs: number;
+  maxDailyJobs: number;
   outputRetentionHours: number;
   workflow: Workflow<GenerationWorkflowPayload>;
 }>;
@@ -52,6 +53,7 @@ export type FalGenerationConfiguration = Readonly<{
   outputTimeoutMilliseconds: number;
   pollIntervalMilliseconds: number;
   queueStartTimeoutSeconds: number;
+  rateLimiter: RateLimit;
   r2: R2TransferConfiguration;
 }>;
 
@@ -79,6 +81,9 @@ function resolveFalGenerationConfiguration(env: Env): FalGenerationConfiguration
   if (!credentials.success) {
     throw new GenerationWorkflowConfigurationError();
   }
+  if (env.JOB_RATE_LIMITER === undefined) {
+    throw new GenerationWorkflowConfigurationError();
+  }
 
   let r2: R2TransferConfiguration;
   try {
@@ -99,6 +104,7 @@ function resolveFalGenerationConfiguration(env: Env): FalGenerationConfiguration
     outputTimeoutMilliseconds: parseInteger(env.PROVIDER_OUTPUT_TIMEOUT_SECONDS, 5, 120) * 1_000,
     pollIntervalMilliseconds: parseInteger(env.FAL_POLL_INTERVAL_SECONDS, 2, 60) * 1_000,
     queueStartTimeoutSeconds,
+    rateLimiter: env.JOB_RATE_LIMITER,
     r2,
   };
 }
@@ -113,6 +119,7 @@ export function resolveGenerationWorkflowConfiguration(env: Env): GenerationWork
 
   const base = {
     maxActiveJobs: parseInteger(env.MAX_ACTIVE_JOBS_PER_OWNER, 1, 20),
+    maxDailyJobs: parseInteger(env.MAX_DAILY_JOBS_PER_OWNER, 1, 100),
     outputRetentionHours: parseInteger(env.OUTPUT_RETENTION_HOURS, 1, 720),
     workflow: env.GENERATION_WORKFLOW,
   };
@@ -123,6 +130,33 @@ export function resolveGenerationWorkflowConfiguration(env: Env): GenerationWork
     return { ...base, fal: resolveFalGenerationConfiguration(env), provider: "fal" };
   }
   throw new GenerationWorkflowConfigurationError();
+}
+
+export async function isRealGenerationRequestWithinRateLimit(
+  configuration: GenerationWorkflowConfiguration,
+  ownerId: string,
+  connectingIp: string | undefined,
+): Promise<boolean> {
+  if (configuration.provider !== "fal") {
+    return true;
+  }
+  const parsedIp = z
+    .string()
+    .trim()
+    .min(1)
+    .max(64)
+    .refine((value) => !/\p{Cc}/u.test(value))
+    .safeParse(connectingIp);
+  if (!parsedIp.success) {
+    return false;
+  }
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(parsedIp.data));
+  const ipHash = bytesToHex(new Uint8Array(digest));
+  const [ownerOutcome, ipOutcome] = await Promise.all([
+    configuration.fal.rateLimiter.limit({ key: `owner:${ownerId}` }),
+    configuration.fal.rateLimiter.limit({ key: `ip:${ipHash}` }),
+  ]);
+  return ownerOutcome.success && ipOutcome.success;
 }
 
 export function isMockGenerationAvailable(env: Env): boolean {

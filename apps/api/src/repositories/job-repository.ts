@@ -43,10 +43,12 @@ const jobRowSchema = z.object({
 
 const createJobSchema = z.object({
   createdAt: z.string().datetime({ offset: true }),
+  dailyWindowStartedAt: z.string().datetime({ offset: true }).default("1970-01-01T00:00:00.000Z"),
   expiresAt: z.string().datetime({ offset: true }),
   id: jobIdSchema,
   idempotencyKey: idempotencyKeySchema,
   maxActiveJobs: z.number().int().min(1).max(20),
+  maxDailyJobs: z.number().int().min(1).max(100).default(100),
   ownerId: ownerIdSchema,
   presetId: presetIdSchema,
   presetVersion: presetVersionSchema,
@@ -161,6 +163,11 @@ export async function createJobIdempotently(
           WHERE jobs.owner_id = ?2
             AND jobs.status IN ('created', 'validating', 'queued', 'generating', 'processing_output')
         ) < ?11
+        AND (
+          SELECT COUNT(*) FROM jobs
+          WHERE jobs.owner_id = ?2
+            AND jobs.created_at >= ?12
+        ) < ?13
       ON CONFLICT (owner_id, idempotency_key) DO NOTHING
       RETURNING *`,
     )
@@ -176,6 +183,8 @@ export async function createJobIdempotently(
       parsed.createdAt,
       parsed.expiresAt,
       parsed.maxActiveJobs,
+      parsed.dailyWindowStartedAt,
+      parsed.maxDailyJobs,
     )
     .first();
 
@@ -217,6 +226,17 @@ export async function createJobIdempotently(
     .first<{ total: number }>();
   if ((active?.total ?? 0) >= parsed.maxActiveJobs) {
     throw new RepositoryQuotaError("The active job limit has been reached.");
+  }
+  const daily = await db
+    .prepare(
+      `SELECT COUNT(*) AS total FROM jobs
+       WHERE owner_id = ?1
+         AND created_at >= ?2`,
+    )
+    .bind(parsed.ownerId, parsed.dailyWindowStartedAt)
+    .first<{ total: number }>();
+  if ((daily?.total ?? 0) >= parsed.maxDailyJobs) {
+    throw new RepositoryQuotaError("The daily job limit has been reached.");
   }
   throw new RepositoryStateError("Job creation could not be completed.");
 }

@@ -12,6 +12,7 @@ const copy = {
     completed: "Completed",
     deletePrivateData: "Delete this private mix",
     deletingPrivateData: "Deleting private audio…",
+    download: "Download candidate",
     errorHeading: "We could not finish this study mix",
     errorLead: "Your source remains private. Follow the guidance below before trying again.",
     expires: "Expires",
@@ -41,6 +42,7 @@ const copy = {
     completed: "已完成",
     deletePrivateData: "刪除這個私人 Mix",
     deletingPrivateData: "正在刪除私人音訊……",
+    download: "下載候選版本",
     errorHeading: "未能完成這個 Study Mix",
     errorLead: "你的來源仍保持私密。請按以下指引處理後再試。",
     expires: "到期時間",
@@ -71,6 +73,25 @@ const pendingStatuses: readonly JobStatus[] = [
   "generating",
   "processing_output",
 ];
+
+const safeErrorCopy = {
+  en: {
+    invalid: "The request or service response was invalid. Review the input and try again.",
+    legal: "Accept the current legal documents before creating a study mix.",
+    limited: "The generation limit has been reached. Wait before trying again.",
+    network: "The private job service could not be reached. Check your connection and try again.",
+    notFound: "The private upload or job is no longer available.",
+    provider: "The private generation service could not complete this study mix.",
+  },
+  "zh-HK": {
+    invalid: "要求或服務回應無效，請檢查輸入後再試。",
+    legal: "建立 Study Mix 前，請先接受現行法律文件。",
+    limited: "已達生成上限，請稍後再試。",
+    network: "未能連接私人工作服務，請檢查網絡後再試。",
+    notFound: "私人上載或工作已不可用。",
+    provider: "私人生成服務未能完成這個 Study Mix。",
+  },
+} satisfies Record<Language, Record<string, string>>;
 
 export function isPendingJob(status: JobStatus): boolean {
   return pendingStatuses.includes(status);
@@ -114,17 +135,13 @@ export function JobExperience(props: JobExperienceProps) {
   return <PendingPage {...props} job={props.job} />;
 }
 
-function PendingPage({ job, language, onStartOver }: JobExperienceProps & { job: PublicJob }) {
+function PendingPage({ job, language }: JobExperienceProps & { job: PublicJob }) {
   const strings = copy[language];
   const steps = strings.steps as readonly string[];
   const currentStep = progressStep(job.status);
 
   return (
     <section className="job-page" aria-labelledby="job-page-title">
-      <button className="text-button" type="button" onClick={onStartOver}>
-        <ArrowLeftIcon />
-        {strings.startAnother}
-      </button>
       <header className="job-heading">
         <div>
           <h1 id="job-page-title">{strings.pendingHeading}</h1>
@@ -207,12 +224,21 @@ function ResultPage({
                 {isPreferred ? <span className="preferred-label">{strings.preferred}</span> : null}
               </div>
               {candidateSources === null ? null : (
-                <audio
-                  aria-label={`${strings.candidate} ${candidateNumber}`}
-                  controls
-                  preload="metadata"
-                  src={candidateSources[output.candidateIndex]}
-                />
+                <>
+                  <audio
+                    aria-label={`${strings.candidate} ${candidateNumber}`}
+                    controls
+                    preload="metadata"
+                    src={candidateSources[output.candidateIndex]}
+                  />
+                  <a
+                    className="text-button candidate-download"
+                    download={`studymix-candidate-${candidateNumber.toString()}.${audioExtension(output.contentType)}`}
+                    href={candidateSources[output.candidateIndex]}
+                  >
+                    {strings.download}
+                  </a>
+                </>
               )}
               <label className="preference-control">
                 <input
@@ -257,7 +283,7 @@ function ErrorPage({
   retryable,
 }: JobExperienceProps & { retryable: boolean }) {
   const strings = copy[language];
-  const message = error?.message ?? job?.errorCode ?? (strings.failedStatus as string);
+  const message = safeErrorMessage(error, job, language);
 
   return (
     <section className="job-page error-page" aria-labelledby="job-error-title">
@@ -386,19 +412,68 @@ function formatDate(value: string, language: Language): string {
   }).format(new Date(value));
 }
 
+function safeErrorMessage(
+  error: JobApiError | null,
+  job: PublicJob | null,
+  language: Language,
+): string {
+  const messages = safeErrorCopy[language];
+  if (error !== null) {
+    switch (error.code) {
+      case "LEGAL_ACCEPTANCE_REQUIRED":
+        return messages.legal;
+      case "RATE_LIMITED":
+        return messages.limited;
+      case "NETWORK_ERROR":
+        return messages.network;
+      case "NOT_FOUND":
+        return messages.notFound;
+      case "PROVIDER_UNAVAILABLE":
+        return messages.provider;
+      case "INVALID_RESPONSE":
+      case "VALIDATION_ERROR":
+      case "CONFLICT":
+      case "ILLEGAL_JOB_TRANSITION":
+      case "PRESET_NOT_FOUND":
+      case "UNAUTHORIZED":
+      case "INTERNAL_ERROR":
+        return messages.invalid;
+    }
+  }
+  if (
+    job?.errorCode === "PROVIDER_WORKFLOW_FAILED" ||
+    job?.errorCode === "MOCK_WORKFLOW_FAILED" ||
+    job?.errorCode === "PROVIDER_UNAVAILABLE"
+  ) {
+    return messages.provider;
+  }
+  return copy[language].failedStatus as string;
+}
+
+function audioExtension(contentType: string | null): string {
+  switch (contentType) {
+    case "audio/mpeg":
+      return "mp3";
+    case "audio/wav":
+    case "audio/x-wav":
+      return "wav";
+    case "audio/mp4":
+      return "m4a";
+    case "audio/aac":
+      return "aac";
+    case "audio/ogg":
+      return "ogg";
+    case null:
+    default:
+      return "audio";
+  }
+}
+
 function IconBase({ children }: { children: ReactNode }) {
   return (
     <svg aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
       {children}
     </svg>
-  );
-}
-
-function ArrowLeftIcon() {
-  return (
-    <IconBase>
-      <path d="m15 18-6-6 6-6M9 12h11" />
-    </IconBase>
   );
 }
 

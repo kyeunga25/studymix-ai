@@ -107,7 +107,13 @@ FAL_POLL_INTERVAL_SECONDS
 FAL_MAX_POLL_ATTEMPTS
 MAX_PROVIDER_OUTPUT_BYTES
 PROVIDER_OUTPUT_TIMEOUT_SECONDS
+MAX_DAILY_JOBS_PER_OWNER
 ```
+
+Provide a positive account-unique rate-limit namespace only through the protected
+`DEPLOY_RATE_LIMIT_NAMESPACE_ID` build setting. Omitting it leaves the binding out of the generated
+deployment config and causes real-generation capability detection to fail closed. The binding uses a
+short per-location window; D1 remains the authoritative rolling owner quota.
 
 Keep `REAL_GENERATION_ENABLED=false` until Turnstile verification, owner usage limits, authorized test
 audio, provider-account terms, retention, and deletion checks are ready. The private source download TTL
@@ -217,13 +223,15 @@ protected build setting; the actual name must not be copied into the checked-in 
    `pnpm --filter @studymix/api deploy:cloudflare`, and preview command
    `pnpm --filter @studymix/api preview:cloudflare`.
 4. Add `DEPLOY_WORKER_NAME`, `DEPLOY_D1_NAME`, and `DEPLOY_D1_ID` as protected build settings in
-   Cloudflare. Add `DEPLOY_R2_BUCKET` and `DEPLOY_WORKFLOW_NAME` only to an approved private staging
-   build; omitting either setting leaves that binding out of the generated deployment config. Their
-   values must never be committed or printed in public build documentation.
+   Cloudflare. Add `DEPLOY_R2_BUCKET`, `DEPLOY_WORKFLOW_NAME`, and
+   `DEPLOY_RATE_LIMIT_NAMESPACE_ID` only to an approved private staging build; omitting a setting leaves
+   that binding out of the generated deployment config. Their values must never be committed or printed
+   in public build documentation.
 5. Keep `APP_ENV`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `LEGAL_CONTACT_EMAIL`, `R2_ACCOUNT_ID`,
    `R2_BUCKET_NAME`, the R2 limits/TTLs, `R2_TRANSFER_ENABLED=false`,
    `JOB_WORKFLOW_ENABLED=false`, `RETENTION_CLEANUP_ENABLED=false`,
-   `MAX_ACTIVE_JOBS_PER_OWNER`, `ABANDONED_UPLOAD_RETENTION_HOURS`,
+   `MAX_ACTIVE_JOBS_PER_OWNER`, `MAX_DAILY_JOBS_PER_OWNER`,
+   `ABANDONED_UPLOAD_RETENTION_HOURS`,
    `SOURCE_RETENTION_HOURS`, `FAILED_ARTIFACT_RETENTION_HOURS`, `OUTPUT_RETENTION_HOURS`,
    `RETENTION_CLEANUP_BATCH_SIZE`,
    `GENERATION_PROVIDER=mock`, and `REAL_GENERATION_ENABLED=false` as Worker runtime variables. Store

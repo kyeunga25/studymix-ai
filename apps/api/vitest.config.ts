@@ -35,6 +35,7 @@ export default defineConfig({
             MAX_UPLOAD_BYTES: "524288000",
             MAX_ACTIVE_UPLOADS_PER_OWNER: "3",
             MAX_ACTIVE_JOBS_PER_OWNER: "2",
+            MAX_DAILY_JOBS_PER_OWNER: "4",
             ABANDONED_UPLOAD_RETENTION_HOURS: "24",
             SOURCE_RETENTION_HOURS: "72",
             FAILED_ARTIFACT_RETENTION_HOURS: "24",
@@ -48,6 +49,12 @@ export default defineConfig({
           compatibilityFlags: ["nodejs_compat"],
           d1Databases: ["DB"],
           r2Buckets: ["AUDIO_BUCKET"],
+          ratelimits: {
+            JOB_RATE_LIMITER: {
+              namespace_id: "1001",
+              simple: { limit: 100, period: 60 },
+            },
+          },
           workflows: {
             GENERATION_WORKFLOW: {
               className: "GenerationWorkflow",

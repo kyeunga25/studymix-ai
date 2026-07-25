@@ -11,6 +11,7 @@ import { app } from "./index";
 import {
   GenerationWorkflowConfigurationError,
   isMockGenerationAvailable,
+  isRealGenerationRequestWithinRateLimit,
   isRealGenerationAvailable,
   resolveGenerationWorkflowConfiguration,
 } from "./job-service";
@@ -253,6 +254,72 @@ describe("feature-gated mock generation Workflow", () => {
     expect(configuration.provider).toBe("fal");
     expect(isRealGenerationAvailable(falEnv)).toBe(true);
     expect(isMockGenerationAvailable(falEnv)).toBe(false);
+  });
+
+  it("uses hashed owner and IP keys for the coarse real-generation limiter", async () => {
+    const observedKeys: string[] = [];
+    const rateLimiter: RateLimit = {
+      async limit({ key }) {
+        observedKeys.push(key);
+        return { success: true };
+      },
+    };
+    const falEnv: Env = {
+      ...env,
+      DOWNLOAD_URL_TTL_SECONDS: "900",
+      FAL_KEY: "test-only-fal-credential-000001",
+      GENERATION_PROVIDER: "fal",
+      JOB_RATE_LIMITER: rateLimiter,
+      REAL_GENERATION_ENABLED: "true",
+    };
+    const configuration = resolveGenerationWorkflowConfiguration(falEnv);
+
+    await expect(
+      isRealGenerationRequestWithinRateLimit(
+        configuration,
+        "own_11111111111111111111111111111111",
+        "203.0.113.10",
+      ),
+    ).resolves.toBe(true);
+    expect(observedKeys).toHaveLength(2);
+    expect(observedKeys[0]).toBe("owner:own_11111111111111111111111111111111");
+    expect(observedKeys[1]).toMatch(/^ip:[0-9a-f]{64}$/);
+    expect(observedKeys.join(" ")).not.toContain("203.0.113.10");
+  });
+
+  it("rejects real generation when the coarse limiter denies a request", async () => {
+    const uploadId = await createConfirmedUpload(true);
+    const deniedEnvironment: Env = {
+      ...env,
+      DOWNLOAD_URL_TTL_SECONDS: "900",
+      FAL_KEY: "test-only-fal-credential-000001",
+      GENERATION_PROVIDER: "fal",
+      JOB_RATE_LIMITER: {
+        async limit() {
+          return { success: false };
+        },
+      },
+      REAL_GENERATION_ENABLED: "true",
+    };
+    const baseRequest = jobRequest(uploadId);
+    const response = await app.request(
+      "https://studymix.example/api/jobs",
+      {
+        ...baseRequest,
+        headers: {
+          ...baseRequest.headers,
+          "CF-Connecting-IP": "203.0.113.10",
+        },
+      },
+      deniedEnvironment,
+    );
+    const count = await env.DB.prepare("SELECT COUNT(*) AS total FROM jobs").first<{
+      total: number;
+    }>();
+
+    expect(response.status).toBe(429);
+    expect(errorEnvelopeSchema.parse(await response.json()).error.code).toBe("RATE_LIMITED");
+    expect(count?.total).toBe(0);
   });
 
   it("fails closed for a placeholder fal credential", () => {

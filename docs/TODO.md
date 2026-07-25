@@ -22,6 +22,8 @@ This document records only verifiable repository capabilities and public safety 
 - [x] fal ACE-Step audio-to-audio adapter 與 provider factory：非同步 queue mapping、Zod 外部回應驗證、provider JSON 不保留、有限輸出期限、預期輸出 host、最小 metadata 及全離線 contract tests。
 - [x] Provider output 安全串流邊界：HTTPS host allowlist、禁止 redirect、逾時、identity encoding、可信 content length、音訊 MIME 與 byte limit、Cloudflare `FixedLengthStream`、私人 R2 conditional write、冪等重試及 Miniflare 測試。
 - [x] Feature-gated fal Workflow 接線：嚴格 runtime 設定、已確認且未過期的私人來源檢查、短效 GET 簽名、外部 submission 不自動重送、有限 queue polling、安全錯誤 mapping、串流 R2 ingestion、最小 D1 metadata 及無付費請求測試。
+- [x] 私人 web app 共用流程：按 capability 選擇 mock 或 real、直接 R2 上載、相同狀態持續輪詢及有上限 backoff、兩個私人播放／下載連結、安全雙語錯誤及 terminal job 刪除；Playwright 以攔截 API 驗證 real 模式，不呼叫供應商。
+- [x] 真實生成 abuse quota 邊界：D1 rolling owner daily limit、Cloudflare Rate Limiting binding、owner key、雜湊 IP key、fail-closed capability 及無 metadata 拒絕測試。
 - [x] Cloudflare Workers Builds 可用的部署指令以受保護設定生成 ignored config，不把資源識別資料寫入版本庫。
 - [x] GitHub 存放庫已連接至 Cloudflare Workers Builds；生產與預覽命令採用加密建置設定，不在版本庫保存資源識別資料。
 - [x] Feature-gated 私人 R2 直接上載切片：server-controlled key、短效且綁定 content type／不可覆寫條件的 PUT URL、R2 metadata 確認、owner 隔離、明確刪除、短效輸出下載簽名及本機整合測試。
@@ -32,7 +34,7 @@ This document records only verifiable repository capabilities and public safety 
 
 - 正式環境的瀏覽器私人 R2 上載；`R2_TRANSFER_ENABLED` 預設及正式環境仍須保持 `false`，直至私人 staging bucket、CORS、到期失效及監察完成實測。
 - 正式環境的 server-side mock Workflow；`JOB_WORKFLOW_ENABLED` 預設保持 `false`，且未批准的部署不加入 Workflow binding。
-- 真實 AI 音訊生成、外部 callback 與正式輸出交付；fal Workflow 已完成本機接線與離線測試，但 production 仍保持 `REAL_GENERATION_ENABLED=false`，亦未作任何付費或真實音訊測試。
+- 真實 AI 音訊生成、Turnstile、外部 callback 與正式輸出交付；fal Workflow、私人 web 流程及兩層 quota 已完成本機接線與離線測試，但 production 仍保持 `REAL_GENERATION_ENABLED=false`，亦未作任何付費或真實音訊測試。
 - 正式環境的自動保留期執行；`RETENTION_CLEANUP_ENABLED` 預設保持 `false`，直至 staging Cron、R2 刪除重試及監察完成實測。程式與本機 Worker 測試已覆蓋清理及 terminal job 即時刪除。
 - 公開註冊、非受邀帳戶及公開使用者內容。
 

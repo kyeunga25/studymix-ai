@@ -24,6 +24,7 @@ import {
   getOwnedPublicJob,
   isMockGenerationAvailable,
   isRealGenerationAvailable,
+  isRealGenerationRequestWithinRateLimit,
   resolveGenerationWorkflowConfiguration,
 } from "./job-service";
 import { LegalConfigurationError, resolveLegalDocumentsManifest } from "./legal-documents";
@@ -690,6 +691,21 @@ app.post("/api/jobs", async (context) => {
   }
 
   const owner = context.get("owner");
+  if (
+    !(await isRealGenerationRequestWithinRateLimit(
+      configuration,
+      owner.ownerId,
+      context.req.header("CF-Connecting-IP"),
+    ))
+  ) {
+    return errorResponse(
+      context,
+      429,
+      "RATE_LIMITED",
+      "Too many generation requests. Try again later.",
+      true,
+    );
+  }
   const now = new Date();
   const requestedJobId = createSecureId("job");
   const idempotencyKey = parsed.data.idempotencyKey ?? `ui:${crypto.randomUUID()}`;
@@ -698,12 +714,14 @@ app.post("/api/jobs", async (context) => {
   try {
     jobResult = await createJobIdempotently(context.env.DB, {
       createdAt: now.toISOString(),
+      dailyWindowStartedAt: new Date(now.getTime() - 24 * 60 * 60 * 1_000).toISOString(),
       expiresAt: new Date(
         now.getTime() + configuration.outputRetentionHours * 60 * 60 * 1_000,
       ).toISOString(),
       id: requestedJobId,
       idempotencyKey,
       maxActiveJobs: configuration.maxActiveJobs,
+      maxDailyJobs: configuration.maxDailyJobs,
       ownerId: owner.ownerId,
       presetId: preset.id,
       presetVersion: preset.version,
@@ -738,7 +756,7 @@ app.post("/api/jobs", async (context) => {
         context,
         429,
         "RATE_LIMITED",
-        "Wait for an active job to finish before creating another.",
+        "The private generation quota has been reached. Try again later.",
         true,
       );
     }
