@@ -132,6 +132,21 @@ export interface MusicGenerationProvider {
 
 Domain code must not import `@fal-ai/client`. Only `fal-provider.ts` may depend on fal-specific code.
 
+The fal adapter uses the asynchronous ACE-Step audio-to-audio queue and validates every queue status,
+request identifier, and result with Zod before returning domain data. Submissions disable provider JSON
+payload storage, request a bounded output-object lifetime, and may include an HTTPS webhook URL. Result
+URLs must use HTTPS on an expected `fal.media` host; only the URL, seed, content type, and file size cross
+the adapter boundary. The complete provider response is never persisted.
+
+ACE-Step currently requires `original_tags`, while the MVP does not infer or collect source-style tags.
+The adapter therefore sends the pinned preset tags as both the original and target tags. This is a
+versioned quality hypothesis, not a claim that the provider will preserve the melody. It must be evaluated
+with authorized test audio before real generation is enabled.
+
+The provider factory keeps `mock` usable without credentials. Constructing the real adapter requires
+server-side credentials or an explicitly injected queue used by offline tests; browser code never imports
+the fal SDK.
+
 ### Submission input
 
 ```ts
@@ -467,9 +482,9 @@ live disputes.
 
 - Cloudflare is the current identity, Worker, and D1 processor. Automatic placement and
   location hints do not justify a Hong Kong-only residency claim.
-- External generation is disabled. A provider adapter must remain disabled until the exact
-  model supports verified no-payload storage, restrictive media ACL/expiry, suitable deletion, and
-  provider contract terms.
+- External generation is disabled. The fal adapter requests no JSON payload storage and a bounded media
+  expiry, but real generation must remain disabled until provider terms, staging output ingestion,
+  duplicate-submission recovery, and deletion behavior are verified end to end.
 - The application never ingests user-supplied URLs or scrapes official/third-party data-source sites or
   APIs for tracks.
 - A provider URL is untrusted transport input, not a public result or proof of rights. Verified output is
