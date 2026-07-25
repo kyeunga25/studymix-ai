@@ -22,7 +22,14 @@ import { z } from "zod";
 import { LandingPage } from "./LandingPage";
 import { legalPageContent, legalPathToDocumentId, type Language } from "./legal-content";
 import { JobExperience, isPendingJob } from "./job-experience";
-import { createJob, getJob, getOutputDownload, toJobApiError, type JobApiError } from "./job-api";
+import {
+  createJob,
+  deleteJob,
+  getJob,
+  getOutputDownload,
+  toJobApiError,
+  type JobApiError,
+} from "./job-api";
 import { deleteUpload, uploadAndConfirmAudio } from "./upload-api";
 
 type PresetId = "soft-piano" | "music-box" | "lofi-study";
@@ -49,6 +56,8 @@ const copy = {
       "Audio upload is not active. Before activation, automatic deletion must be verified against the planned 72-hour source and 7-day output limits.",
     retentionActive:
       "Private upload testing is active. Delete the confirmed upload when finished; automatic retention cleanup is not active yet.",
+    retentionManaged:
+      "Private upload testing and automatic retention cleanup are active. You can also delete a completed private mix immediately.",
     presetTitle: "Choose a study mix style",
     rights:
       "I own this recording or have permission to upload, process, and create an adapted version of it.",
@@ -66,6 +75,7 @@ const copy = {
     deleteUpload: "Delete private upload",
     deletingUpload: "Deleting the private upload…",
     deleteFailed: "The private upload could not be deleted. Please retry.",
+    deleteJobFailed: "The private mix could not be deleted. Please retry.",
     createMock: "Create 2 test candidates",
     creatingMock: "Creating two private synthetic test candidates…",
     replaceBlocked: "Delete the confirmed private upload before choosing another file.",
@@ -101,6 +111,7 @@ const copy = {
     retention:
       "音訊上載尚未啟用。啟用前，必須先驗證自動刪除能符合來源 72 小時及輸出 7 日的預定上限。",
     retentionActive: "私人上載測試已啟用。完成後請刪除已確認的上載；自動保留期清理尚未啟用。",
+    retentionManaged: "私人上載測試及自動保留期清理已啟用；你亦可立即刪除已完成的私人 Mix。",
     presetTitle: "選擇你的 Study Mix 風格",
     rights: "我擁有此錄音，或已獲准上載、處理及製作其改編版本。",
     summary: "你的選擇",
@@ -116,6 +127,7 @@ const copy = {
     deleteUpload: "刪除私人上載",
     deletingUpload: "正在刪除私人上載……",
     deleteFailed: "未能刪除私人上載，請重試。",
+    deleteJobFailed: "未能刪除私人 Mix，請重試。",
     createMock: "建立 2 個測試候選版本",
     creatingMock: "正在建立兩個私人合成測試候選版本……",
     replaceBlocked: "請先刪除已確認的私人上載，然後再選擇另一個檔案。",
@@ -158,7 +170,11 @@ const legalManifestEnvelopeSchema = apiEnvelopeSchema(legalDocumentsManifestSche
 const authMeEnvelopeSchema = apiEnvelopeSchema(
   z.object({
     capabilities: z
-      .object({ mockGeneration: z.boolean(), privateAudioUpload: z.boolean() })
+      .object({
+        mockGeneration: z.boolean(),
+        privateAudioUpload: z.boolean(),
+        retentionCleanup: z.boolean(),
+      })
       .strict(),
     kind: z.enum(["authenticated", "development"]),
     ownerId: ownerIdSchema,
@@ -229,10 +245,12 @@ function PrivateApp() {
   const [notice, setNotice] = useState<string | null>(null);
   const [activeJob, setActiveJob] = useState<PublicJob | null>(null);
   const [jobError, setJobError] = useState<JobApiError | null>(null);
+  const [jobDeletionFailed, setJobDeletionFailed] = useState(false);
   const [candidateSources, setCandidateSources] = useState<readonly [string, string] | null>(null);
   const [downloadRetryVersion, setDownloadRetryVersion] = useState(0);
   const [mockGenerationEnabled, setMockGenerationEnabled] = useState(false);
   const [privateAudioUploadEnabled, setPrivateAudioUploadEnabled] = useState(false);
+  const [retentionCleanupEnabled, setRetentionCleanupEnabled] = useState(false);
   const [confirmedUpload, setConfirmedUpload] = useState<PublicUpload | null>(null);
   const jobIdempotencyKey = useRef<string | null>(null);
   const strings = copy[language];
@@ -261,6 +279,7 @@ function PrivateApp() {
         if (response.ok && parsed.success && parsed.data.error === null) {
           setMockGenerationEnabled(parsed.data.data.capabilities.mockGeneration);
           setPrivateAudioUploadEnabled(parsed.data.data.capabilities.privateAudioUpload);
+          setRetentionCleanupEnabled(parsed.data.data.capabilities.retentionCleanup);
           setAccessStatus("verified");
           return;
         }
@@ -503,9 +522,28 @@ function PrivateApp() {
     }
   };
 
+  const handleDeleteJob = async () => {
+    if (activeJob === null || isPendingJob(activeJob.status) || isSavingAcceptance) {
+      return;
+    }
+    setIsSavingAcceptance(true);
+    setJobDeletionFailed(false);
+    try {
+      if (!(mockApiEnabled && confirmedUpload === null)) {
+        await deleteJob(activeJob.jobId);
+      }
+      handleStartOver();
+    } catch {
+      setJobDeletionFailed(true);
+    } finally {
+      setIsSavingAcceptance(false);
+    }
+  };
+
   const handleStartOver = () => {
     setActiveJob(null);
     setJobError(null);
+    setJobDeletionFailed(false);
     setCandidateSources(null);
     setSelectedFile(null);
     setRightsAccepted(false);
@@ -549,10 +587,12 @@ function PrivateApp() {
             <JobExperience
               candidateSources={candidateSources}
               error={jobError}
+              deletionError={jobDeletionFailed ? strings.deleteJobFailed : null}
               filename={selectedFile?.name ?? "—"}
               isRetrying={isSavingAcceptance}
               job={activeJob}
               language={language}
+              onDelete={() => void handleDeleteJob()}
               presetName={selectedPresetName}
               onRetry={() => void handleRetry()}
               onStartOver={handleStartOver}
@@ -563,6 +603,7 @@ function PrivateApp() {
                 <UploadPanel
                   language={language}
                   privateAudioUploadEnabled={privateAudioUploadEnabled}
+                  retentionCleanupEnabled={retentionCleanupEnabled}
                   selectedFile={selectedFile}
                   onFileChange={handleFileChange}
                   onDrop={handleDrop}
@@ -918,6 +959,7 @@ function SiteFooter({ language }: { language: Language }) {
 type UploadPanelProps = {
   language: Language;
   privateAudioUploadEnabled: boolean;
+  retentionCleanupEnabled: boolean;
   selectedFile: File | null;
   onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onDrop: (event: DragEvent<HTMLLabelElement>) => void;
@@ -926,6 +968,7 @@ type UploadPanelProps = {
 function UploadPanel({
   language,
   privateAudioUploadEnabled,
+  retentionCleanupEnabled,
   selectedFile,
   onFileChange,
   onDrop,
@@ -996,7 +1039,13 @@ function UploadPanel({
 
       <div className="retention-note">
         <ShieldIcon />
-        <span>{privateAudioUploadEnabled ? strings.retentionActive : strings.retention}</span>
+        <span>
+          {privateAudioUploadEnabled
+            ? retentionCleanupEnabled
+              ? strings.retentionManaged
+              : strings.retentionActive
+            : strings.retention}
+        </span>
       </div>
     </section>
   );

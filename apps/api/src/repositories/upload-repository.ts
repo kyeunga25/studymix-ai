@@ -122,19 +122,28 @@ export async function confirmOwnedUpload(
   uploadId: string,
   sizeBytes: number,
   confirmedAt: string,
+  retentionExpiresAt: string,
 ): Promise<UploadRecord> {
   const parsedOwnerId = ownerIdSchema.parse(ownerId);
   const parsedUploadId = uploadIdSchema.parse(uploadId);
   const parsedSize = z.number().int().nonnegative().safe().parse(sizeBytes);
   const parsedConfirmedAt = z.string().datetime({ offset: true }).parse(confirmedAt);
+  const parsedRetentionExpiresAt = z
+    .string()
+    .datetime({ offset: true })
+    .refine(
+      (value) => new Date(value).getTime() > new Date(parsedConfirmedAt).getTime(),
+      "Retention expiry must be after confirmation.",
+    )
+    .parse(retentionExpiresAt);
   const row = await db
     .prepare(
       `UPDATE uploads
-       SET status = 'confirmed', size_bytes = ?1, confirmed_at = ?2
+       SET status = 'confirmed', size_bytes = ?1, confirmed_at = ?2, expires_at = ?5
        WHERE id = ?3 AND owner_id = ?4 AND status = 'pending' AND expires_at > ?2
        RETURNING *`,
     )
-    .bind(parsedSize, parsedConfirmedAt, parsedUploadId, parsedOwnerId)
+    .bind(parsedSize, parsedConfirmedAt, parsedUploadId, parsedOwnerId, parsedRetentionExpiresAt)
     .first();
 
   if (row === null) {

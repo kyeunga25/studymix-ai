@@ -10,6 +10,8 @@ const copy = {
     aiNotice: "AI output may not preserve every musical detail. Review both candidates carefully.",
     candidate: "Candidate",
     completed: "Completed",
+    deletePrivateData: "Delete this private mix",
+    deletingPrivateData: "Deleting private audio…",
     errorHeading: "We could not finish this study mix",
     errorLead: "Your source remains private. Follow the guidance below before trying again.",
     expires: "Expires",
@@ -37,6 +39,8 @@ const copy = {
     aiNotice: "AI 輸出未必能保留每個音樂細節，請仔細比較兩個候選版本。",
     candidate: "候選版本",
     completed: "已完成",
+    deletePrivateData: "刪除這個私人 Mix",
+    deletingPrivateData: "正在刪除私人音訊……",
     errorHeading: "未能完成這個 Study Mix",
     errorLead: "你的來源仍保持私密。請按以下指引處理後再試。",
     expires: "到期時間",
@@ -78,12 +82,14 @@ export function isTerminalJob(status: JobStatus): boolean {
 
 type JobExperienceProps = {
   candidateSources: readonly [string, string] | null;
+  deletionError: string | null;
   error: JobApiError | null;
   filename: string;
   isRetrying: boolean;
   job: PublicJob | null;
   language: Language;
   onRetry: () => void;
+  onDelete: () => void;
   onStartOver: () => void;
   presetName: string;
 };
@@ -149,10 +155,12 @@ function PendingPage({ job, language, onStartOver }: JobExperienceProps & { job:
 
 function ResultPage({
   candidateSources,
+  deletionError,
   filename,
   job,
   language,
-  onStartOver,
+  isRetrying,
+  onDelete,
   presetName,
 }: JobExperienceProps & { job: PublicJob }) {
   const strings = copy[language];
@@ -160,10 +168,6 @@ function ResultPage({
 
   return (
     <section className="job-page" aria-labelledby="job-page-title">
-      <button className="text-button" type="button" onClick={onStartOver}>
-        <ArrowLeftIcon />
-        {strings.startAnother}
-      </button>
       <header className="job-heading result-heading">
         <div>
           <h1 id="job-page-title">{strings.resultHeading}</h1>
@@ -227,16 +231,28 @@ function ResultPage({
         <Notice icon={<InfoIcon />}>{strings.aiNotice}</Notice>
         <Notice icon={<LockIcon />}>{strings.privateNotice}</Notice>
       </div>
+      {deletionError === null ? null : (
+        <p className="form-status is-error" role="alert">
+          {deletionError}
+        </p>
+      )}
+      <div className="error-actions">
+        <button className="secondary-action" disabled={isRetrying} type="button" onClick={onDelete}>
+          {isRetrying ? strings.deletingPrivateData : strings.deletePrivateData}
+        </button>
+      </div>
     </section>
   );
 }
 
 function ErrorPage({
+  deletionError,
   error,
   isRetrying,
   job,
   language,
   onRetry,
+  onDelete,
   onStartOver,
   retryable,
 }: JobExperienceProps & { retryable: boolean }) {
@@ -260,10 +276,26 @@ function ErrorPage({
             {strings.retry}
           </button>
         ) : null}
-        <button className="secondary-action" type="button" onClick={onStartOver}>
-          {strings.startAnother}
-        </button>
+        {job === null ? (
+          <button className="secondary-action" type="button" onClick={onStartOver}>
+            {strings.startAnother}
+          </button>
+        ) : (
+          <button
+            className="secondary-action"
+            disabled={isRetrying}
+            type="button"
+            onClick={onDelete}
+          >
+            {isRetrying ? strings.deletingPrivateData : strings.deletePrivateData}
+          </button>
+        )}
       </div>
+      {deletionError === null ? null : (
+        <p className="form-status is-error" role="alert">
+          {deletionError}
+        </p>
+      )}
     </section>
   );
 }

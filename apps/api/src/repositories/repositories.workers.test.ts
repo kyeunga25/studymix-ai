@@ -61,7 +61,14 @@ async function createConfirmedUpload(
     ownerId: owner.ownerId,
     sizeBytes: 1024,
   });
-  await confirmOwnedUpload(env.DB, owner.ownerId, uploadId, 1024, now);
+  await confirmOwnedUpload(
+    env.DB,
+    owner.ownerId,
+    uploadId,
+    1024,
+    now,
+    new Date(new Date(now).getTime() + 24 * 60 * 60 * 1_000).toISOString(),
+  );
   return uploadId;
 }
 

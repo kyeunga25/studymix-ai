@@ -28,14 +28,16 @@ apply operation.
 ## 1.1 Prepare private R2 transfer in staging only
 
 Create separate private staging and production buckets. Do not enable an `r2.dev` URL or public custom
-domain. Keep `R2_TRANSFER_ENABLED=false` in production while automatic retention cleanup and live
-expiry monitoring are incomplete.
+domain. Keep `R2_TRANSFER_ENABLED=false` in production while the implemented retention handler and live
+expiry monitoring have not passed isolated staging checks.
 
 The staging Worker needs:
 
 - an `AUDIO_BUCKET` binding to the staging bucket;
 - protected runtime values for `R2_ACCOUNT_ID`, `R2_BUCKET_NAME`, `MAX_UPLOAD_BYTES`,
-  `MAX_ACTIVE_UPLOADS_PER_OWNER`, `UPLOAD_URL_TTL_SECONDS`, and `DOWNLOAD_URL_TTL_SECONDS`;
+  `MAX_ACTIVE_UPLOADS_PER_OWNER`, `UPLOAD_URL_TTL_SECONDS`, `DOWNLOAD_URL_TTL_SECONDS`,
+  `ABANDONED_UPLOAD_RETENTION_HOURS`, `SOURCE_RETENTION_HOURS`,
+  `FAILED_ARTIFACT_RETENTION_HOURS`, and `RETENTION_CLEANUP_BATCH_SIZE`;
 - bucket-scoped Object Read & Write credentials stored only as the Worker secrets
   `R2_S3_ACCESS_KEY_ID` and `R2_S3_SECRET_ACCESS_KEY`.
 
@@ -59,7 +61,10 @@ bearer credentials and must never be logged. See Cloudflare's current
 Before setting `R2_TRANSFER_ENABLED=true` in staging, verify that a browser uploads directly to the R2
 S3 hostname, a second PUT receives `412`, a wrong content type fails, an expired URL fails, another owner
 cannot confirm or delete the upload, explicit deletion removes the object, and no audio bytes traverse
-the Worker request body. Leave production disabled until automatic retention cleanup is implemented.
+the Worker request body. Enable `RETENTION_CLEANUP_ENABLED=true` only in this staging environment, then
+verify the hourly Cron removes due objects, updates D1, retries an interrupted deletion, emits counts
+without object keys, and does not remove another owner's or a not-yet-due object. Leave production
+disabled until those live checks pass.
 
 ## 1.2 Prepare the mock Workflow in isolated staging
 
@@ -77,8 +82,9 @@ then enable `JOB_WORKFLOW_ENABLED=true` only for the approved staging Worker. Ke
 
 Before any production decision, verify owner isolation, exact current legal acceptance, one persisted
 rights declaration per job, duplicate-request idempotency, active-job limits, two private outputs,
-short-lived signed playback, create-only R2 writes, and Workflow retry behavior. Automatic expiry must
-be operational before the feature can be described as production-ready. Cloudflare's current
+short-lived signed playback, create-only R2 writes, terminal-job deletion, and Workflow retry behavior.
+The hourly retention handler must demonstrate 24-hour unattached/failed-artifact cleanup, 72-hour source
+cleanup, 7-day output expiry, and safe retries before the feature is described as production-ready. Cloudflare's current
 [Workflows rules](https://developers.cloudflare.com/workflows/build/rules-of-workflows/) and
 [Workers API](https://developers.cloudflare.com/workflows/build/workers-api/) remain the implementation
 reference.
@@ -156,6 +162,8 @@ Before production traffic is enabled:
    submit, repeat, and query acceptance for an approved test owner.
 11. Confirm a denied identity and a second approved identity cannot read or satisfy the first owner's
     legal or metadata state.
+12. Confirm an approved owner can delete a completed or failed job, its private R2 objects disappear,
+    another owner receives `404`, and the hourly Cron reports only bounded aggregate counts.
 
 There must be no Bypass policy, broader conflicting application, preview hostname, or default Worker
 hostname that exposes `/app*` or `/api/*` outside the authentication boundary.
@@ -182,7 +190,10 @@ protected build setting; the actual name must not be copied into the checked-in 
    values must never be committed or printed in public build documentation.
 5. Keep `APP_ENV`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `LEGAL_CONTACT_EMAIL`, `R2_ACCOUNT_ID`,
    `R2_BUCKET_NAME`, the R2 limits/TTLs, `R2_TRANSFER_ENABLED=false`,
-   `JOB_WORKFLOW_ENABLED=false`, `MAX_ACTIVE_JOBS_PER_OWNER`, `OUTPUT_RETENTION_HOURS`,
+   `JOB_WORKFLOW_ENABLED=false`, `RETENTION_CLEANUP_ENABLED=false`,
+   `MAX_ACTIVE_JOBS_PER_OWNER`, `ABANDONED_UPLOAD_RETENTION_HOURS`,
+   `SOURCE_RETENTION_HOURS`, `FAILED_ARTIFACT_RETENTION_HOURS`, `OUTPUT_RETENTION_HOURS`,
+   `RETENTION_CLEANUP_BATCH_SIZE`,
    `GENERATION_PROVIDER=mock`, and `REAL_GENERATION_ENABLED=false` as Worker runtime variables. Store
    the two R2 S3 credentials only as Worker secrets. The
    generated deployment config uses `keep_vars` and does not redefine them.

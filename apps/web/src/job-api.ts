@@ -1,17 +1,21 @@
 import {
   apiEnvelopeSchema,
   createJobRequestSchema,
+  deleteJobResponseSchema,
   downloadOutputResponseSchema,
   outputIdSchema,
+  jobIdSchema,
   publicJobSchema,
   type ApiErrorCode,
   type CreateJobRequest,
   type DownloadOutputResponse,
+  type DeleteJobResponse,
   type PublicJob,
 } from "@studymix/contracts";
 
 const jobEnvelopeSchema = apiEnvelopeSchema(publicJobSchema);
 const downloadEnvelopeSchema = apiEnvelopeSchema(downloadOutputResponseSchema);
+const deleteJobEnvelopeSchema = apiEnvelopeSchema(deleteJobResponseSchema);
 
 export class JobApiError extends Error {
   readonly code: ApiErrorCode | "INVALID_RESPONSE" | "NETWORK_ERROR";
@@ -96,6 +100,31 @@ async function parseDownloadResponse(response: Response): Promise<DownloadOutput
   return parsed.data.data;
 }
 
+async function parseDeleteJobResponse(response: Response): Promise<DeleteJobResponse> {
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw invalidResponseError();
+  }
+  const parsed = deleteJobEnvelopeSchema.safeParse(body);
+  if (!parsed.success) {
+    throw invalidResponseError();
+  }
+  if (parsed.data.error !== null) {
+    throw new JobApiError({
+      code: parsed.data.error.code,
+      message: parsed.data.error.message,
+      requestId: parsed.data.requestId,
+      retryable: parsed.data.error.retryable,
+    });
+  }
+  if (!response.ok) {
+    throw invalidResponseError();
+  }
+  return parsed.data.data;
+}
+
 function normalizeFetchError(error: unknown): never {
   if (error instanceof DOMException && error.name === "AbortError") {
     throw error;
@@ -140,6 +169,26 @@ export async function getJob(jobId: string, signal: AbortSignal): Promise<Public
       signal,
     });
     return await parseJobResponse(response);
+  } catch (error) {
+    normalizeFetchError(error);
+  }
+}
+
+export async function deleteJob(jobId: string): Promise<DeleteJobResponse> {
+  const parsedJobId = jobIdSchema.safeParse(jobId);
+  if (!parsedJobId.success) {
+    throw new JobApiError({
+      code: "VALIDATION_ERROR",
+      message: "The job request is invalid.",
+      retryable: false,
+    });
+  }
+  try {
+    const response = await fetch(`/api/jobs/${encodeURIComponent(parsedJobId.data)}`, {
+      credentials: "same-origin",
+      method: "DELETE",
+    });
+    return await parseDeleteJobResponse(response);
   } catch (error) {
     normalizeFetchError(error);
   }

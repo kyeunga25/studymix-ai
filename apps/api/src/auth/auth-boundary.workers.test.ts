@@ -43,6 +43,11 @@ describe("Worker authentication boundary", () => {
     expect(response.status).toBe(200);
     expect(body).toMatchObject({
       data: {
+        capabilities: {
+          mockGeneration: true,
+          privateAudioUpload: true,
+          retentionCleanup: true,
+        },
         kind: "development",
         ownerId: expect.stringMatching(/^own_[0-9a-f]{32}$/),
       },

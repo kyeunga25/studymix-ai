@@ -81,6 +81,13 @@ export const downloadOutputResponseSchema = z
   })
   .strict();
 
+export const deleteJobResponseSchema = z
+  .object({
+    jobId: jobIdSchema,
+    status: z.literal("deleted"),
+  })
+  .strict();
+
 export type JobStatus = z.infer<typeof jobStatusSchema>;
 export type CandidateCount = z.infer<typeof candidateCountSchema>;
 export type CandidateIndex = z.infer<typeof candidateIndexSchema>;
@@ -89,3 +96,4 @@ export type PublicOutput = z.infer<typeof publicOutputSchema>;
 export type CreateJobRequest = z.infer<typeof createJobRequestSchema>;
 export type PublicJob = z.infer<typeof publicJobSchema>;
 export type DownloadOutputResponse = z.infer<typeof downloadOutputResponseSchema>;
+export type DeleteJobResponse = z.infer<typeof deleteJobResponseSchema>;

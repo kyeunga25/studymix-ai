@@ -449,13 +449,15 @@ Generate Worker binding types using Wrangler. Do not hand-maintain an `Env` inte
 
 ## 14.1 Data lifecycle and disclosure status
 
-The codebase contains a feature-gated direct-to-private-R2 upload slice, owner-scoped single-upload
-deletion, and a feature-gated mock Workflow that writes two synthetic private outputs. The default and
-production settings remain `R2_TRANSFER_ENABLED=false` and `JOB_WORKFLOW_ENABLED=false`; no production
-audio collection or server-side generation is claimed until a separate staging bucket, exact-origin
-CORS, signed-URL expiry, monitoring, and browser checks pass. Automatic retention cleanup is not
-implemented, so the test UI discloses that limit and exposes explicit deletion before a job is attached.
-External generation remains disabled.
+The codebase contains a feature-gated direct-to-private-R2 upload slice, owner-scoped upload and
+terminal-job deletion, a feature-gated mock Workflow that writes two synthetic private outputs, and an
+hourly retention handler. The default and production settings remain `R2_TRANSFER_ENABLED=false`,
+`JOB_WORKFLOW_ENABLED=false`, and `RETENTION_CLEANUP_ENABLED=false`; no production audio collection or
+server-side generation is claimed until a separate staging bucket, exact-origin CORS, signed-URL expiry,
+Cron monitoring, and browser checks pass. Cleanup first makes metadata inaccessible, deletes private R2
+objects, then marks object metadata deleted; interrupted deletion remains eligible for the next run. The
+configured windows cover unattached uploads and failed artifacts after 24 hours, completed sources after
+72 hours, and outputs after 7 days. External generation remains disabled.
 
 Legal acceptance records are metadata evidence, not audio. Their final retention period must be
 documented before launch and limited to what is necessary for governing-version proof, security, and

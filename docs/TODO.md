@@ -23,13 +23,14 @@ This document records only verifiable repository capabilities and public safety 
 - [x] GitHub 存放庫已連接至 Cloudflare Workers Builds；生產與預覽命令採用加密建置設定，不在版本庫保存資源識別資料。
 - [x] Feature-gated 私人 R2 直接上載切片：server-controlled key、短效且綁定 content type／不可覆寫條件的 PUT URL、R2 metadata 確認、owner 隔離、明確刪除、短效輸出下載簽名及本機整合測試。
 - [x] Feature-gated server-side mock generation 切片：嚴格 job contracts、現行法律接受及逐工作權利聲明、active-job quota、owner-scoped job API、Cloudflare Workflow、兩個無付費服務的合成 WAV 候選版本、私人 R2 輸出、短效播放連結及 Workflow introspection 測試。
+- [x] Feature-gated 保留期與刪除切片：owner-scoped terminal job 即時刪除、24 小時未附加上載／失敗 artifact 清理、完成後 72 小時來源清理、7 日輸出到期、每小時 Cron handler、可重試 metadata 狀態及另一 owner 拒絕測試。
 
 ## 目前未啟用 / Currently disabled
 
 - 正式環境的瀏覽器私人 R2 上載；`R2_TRANSFER_ENABLED` 預設及正式環境仍須保持 `false`，直至私人 staging bucket、CORS、到期失效及監察完成實測。
 - 正式環境的 server-side mock Workflow；`JOB_WORKFLOW_ENABLED` 預設保持 `false`，且未批准的部署不加入 Workflow binding。
 - 真實 AI 音訊生成、外部 callback 與正式輸出交付。
-- 自動清理及正式保留期執行；目前只有 owner-scoped 單一上載明確刪除路徑。
+- 正式環境的自動保留期執行；`RETENTION_CLEANUP_ENABLED` 預設保持 `false`，直至 staging Cron、R2 刪除重試及監察完成實測。程式與本機 Worker 測試已覆蓋清理及 terminal job 即時刪除。
 - 公開註冊、非受邀帳戶及公開使用者內容。
 
 介面可用本機 mock 或受旗標保護的 server-side 合成音調完整示範狀態流程，但不會把任何 mock 結果描述為真實 AI 生成。
