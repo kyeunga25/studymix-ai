@@ -20,6 +20,7 @@ This document records only verifiable repository capabilities and public safety 
 - [x] `/health`、法律頁及公開法律 manifest 可匿名讀取，但不建立 owner 紀錄。
 - [x] Mock provider 模式不需要付費憑證，CI 不會呼叫外部生成服務。
 - [x] fal ACE-Step audio-to-audio adapter 與 provider factory：非同步 queue mapping、Zod 外部回應驗證、provider JSON 不保留、有限輸出期限、預期輸出 host、最小 metadata 及全離線 contract tests；尚未接入正式 Workflow。
+- [x] Provider output 安全串流邊界：HTTPS host allowlist、禁止 redirect、逾時、identity encoding、可信 content length、音訊 MIME 與 byte limit、Cloudflare `FixedLengthStream`、私人 R2 conditional write、冪等重試及 Miniflare 測試；尚未接入正式 Workflow。
 - [x] Cloudflare Workers Builds 可用的部署指令以受保護設定生成 ignored config，不把資源識別資料寫入版本庫。
 - [x] GitHub 存放庫已連接至 Cloudflare Workers Builds；生產與預覽命令採用加密建置設定，不在版本庫保存資源識別資料。
 - [x] Feature-gated 私人 R2 直接上載切片：server-controlled key、短效且綁定 content type／不可覆寫條件的 PUT URL、R2 metadata 確認、owner 隔離、明確刪除、短效輸出下載簽名及本機整合測試。

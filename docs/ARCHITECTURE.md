@@ -389,6 +389,15 @@ Validate:
 - Basic output metadata.
 - Non-empty stream.
 
+The implemented ingestion boundary additionally requires HTTPS on an explicit provider-host allowlist,
+manual redirect handling, identity content encoding, and a positive trustworthy `Content-Length`. It
+streams through a byte-counting transform and a Cloudflare `FixedLengthStream` into private R2 using an
+`etagDoesNotMatch: "*"` conditional write. The stored object contains only content type and an ingestion
+version marker. Replays first verify the existing private object so an expired provider URL is not fetched
+again. Empty, oversized, encoded, redirected, mismatched, or non-audio responses fail closed; no code path
+buffers a complete provider audio response in Worker memory. This boundary has Miniflare integration tests
+but is not yet connected to real generation.
+
 ## 12. Authentication strategy
 
 ### Authentication boundary
