@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  httpsUrlSchema,
   idempotencyKeySchema,
   isoDateTimeSchema,
   jobIdSchema,
@@ -27,6 +28,9 @@ export const candidateIndexSchema = z.union([z.literal(0), z.literal(1)]);
 
 export const outputStatusSchema = z.enum(["pending", "ready", "failed", "expired", "deleted"]);
 
+export const currentRightsDeclarationVersion = "v1" as const;
+export const rightsDeclarationVersionSchema = z.literal(currentRightsDeclarationVersion);
+
 export const publicOutputSchema = z
   .object({
     outputId: outputIdSchema,
@@ -46,7 +50,7 @@ export const createJobRequestSchema = z
     presetId: presetIdSchema,
     presetVersion: presetVersionSchema,
     candidateCount: candidateCountSchema,
-    rightsDeclarationVersion: z.string().trim().min(1).max(64),
+    rightsDeclarationVersion: rightsDeclarationVersionSchema,
     idempotencyKey: idempotencyKeySchema.optional(),
   })
   .strict();
@@ -68,6 +72,15 @@ export const publicJobSchema = z
   })
   .strict();
 
+export const downloadOutputResponseSchema = z
+  .object({
+    downloadMethod: z.literal("GET"),
+    downloadUrl: httpsUrlSchema,
+    expiresAt: isoDateTimeSchema,
+    outputId: outputIdSchema,
+  })
+  .strict();
+
 export type JobStatus = z.infer<typeof jobStatusSchema>;
 export type CandidateCount = z.infer<typeof candidateCountSchema>;
 export type CandidateIndex = z.infer<typeof candidateIndexSchema>;
@@ -75,3 +88,4 @@ export type OutputStatus = z.infer<typeof outputStatusSchema>;
 export type PublicOutput = z.infer<typeof publicOutputSchema>;
 export type CreateJobRequest = z.infer<typeof createJobRequestSchema>;
 export type PublicJob = z.infer<typeof publicJobSchema>;
+export type DownloadOutputResponse = z.infer<typeof downloadOutputResponseSchema>;

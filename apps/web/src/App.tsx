@@ -1,6 +1,30 @@
-import { useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
+import {
+  apiEnvelopeSchema,
+  currentLegalAcceptanceDocuments,
+  currentRightsDeclarationVersion,
+  legalAcceptanceStatusSchema,
+  legalDocumentsManifestSchema,
+  ownerIdSchema,
+  type LegalDocumentId,
+  type PublicJob,
+  type PublicUpload,
+} from "@studymix/contracts";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+import { z } from "zod";
+import { LandingPage } from "./LandingPage";
+import { legalPageContent, legalPathToDocumentId, type Language } from "./legal-content";
+import { JobExperience, isPendingJob } from "./job-experience";
+import { createJob, getJob, getOutputDownload, toJobApiError, type JobApiError } from "./job-api";
+import { deleteUpload, uploadAndConfirmAudio } from "./upload-api";
 
-type Language = "en" | "zh-HK";
 type PresetId = "soft-piano" | "music-box" | "lofi-study";
 
 type Preset = {
@@ -21,7 +45,10 @@ const copy = {
     or: "or",
     choose: "Choose file",
     replace: "Replace file",
-    retention: "Source deleted within 72 hours. Outputs expire after 7 days.",
+    retention:
+      "Audio upload is not active. Before activation, automatic deletion must be verified against the planned 72-hour source and 7-day output limits.",
+    retentionActive:
+      "Private upload testing is active. Delete the confirmed upload when finished; automatic retention cleanup is not active yet.",
     presetTitle: "Choose a study mix style",
     rights:
       "I own this recording or have permission to upload, process, and create an adapted version of it.",
@@ -30,11 +57,36 @@ const copy = {
     preset: "Preset",
     candidates: "Candidates",
     generate: "Generate 2 candidates",
-    disabled: "Add a file and confirm your permission to continue.",
-    ready: "Everything is ready. Your file stays private.",
-    demo: "The interface is ready. API generation will be connected in the next product phases.",
+    upload: "Securely upload audio",
+    uploading: "Uploading directly to private Cloudflare R2…",
+    uploadSuccess: "Private upload confirmed. AI generation remains disabled.",
+    uploadSuccessMock:
+      "Private upload confirmed. You can now create two synthetic test candidates; external AI remains disabled.",
+    uploadFailed: "The private upload could not be confirmed. Check the file and try again.",
+    deleteUpload: "Delete private upload",
+    deletingUpload: "Deleting the private upload…",
+    deleteFailed: "The private upload could not be deleted. Please retry.",
+    createMock: "Create 2 test candidates",
+    creatingMock: "Creating two private synthetic test candidates…",
+    replaceBlocked: "Delete the confirmed private upload before choosing another file.",
+    legalAcceptanceLead: "I accept the current",
+    legalAnd: "and",
+    privacyAcknowledgement: "and acknowledge the",
+    disabled: "Add a file, confirm your rights, and accept the current legal documents.",
+    ready: "Ready to record legal acceptance. Real generation remains disabled.",
+    readyUpload: "Ready for private R2 upload. AI generation remains disabled.",
+    saving: "Recording the current legal document versions…",
+    demo: "Acceptance saved. Audio upload and AI generation remain disabled until release gates pass.",
+    legalSaveFailed:
+      "Acceptance was not recorded. Check the legal configuration and try again; generation remains blocked.",
     privacy: "Private by default",
-    privacyDetail: "No public result pages and no training on your upload.",
+    privacyDetail:
+      "This release keeps selected files in your browser; upload and external AI processing are disabled.",
+    privacyDetailActive:
+      "Audio goes directly to private R2 for upload testing and is not sent to an AI provider. Use the delete control when finished.",
+    privacyDetailMock:
+      "Audio stays in private R2. Test candidates are synthetic tones created without an external AI provider and remain private.",
+    logout: "Sign out",
   },
   "zh-HK": {
     languageName: "EN",
@@ -46,7 +98,9 @@ const copy = {
     or: "或",
     choose: "選擇檔案",
     replace: "更換檔案",
-    retention: "來源音訊會在 72 小時內刪除，輸出則於 7 日後到期。",
+    retention:
+      "音訊上載尚未啟用。啟用前，必須先驗證自動刪除能符合來源 72 小時及輸出 7 日的預定上限。",
+    retentionActive: "私人上載測試已啟用。完成後請刪除已確認的上載；自動保留期清理尚未啟用。",
     presetTitle: "選擇你的 Study Mix 風格",
     rights: "我擁有此錄音，或已獲准上載、處理及製作其改編版本。",
     summary: "你的選擇",
@@ -54,13 +108,63 @@ const copy = {
     preset: "風格",
     candidates: "候選版本",
     generate: "生成 2 個候選版本",
-    disabled: "請加入檔案並確認你已獲授權。",
-    ready: "準備完成，你的檔案會保持私密。",
-    demo: "介面已準備好；API 生成流程會在下一個產品階段接通。",
+    upload: "安全上載音訊",
+    uploading: "正在直接上載至私人 Cloudflare R2……",
+    uploadSuccess: "私人上載已確認；AI 生成仍然關閉。",
+    uploadSuccessMock: "私人上載已確認；現可建立兩個合成測試候選版本，外部 AI 仍然關閉。",
+    uploadFailed: "未能確認私人上載。請檢查檔案後再試。",
+    deleteUpload: "刪除私人上載",
+    deletingUpload: "正在刪除私人上載……",
+    deleteFailed: "未能刪除私人上載，請重試。",
+    createMock: "建立 2 個測試候選版本",
+    creatingMock: "正在建立兩個私人合成測試候選版本……",
+    replaceBlocked: "請先刪除已確認的私人上載，然後再選擇另一個檔案。",
+    legalAcceptanceLead: "我接受現行",
+    legalAnd: "及",
+    privacyAcknowledgement: "並確認已閱讀",
+    disabled: "請加入檔案、確認權利，並接受現行法律文件。",
+    ready: "可保存法律接受紀錄；真實生成仍然關閉。",
+    readyUpload: "可上載至私人 R2；AI 生成仍然關閉。",
+    saving: "正在保存現行法律文件版本……",
+    demo: "接受紀錄已保存。音訊上載及 AI 生成會維持關閉，直至全部上線關卡通過。",
+    legalSaveFailed: "未能保存接受紀錄。請檢查法律設定後重試；生成功能仍被阻擋。",
     privacy: "預設保持私密",
-    privacyDetail: "不設公開結果頁，亦不會使用你的音訊作模型訓練。",
+    privacyDetail: "本版本只在瀏覽器處理所選檔案；上載及外部 AI 處理尚未啟用。",
+    privacyDetailActive:
+      "音訊會直接上載至私人 R2 作測試，不會送到 AI 供應商；完成後請使用刪除控制。",
+    privacyDetailMock:
+      "音訊只存於私人 R2；測試候選版本是無需外部 AI 供應商的合成音調，並保持私密。",
+    logout: "登出",
   },
 } satisfies Record<Language, Record<string, string>>;
+
+const legalLinkCopy = {
+  en: {
+    acceptableUse: "Acceptable Use Policy",
+    aiOutputNotice: "AI and Output Notice",
+    privacyNotice: "Privacy Notice",
+    terms: "Terms of Use",
+  },
+  "zh-HK": {
+    acceptableUse: "《可接受使用政策》",
+    aiOutputNotice: "《AI 及輸出聲明》",
+    privacyNotice: "《私隱通知》",
+    terms: "《使用條款》",
+  },
+} satisfies Record<Language, Record<string, string>>;
+
+const legalAcceptanceEnvelopeSchema = apiEnvelopeSchema(legalAcceptanceStatusSchema);
+const legalManifestEnvelopeSchema = apiEnvelopeSchema(legalDocumentsManifestSchema);
+const authMeEnvelopeSchema = apiEnvelopeSchema(
+  z.object({
+    capabilities: z
+      .object({ mockGeneration: z.boolean(), privateAudioUpload: z.boolean() })
+      .strict(),
+    kind: z.enum(["authenticated", "development"]),
+    ownerId: ownerIdSchema,
+  }),
+);
+const mockApiEnabled = import.meta.env.DEV;
 
 const presets: Preset[] = [
   {
@@ -97,20 +201,161 @@ const waveformHeights = [
 ];
 
 export function App() {
-  const [language, setLanguage] = useState<Language>("en");
+  const path = window.location.pathname;
+  const legalDocumentId = legalPathToDocumentId[path];
+
+  if (path === "/" || path === "/index.html") {
+    return <LandingPage />;
+  }
+  if (legalDocumentId !== undefined) {
+    return <PublicLegalExperience documentId={legalDocumentId} />;
+  }
+  if (path === "/app" || path.startsWith("/app/")) {
+    return <PrivateApp />;
+  }
+  return <LandingPage />;
+}
+
+function PrivateApp() {
+  const [language, setLanguage] = useState<Language>("zh-HK");
   const [selectedPreset, setSelectedPreset] = useState<PresetId>("soft-piano");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [rightsAccepted, setRightsAccepted] = useState(false);
+  const [legalAccepted, setLegalAccepted] = useState(false);
+  const [accessStatus, setAccessStatus] = useState<"checking" | "unavailable" | "verified">(
+    "checking",
+  );
+  const [isSavingAcceptance, setIsSavingAcceptance] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [activeJob, setActiveJob] = useState<PublicJob | null>(null);
+  const [jobError, setJobError] = useState<JobApiError | null>(null);
+  const [candidateSources, setCandidateSources] = useState<readonly [string, string] | null>(null);
+  const [downloadRetryVersion, setDownloadRetryVersion] = useState(0);
+  const [mockGenerationEnabled, setMockGenerationEnabled] = useState(false);
+  const [privateAudioUploadEnabled, setPrivateAudioUploadEnabled] = useState(false);
+  const [confirmedUpload, setConfirmedUpload] = useState<PublicUpload | null>(null);
+  const jobIdempotencyKey = useRef<string | null>(null);
   const strings = copy[language];
   const selectedPresetName =
     presets.find((item) => item.id === selectedPreset)?.name[language] ?? "Soft Piano";
-  const canGenerate = selectedFile !== null && rightsAccepted;
+  const canGenerate =
+    selectedFile !== null && rightsAccepted && legalAccepted && confirmedUpload === null;
+  const canStartMockGeneration =
+    confirmedUpload !== null && mockGenerationEnabled && rightsAccepted && legalAccepted;
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+    document.title = language === "en" ? "StudyMix AI | Private beta" : "StudyMix AI｜私密測試";
+  }, [language]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const verifyAccess = async () => {
+      try {
+        const response = await fetch("/api/auth/me", {
+          credentials: "same-origin",
+          signal: controller.signal,
+        });
+        const body: unknown = await response.json();
+        const parsed = authMeEnvelopeSchema.safeParse(body);
+        if (response.ok && parsed.success && parsed.data.error === null) {
+          setMockGenerationEnabled(parsed.data.data.capabilities.mockGeneration);
+          setPrivateAudioUploadEnabled(parsed.data.data.capabilities.privateAudioUpload);
+          setAccessStatus("verified");
+          return;
+        }
+        setAccessStatus("unavailable");
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setAccessStatus("unavailable");
+        }
+      }
+    };
+
+    void verifyAccess();
+    return () => controller.abort();
+  }, []);
+
+  const activeJobId = activeJob?.jobId;
+  const activeJobStatus = activeJob?.status;
+
+  useEffect(() => {
+    if (
+      activeJobId === undefined ||
+      activeJobStatus === undefined ||
+      !isPendingJob(activeJobStatus)
+    ) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(
+      () => {
+        void getJob(activeJobId, controller.signal)
+          .then((job) => {
+            setActiveJob(job);
+            setJobError(null);
+          })
+          .catch((error: unknown) => {
+            if (!(error instanceof DOMException && error.name === "AbortError")) {
+              setJobError(toJobApiError(error));
+            }
+          });
+      },
+      activeJobStatus === "created" ? 500 : 850,
+    );
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [activeJobId, activeJobStatus]);
+
+  useEffect(() => {
+    if (
+      activeJob?.status !== "completed" ||
+      activeJob.outputs.length !== 2 ||
+      candidateSources !== null
+    ) {
+      return;
+    }
+    const controller = new AbortController();
+    const loadPrivateOutputs = async () => {
+      try {
+        const outputs = [...activeJob.outputs].sort(
+          (first, second) => first.candidateIndex - second.candidateIndex,
+        );
+        const downloads = await Promise.all(
+          outputs.map(
+            async (output) => await getOutputDownload(output.outputId, controller.signal),
+          ),
+        );
+        const first = downloads[0];
+        const second = downloads[1];
+        if (first === undefined || second === undefined) {
+          throw new Error("Private output URLs are unavailable.");
+        }
+        setCandidateSources([first.downloadUrl, second.downloadUrl]);
+        setJobError(null);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setJobError(toJobApiError(error));
+        }
+      }
+    };
+    void loadPrivateOutputs();
+    return () => controller.abort();
+  }, [activeJob, candidateSources, downloadRetryVersion]);
 
   const setFile = (fileList: FileList | null) => {
+    if (confirmedUpload !== null) {
+      setNotice(strings.replaceBlocked);
+      return;
+    }
     const file = fileList?.item(0) ?? null;
     setSelectedFile(file);
     setNotice(null);
+    jobIdempotencyKey.current = null;
   };
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -122,12 +367,153 @@ export function App() {
     setFile(event.dataTransfer.files);
   };
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!canGenerate) {
+  const startMockJob = async () => {
+    if (!mockApiEnabled) {
       return;
     }
-    setNotice(strings.demo);
+    const { startLocalMockJob } = await import("./dev/mock-job");
+    const result = await startLocalMockJob(selectedPreset);
+    setActiveJob(result.job);
+    setCandidateSources(result.candidateSources);
+    setJobError(null);
+    setNotice(null);
+  };
+
+  const startPrivateMockJob = async () => {
+    if (confirmedUpload === null || !mockGenerationEnabled) {
+      return;
+    }
+    jobIdempotencyKey.current ??= `ui:${crypto.randomUUID()}`;
+    const job = await createJob({
+      candidateCount: 2,
+      idempotencyKey: jobIdempotencyKey.current,
+      presetId: selectedPreset,
+      presetVersion: 1,
+      rightsDeclarationVersion: currentRightsDeclarationVersion,
+      uploadId: confirmedUpload.uploadId,
+    });
+    setActiveJob(job);
+    setCandidateSources(null);
+    setJobError(null);
+    setNotice(null);
+  };
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!canGenerate || isSavingAcceptance) {
+      return;
+    }
+    setIsSavingAcceptance(true);
+    setNotice(strings.saving);
+    try {
+      const response = await fetch("/api/legal/acceptances", {
+        body: JSON.stringify({ documents: currentLegalAcceptanceDocuments }),
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      });
+      const body: unknown = await response.json();
+      const parsed = legalAcceptanceEnvelopeSchema.safeParse(body);
+      if (
+        !response.ok ||
+        !parsed.success ||
+        parsed.data.error !== null ||
+        !parsed.data.data.current
+      ) {
+        setNotice(strings.legalSaveFailed);
+        return;
+      }
+      if (privateAudioUploadEnabled && selectedFile !== null) {
+        setNotice(strings.uploading);
+        try {
+          const upload = await uploadAndConfirmAudio(selectedFile);
+          setConfirmedUpload(upload);
+          setNotice(mockGenerationEnabled ? strings.uploadSuccessMock : strings.uploadSuccess);
+        } catch {
+          setNotice(strings.uploadFailed);
+        }
+        return;
+      }
+      if (!mockApiEnabled) {
+        setNotice(strings.demo);
+        return;
+      }
+      try {
+        await startMockJob();
+      } catch (error) {
+        setJobError(toJobApiError(error));
+      }
+    } catch {
+      setNotice(strings.legalSaveFailed);
+    } finally {
+      setIsSavingAcceptance(false);
+    }
+  };
+
+  const handleCreatePrivateMockJob = async () => {
+    if (!canStartMockGeneration || isSavingAcceptance) {
+      return;
+    }
+    setIsSavingAcceptance(true);
+    setNotice(strings.creatingMock);
+    try {
+      await startPrivateMockJob();
+    } catch (error) {
+      setJobError(toJobApiError(error));
+    } finally {
+      setIsSavingAcceptance(false);
+    }
+  };
+
+  const handleDeleteUpload = async () => {
+    if (confirmedUpload === null || isSavingAcceptance) {
+      return;
+    }
+    setIsSavingAcceptance(true);
+    setNotice(strings.deletingUpload);
+    try {
+      await deleteUpload(confirmedUpload.uploadId);
+      setConfirmedUpload(null);
+      setSelectedFile(null);
+      setRightsAccepted(false);
+      setNotice(null);
+      jobIdempotencyKey.current = null;
+    } catch {
+      setNotice(strings.deleteFailed);
+    } finally {
+      setIsSavingAcceptance(false);
+    }
+  };
+
+  const handleRetry = async () => {
+    setIsSavingAcceptance(true);
+    setJobError(null);
+    try {
+      if (activeJob?.status === "completed") {
+        setDownloadRetryVersion((version) => version + 1);
+      } else if (confirmedUpload !== null && mockGenerationEnabled) {
+        await startPrivateMockJob();
+      } else {
+        await startMockJob();
+      }
+    } catch (error) {
+      setJobError(toJobApiError(error));
+    } finally {
+      setIsSavingAcceptance(false);
+    }
+  };
+
+  const handleStartOver = () => {
+    setActiveJob(null);
+    setJobError(null);
+    setCandidateSources(null);
+    setSelectedFile(null);
+    setRightsAccepted(false);
+    setLegalAccepted(false);
+    setNotice(null);
+    setConfirmedUpload(null);
+    setDownloadRetryVersion(0);
+    jobIdempotencyKey.current = null;
   };
 
   return (
@@ -138,120 +524,412 @@ export function App() {
           <BrandMark />
           <span>StudyMix AI</span>
         </a>
-        <button
-          className="language-switch"
-          type="button"
-          onClick={() => {
-            setLanguage(language === "en" ? "zh-HK" : "en");
-            setNotice(null);
-          }}
-        >
-          <GlobeIcon />
-          <span>{strings.languageName}</span>
-        </button>
+        <div className="header-actions">
+          <button
+            className="language-switch"
+            type="button"
+            onClick={() => {
+              setLanguage(language === "en" ? "zh-HK" : "en");
+              setNotice(null);
+            }}
+          >
+            <GlobeIcon />
+            <span>{strings.languageName}</span>
+          </button>
+          <a className="logout-link" href="/cdn-cgi/access/logout">
+            {strings.logout}
+          </a>
+        </div>
       </header>
 
       <main>
-        <form className="mix-workspace" onSubmit={handleSubmit}>
-          <UploadPanel
-            language={language}
-            selectedFile={selectedFile}
-            onFileChange={handleFileChange}
-            onDrop={handleDrop}
-          />
+        <AccessVerificationStatus language={language} status={accessStatus} />
+        {accessStatus === "verified" ? (
+          activeJob !== null || jobError !== null ? (
+            <JobExperience
+              candidateSources={candidateSources}
+              error={jobError}
+              filename={selectedFile?.name ?? "—"}
+              isRetrying={isSavingAcceptance}
+              job={activeJob}
+              language={language}
+              presetName={selectedPresetName}
+              onRetry={() => void handleRetry()}
+              onStartOver={handleStartOver}
+            />
+          ) : (
+            <>
+              <form className="mix-workspace" onSubmit={(event) => void handleSubmit(event)}>
+                <UploadPanel
+                  language={language}
+                  privateAudioUploadEnabled={privateAudioUploadEnabled}
+                  selectedFile={selectedFile}
+                  onFileChange={handleFileChange}
+                  onDrop={handleDrop}
+                />
 
-          <section className="setup-panel" aria-labelledby="page-title">
-            <div className="intro">
-              <h1 id="page-title">{strings.heading}</h1>
-              <p>{strings.lede}</p>
-            </div>
+                <section className="setup-panel" aria-labelledby="page-title">
+                  <div className="intro">
+                    <h1 id="page-title">{strings.heading}</h1>
+                    <p>{strings.lede}</p>
+                  </div>
 
-            <fieldset className="preset-fieldset">
-              <legend>{strings.presetTitle}</legend>
-              <div className="preset-grid">
-                {presets.map((item) => (
-                  <label
-                    className={`preset-option${selectedPreset === item.id ? " is-selected" : ""}`}
-                    key={item.id}
-                  >
+                  <fieldset className="preset-fieldset">
+                    <legend>{strings.presetTitle}</legend>
+                    <div className="preset-grid">
+                      {presets.map((item) => (
+                        <label
+                          className={`preset-option${selectedPreset === item.id ? " is-selected" : ""}`}
+                          key={item.id}
+                        >
+                          <input
+                            type="radio"
+                            name="preset"
+                            value={item.id}
+                            checked={selectedPreset === item.id}
+                            onChange={() => {
+                              setSelectedPreset(item.id);
+                              setNotice(null);
+                            }}
+                          />
+                          <span className="preset-icon" aria-hidden="true">
+                            {item.icon}
+                          </span>
+                          <strong>{item.name[language]}</strong>
+                          <small>{item.description[language]}</small>
+                        </label>
+                      ))}
+                    </div>
+                  </fieldset>
+
+                  <label className="rights-control">
                     <input
-                      type="radio"
-                      name="preset"
-                      value={item.id}
-                      checked={selectedPreset === item.id}
-                      onChange={() => {
-                        setSelectedPreset(item.id);
+                      type="checkbox"
+                      checked={rightsAccepted}
+                      onChange={(event) => {
+                        setRightsAccepted(event.target.checked);
                         setNotice(null);
                       }}
                     />
-                    <span className="preset-icon" aria-hidden="true">
-                      {item.icon}
+                    <span className="custom-checkbox" aria-hidden="true">
+                      <CheckIcon />
                     </span>
-                    <strong>{item.name[language]}</strong>
-                    <small>{item.description[language]}</small>
+                    <span>{strings.rights}</span>
                   </label>
-                ))}
-              </div>
-            </fieldset>
 
-            <label className="rights-control">
-              <input
-                type="checkbox"
-                checked={rightsAccepted}
-                onChange={(event) => {
-                  setRightsAccepted(event.target.checked);
-                  setNotice(null);
-                }}
-              />
-              <span className="custom-checkbox" aria-hidden="true">
-                <CheckIcon />
-              </span>
-              <span>{strings.rights}</span>
-            </label>
+                  <div className="rights-control legal-acceptance-control">
+                    <input
+                      id="legal-acceptance"
+                      type="checkbox"
+                      checked={legalAccepted}
+                      onChange={(event) => {
+                        setLegalAccepted(event.target.checked);
+                        setNotice(null);
+                      }}
+                    />
+                    <label className="custom-checkbox" htmlFor="legal-acceptance">
+                      <span className="visually-hidden">
+                        {language === "en" ? "Accept current legal documents" : "接受現行法律文件"}
+                      </span>
+                      <CheckIcon />
+                    </label>
+                    <span>
+                      {strings.legalAcceptanceLead}{" "}
+                      <a href="/legal/terms">{legalLinkCopy[language].terms}</a> {strings.legalAnd}{" "}
+                      <a href="/legal/acceptable-use">{legalLinkCopy[language].acceptableUse}</a>{" "}
+                      {strings.legalAnd}{" "}
+                      <a href="/legal/ai-output-notice">{legalLinkCopy[language].aiOutputNotice}</a>
+                      {"; "}
+                      {strings.privacyAcknowledgement}{" "}
+                      <a href="/legal/privacy">{legalLinkCopy[language].privacyNotice}</a>.
+                    </span>
+                  </div>
 
-            <div className="selection-summary">
-              <strong className="summary-title">{strings.summary}</strong>
-              <SummaryRow icon={<FileIcon />} label={strings.file}>
-                {selectedFile?.name ?? "—"}
-              </SummaryRow>
-              <SummaryRow icon={<SlidersIcon />} label={strings.preset}>
-                {selectedPresetName}
-              </SummaryRow>
-              <SummaryRow icon={<CandidatesIcon />} label={strings.candidates}>
-                2
-              </SummaryRow>
-            </div>
+                  <div className="selection-summary">
+                    <strong className="summary-title">{strings.summary}</strong>
+                    <SummaryRow icon={<FileIcon />} label={strings.file}>
+                      {selectedFile?.name ?? "—"}
+                    </SummaryRow>
+                    <SummaryRow icon={<SlidersIcon />} label={strings.preset}>
+                      {selectedPresetName}
+                    </SummaryRow>
+                    <SummaryRow icon={<CandidatesIcon />} label={strings.candidates}>
+                      2
+                    </SummaryRow>
+                  </div>
 
-            <button className="generate-button" type="submit" disabled={!canGenerate}>
-              <SparkleIcon />
-              <span>{strings.generate}</span>
-            </button>
-            <p className={`form-status${canGenerate ? " is-ready" : ""}`} aria-live="polite">
-              {notice ?? (canGenerate ? strings.ready : strings.disabled)}
-            </p>
-          </section>
-        </form>
+                  {confirmedUpload === null ? (
+                    <button
+                      className="generate-button"
+                      type="submit"
+                      disabled={!canGenerate || isSavingAcceptance}
+                    >
+                      <SparkleIcon />
+                      <span>{privateAudioUploadEnabled ? strings.upload : strings.generate}</span>
+                    </button>
+                  ) : mockGenerationEnabled ? (
+                    <button
+                      className="generate-button"
+                      type="button"
+                      disabled={!canStartMockGeneration || isSavingAcceptance}
+                      onClick={() => void handleCreatePrivateMockJob()}
+                    >
+                      <SparkleIcon />
+                      <span>{strings.createMock}</span>
+                    </button>
+                  ) : null}
+                  <p
+                    className={`form-status${canGenerate || canStartMockGeneration ? " is-ready" : ""}`}
+                    aria-live="polite"
+                  >
+                    {notice ??
+                      (confirmedUpload !== null
+                        ? mockGenerationEnabled
+                          ? strings.uploadSuccessMock
+                          : strings.uploadSuccess
+                        : canGenerate
+                          ? privateAudioUploadEnabled
+                            ? strings.readyUpload
+                            : strings.ready
+                          : strings.disabled)}
+                  </p>
+                  {confirmedUpload !== null ? (
+                    <button
+                      className="text-button"
+                      disabled={isSavingAcceptance}
+                      type="button"
+                      onClick={() => void handleDeleteUpload()}
+                    >
+                      {strings.deleteUpload}
+                    </button>
+                  ) : null}
+                </section>
+              </form>
 
-        <aside className="privacy-note">
-          <ShieldIcon />
-          <div>
-            <strong>{strings.privacy}</strong>
-            <span>{strings.privacyDetail}</span>
-          </div>
-        </aside>
+              <aside className="privacy-note">
+                <ShieldIcon />
+                <div>
+                  <strong>{strings.privacy}</strong>
+                  <span>
+                    {privateAudioUploadEnabled
+                      ? mockGenerationEnabled
+                        ? strings.privacyDetailMock
+                        : strings.privacyDetailActive
+                      : strings.privacyDetail}
+                  </span>
+                </div>
+              </aside>
+            </>
+          )
+        ) : null}
+        <SiteFooter language={language} />
       </main>
     </div>
   );
 }
 
+function PublicLegalExperience({ documentId }: { documentId: LegalDocumentId }) {
+  const [language, setLanguage] = useState<Language>("zh-HK");
+  const [legalContactEmail, setLegalContactEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+    document.title = `${legalPageContent[documentId].title[language]} | StudyMix AI`;
+  }, [documentId, language]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadLegalManifest = async () => {
+      try {
+        const response = await fetch("/legal/documents.json", {
+          credentials: "same-origin",
+          signal: controller.signal,
+        });
+        const body: unknown = await response.json();
+        const parsed = legalManifestEnvelopeSchema.safeParse(body);
+        if (response.ok && parsed.success && parsed.data.error === null) {
+          setLegalContactEmail(parsed.data.data.contactEmail);
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setLegalContactEmail(null);
+        }
+      }
+    };
+
+    void loadLegalManifest();
+    return () => controller.abort();
+  }, []);
+
+  return (
+    <div className="app-shell public-legal-shell">
+      <header className="app-header">
+        <a className="brand" href="/" aria-label="StudyMix AI home">
+          <BrandMark />
+          <span>StudyMix AI</span>
+        </a>
+        <div className="header-actions">
+          <button
+            className="language-switch"
+            type="button"
+            onClick={() => setLanguage(language === "en" ? "zh-HK" : "en")}
+          >
+            <GlobeIcon />
+            <span>{language === "en" ? "繁體中文" : "EN"}</span>
+          </button>
+          <a className="logout-link" href="/app">
+            {language === "en" ? "Invited tester sign in" : "受邀測試者登入"}
+          </a>
+        </div>
+      </header>
+      <main>
+        <LegalDocumentPage
+          contactEmail={legalContactEmail}
+          documentId={documentId}
+          language={language}
+        />
+        <SiteFooter language={language} />
+      </main>
+    </div>
+  );
+}
+
+function AccessVerificationStatus({
+  language,
+  status,
+}: {
+  language: Language;
+  status: "checking" | "unavailable" | "verified";
+}) {
+  const statusCopy = {
+    en: {
+      checking: "Verifying private-beta access…",
+      unavailable: "Access could not be verified. Sign in again before testing the app.",
+      verified: "Private-beta access verified. This session is approved for testing.",
+    },
+    "zh-HK": {
+      checking: "正在驗證私密測試存取權……",
+      unavailable: "未能驗證存取權；請重新登入後再測試應用程式。",
+      verified: "私密測試存取權已驗證；此工作階段可進行測試。",
+    },
+  } satisfies Record<Language, Record<typeof status, string>>;
+
+  return (
+    <section className={`access-verification is-${status}`} role="status">
+      <ShieldIcon />
+      <span>{statusCopy[language][status]}</span>
+      {status === "unavailable" ? (
+        <a href="/app">{language === "en" ? "Sign in again" : "重新登入"}</a>
+      ) : null}
+    </section>
+  );
+}
+
+function LegalDocumentPage({
+  contactEmail,
+  documentId,
+  language,
+}: {
+  contactEmail: string | null;
+  documentId: LegalDocumentId;
+  language: Language;
+}) {
+  const document = legalPageContent[documentId];
+  const pageCopy =
+    language === "en"
+      ? {
+          contact: "Contact for privacy, rights, security, and legal requests",
+          contactPending:
+            "The production contact is not configured. Public launch and real generation are blocked.",
+          draft:
+            "Pre-release legal draft · Audio upload and external AI generation are disabled · Hong Kong legal review is required before public launch",
+          effective: "Document version",
+        }
+      : {
+          contact: "私隱、權利、保安及法律要求聯絡方法",
+          contactPending: "正式聯絡方法尚未設定；公開推出及真實生成會維持關閉。",
+          draft: "推出前法律草案 · 音訊上載及外部 AI 生成尚未啟用 · 公開推出前須完成香港法律審閱",
+          effective: "文件版本",
+        };
+
+  return (
+    <article className="legal-page">
+      <div className="legal-status" role="note">
+        <ShieldIcon />
+        <span>{pageCopy.draft}</span>
+      </div>
+      <header className="legal-heading">
+        <p>
+          {pageCopy.effective}: {document.version}
+        </p>
+        <h1>{document.title[language]}</h1>
+        <p>{document.introduction[language]}</p>
+      </header>
+
+      <div className="legal-sections">
+        {document.sections.map((section) => (
+          <section key={section.heading.en}>
+            <h2>{section.heading[language]}</h2>
+            {section.paragraphs?.[language].map((paragraph) => (
+              <p key={paragraph}>{paragraph}</p>
+            ))}
+            {section.items === undefined ? null : (
+              <ul>
+                {section.items[language].map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ))}
+      </div>
+
+      <section className="legal-contact" aria-labelledby="legal-contact-heading">
+        <h2 id="legal-contact-heading">{pageCopy.contact}</h2>
+        {contactEmail === null ? (
+          <p>{pageCopy.contactPending}</p>
+        ) : (
+          <p>
+            <a href={`mailto:${contactEmail}`}>{contactEmail}</a>
+          </p>
+        )}
+      </section>
+    </article>
+  );
+}
+
+function SiteFooter({ language }: { language: Language }) {
+  const links = legalLinkCopy[language];
+  const footerText = language === "en" ? "Authenticated private beta" : "須登入的私密測試";
+
+  return (
+    <footer className="site-footer">
+      <span>StudyMix AI · {footerText}</span>
+      <nav aria-label={language === "en" ? "Legal documents" : "法律文件"}>
+        <a href="/legal/terms">{links.terms}</a>
+        <a href="/legal/privacy">{links.privacyNotice}</a>
+        <a href="/legal/acceptable-use">{links.acceptableUse}</a>
+        <a href="/legal/ai-output-notice">{links.aiOutputNotice}</a>
+      </nav>
+    </footer>
+  );
+}
+
 type UploadPanelProps = {
   language: Language;
+  privateAudioUploadEnabled: boolean;
   selectedFile: File | null;
   onFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onDrop: (event: DragEvent<HTMLLabelElement>) => void;
 };
 
-function UploadPanel({ language, selectedFile, onFileChange, onDrop }: UploadPanelProps) {
+function UploadPanel({
+  language,
+  privateAudioUploadEnabled,
+  selectedFile,
+  onFileChange,
+  onDrop,
+}: UploadPanelProps) {
   const strings = copy[language];
 
   return (
@@ -318,7 +996,7 @@ function UploadPanel({ language, selectedFile, onFileChange, onDrop }: UploadPan
 
       <div className="retention-note">
         <ShieldIcon />
-        <span>{strings.retention}</span>
+        <span>{privateAudioUploadEnabled ? strings.retentionActive : strings.retention}</span>
       </div>
     </section>
   );

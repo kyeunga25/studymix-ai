@@ -21,6 +21,8 @@ export const publicPresetSchema = z
   })
   .strict();
 
+export const publicPresetsSchema = z.array(publicPresetSchema).length(3);
+
 export const presetReferenceSchema = z
   .object({
     id: presetIdSchema,

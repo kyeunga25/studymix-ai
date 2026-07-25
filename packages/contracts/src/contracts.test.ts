@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  currentRightsDeclarationVersion,
   apiEnvelopeSchema,
+  acceptLegalDocumentsRequestSchema,
   createJobRequestSchema,
   createUploadRequestSchema,
   createUploadResponseSchema,
   publicJobSchema,
   publicPresetSchema,
+  currentLegalAcceptanceDocuments,
+  legalAcceptanceStatusSchema,
 } from "./index";
 
 const uploadId = "upl_0123456789abcdef0123456789abcdef";
@@ -46,6 +50,10 @@ describe("upload contracts", () => {
       uploadMethod: "PUT",
       allowedContentTypes: ["audio/mpeg", "audio/wav"],
       maxUploadBytes: 524_288_000,
+      requiredHeaders: {
+        "Content-Type": "audio/wav",
+        "If-None-Match": "*",
+      },
       expiresAt: now,
     };
 
@@ -77,7 +85,7 @@ describe("preset and job contracts", () => {
       presetId: "soft-piano",
       presetVersion: 1,
       candidateCount: 2,
-      rightsDeclarationVersion: "v1",
+      rightsDeclarationVersion: currentRightsDeclarationVersion,
       idempotencyKey: "client-request-001",
     };
 
@@ -87,6 +95,9 @@ describe("preset and job contracts", () => {
     );
     expect(
       createJobRequestSchema.safeParse({ ...validRequest, rightsDeclarationVersion: "" }).success,
+    ).toBe(false);
+    expect(
+      createJobRequestSchema.safeParse({ ...validRequest, rightsDeclarationVersion: "v2" }).success,
     ).toBe(false);
   });
 
@@ -158,6 +169,59 @@ describe("API envelopes", () => {
           stack: "secret stack trace",
         },
         requestId: "req-003",
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("legal document contracts", () => {
+  it("accepts the exact current acceptance set and a complete status", () => {
+    expect(
+      acceptLegalDocumentsRequestSchema.safeParse({
+        documents: currentLegalAcceptanceDocuments,
+      }).success,
+    ).toBe(true);
+
+    expect(
+      legalAcceptanceStatusSchema.safeParse({
+        acceptedAt: {
+          "acceptable-use": now,
+          "ai-output-notice": now,
+          "terms-of-use": now,
+        },
+        current: true,
+        requiredDocuments: currentLegalAcceptanceDocuments,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("rejects duplicated, missing, unknown, and loose legal acceptance fields", () => {
+    const duplicated = [
+      currentLegalAcceptanceDocuments[0],
+      currentLegalAcceptanceDocuments[0],
+      currentLegalAcceptanceDocuments[2],
+    ];
+
+    expect(acceptLegalDocumentsRequestSchema.safeParse({ documents: duplicated }).success).toBe(
+      false,
+    );
+    expect(
+      acceptLegalDocumentsRequestSchema.safeParse({
+        documents: currentLegalAcceptanceDocuments.slice(0, 2),
+      }).success,
+    ).toBe(false);
+    expect(
+      acceptLegalDocumentsRequestSchema.safeParse({
+        documents: [
+          ...currentLegalAcceptanceDocuments.slice(0, 2),
+          { documentId: "privacy-notice", version: "2026-07-24" },
+        ],
+      }).success,
+    ).toBe(false);
+    expect(
+      acceptLegalDocumentsRequestSchema.safeParse({
+        documents: currentLegalAcceptanceDocuments,
+        ownerId: "own_0123456789abcdef0123456789abcdef",
       }).success,
     ).toBe(false);
   });

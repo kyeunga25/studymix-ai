@@ -4,11 +4,8 @@
 
 StudyMix AI is a cloud-native audio restyling SaaS. It allows a user to upload an audio recording that they own or are authorized to process, then generate study-friendly instrumental reinterpretations in a consistent style.
 
-The MVP is intended to validate three questions:
-
-1. Does audio-to-audio generation preserve enough of the recognizable melody and structure?
-2. Do users prefer the resulting versions for studying, relaxing, or background listening?
-3. Is the generation cost and failure rate low enough for a credit-based SaaS?
+The application is designed for private, authorized audio processing with clear ownership boundaries,
+recoverable asynchronous jobs, and replaceable generation providers.
 
 ## 2. Problem
 
@@ -55,10 +52,13 @@ Manually commissioning or producing piano, music-box, and lo-fi arrangements is 
 - Basic quota and abuse controls.
 - Operational logs without sensitive audio data.
 - English and Traditional Chinese UI strings.
+- Public bilingual product overview with no registration or user-content surface.
+- Authenticated private-beta access through Cloudflare Access.
+- Versioned Terms, Privacy Notice, Acceptable Use Policy, and AI/output notice.
+- Server-side current-document acceptance before real generation.
 
 ### Explicitly excluded
 
-- Payments and subscriptions.
 - Playlists and batch uploads.
 - Stem separation.
 - MIDI extraction.
@@ -103,9 +103,14 @@ The server checks:
 
 The server must not trust client-supplied object keys or sizes.
 
-### FR-3: Rights declaration
+### FR-3: Legal acceptance and rights declaration
 
-Before creating a generation job, the user must affirm:
+Before creating a generation job, the server must verify that the authenticated owner has accepted the
+current Terms of Use, Acceptable Use Policy, and AI and Output Notice. The Privacy Notice is presented
+and acknowledged but is not mislabeled as optional consent for processing necessary to provide the
+service. A stale or incomplete document set blocks job creation.
+
+The user must also affirm for that job and upload:
 
 > I own this recording or have permission to upload, process, and create an adapted version of it.
 
@@ -118,6 +123,9 @@ Store:
 - Source upload ID
 
 Do not store unnecessary identifying information.
+
+Legal acceptance evidence stores only the owner ID derived from verified Access claims, document ID,
+document version, and server timestamp. A browser cannot supply the owner identity or acceptance time.
 
 ### FR-4: Style selection
 
@@ -154,7 +162,7 @@ The API:
 3. Starts one Workflow instance.
 4. Returns `202 Accepted` and the job ID.
 
-Repeated requests with the same idempotency key must not create duplicate paid generations.
+Repeated requests with the same idempotency key must not create duplicate provider submissions.
 
 ### FR-6: Provider submission
 
@@ -240,7 +248,7 @@ Default MVP policy:
 - Source audio: delete no later than 72 hours after job completion.
 - Generated outputs: delete after 7 days.
 - Failed-job artifacts: delete after 24 hours.
-- Metadata required for abuse, cost, and legal audit may be retained longer without retaining audio.
+- Metadata required for abuse prevention and legal evidence may be retained longer without retaining audio.
 
 Retention values must be configurable.
 
@@ -257,7 +265,7 @@ User-visible failure categories:
 - Output could not be validated.
 - Internal temporary error.
 
-A failed job must not silently consume the user's future paid credit. For MVP without payments, record whether a retry is permitted.
+A failed job must record whether a safe retry is permitted.
 
 ## 7. Non-functional requirements
 
@@ -274,15 +282,33 @@ A failed job must not silently consume the user's future paid credit. For MVP wi
 - Content Security Policy on the web application.
 - Structured error responses without stack traces.
 - No request-scoped mutable global state.
+- No anonymous production or staging access.
+- Worker verifies Access JWT signature, issuer, audience, time claims, and interactive-user claims.
+- Owner IDs are server-derived from verified identity and never accepted from client input.
+- Job creation checks the current server-controlled legal versions; client-only checkboxes are not an
+  authorization or legal control.
+- Production fails closed if the legal contact or current-document manifest is invalid.
 
 ### Privacy
 
 - No training on uploads.
-- No public indexing.
+- No indexing or public exposure of the private workspace, user metadata, source audio, or outputs.
 - No permanent retention by default.
 - No audio content in logs.
 - Clear retention notice before upload.
 - User can request immediate deletion of a completed or failed job.
+- Do not promise that a planned deletion or retention control is operational until its route, scheduled
+  cleanup, owner-negative tests, and runtime monitoring exist.
+
+### Data and content sources
+
+- Accept audio only from the authenticated user's direct upload; never ingest arbitrary remote URLs.
+- Do not scrape or import tracks or personal data from official websites, third-party websites, public
+  databases, social platforms, or source APIs.
+- Public availability or a public-domain/licence label is not treated as proof of permission.
+- Style presets are internal, versioned text. No artist-name prompt feature is allowed.
+- Do not claim that every external model training source is identified or licensed for every downstream
+  use. Provider provenance, input use, retention, subprocessors, and output terms are launch checks.
 
 ### Reliability
 
@@ -309,10 +335,12 @@ A failed job must not silently consume the user's future paid credit. For MVP wi
 
 ## 8. Data model
 
-### users_or_sessions
+### owners
 
 - `id`
 - `kind`
+- `auth_issuer`
+- `auth_subject_hash`
 - `created_at`
 - `last_seen_at`
 - `status`
@@ -359,7 +387,6 @@ A failed job must not silently consume the user's future paid credit. For MVP wi
 - `seed`
 - `submitted_at`
 - `completed_at`
-- `cost_estimate_usd`
 - `error_code`
 
 ### outputs
@@ -383,6 +410,13 @@ A failed job must not silently consume the user's future paid credit. For MVP wi
 - `declaration_version`
 - `accepted_at`
 
+### legal_acceptances
+
+- `owner_id`
+- `document_id`
+- `document_version`
+- `accepted_at`
+
 ### usage_events
 
 - `id`
@@ -390,12 +424,18 @@ A failed job must not silently consume the user's future paid credit. For MVP wi
 - `job_id`
 - `event_type`
 - `quantity`
-- `estimated_cost_usd`
 - `created_at`
 
 ## 9. API outline
 
 ```text
+GET    /health
+GET    /legal/documents.json
+
+GET    /api/legal/documents
+GET    /api/legal/acceptances
+POST   /api/legal/acceptances
+
 POST   /api/uploads
 POST   /api/uploads/:uploadId/confirm
 DELETE /api/uploads/:uploadId
@@ -454,3 +494,5 @@ The MVP is accepted when:
 12. The user must accept the rights declaration before any real provider request.
 13. The UI clearly states that output may not preserve every musical detail.
 14. The repository documents how to run locally, deploy staging, and configure production.
+15. Production and staging require a valid interactive Access JWT for `/app*` and `/api/*`; public
+    routes expose no owner state, audio, signed URLs, or private application data.

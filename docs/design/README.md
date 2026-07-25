@@ -2,6 +2,11 @@
 
 The active visual source of truth is the relaxed, study-focused v2 direction:
 
+- `public-landing-hero-concept.png` — public product overview hero and protected-workspace preview.
+- `public-landing-page-concept.png` — full desktop landing-page direction.
+- `public-landing-mobile-concept.png` — mobile landing-page direction.
+- `implementation-public-desktop.png` — verified desktop implementation capture.
+- `implementation-public-mobile.png` — verified mobile implementation capture.
 - `upload-flow-concept-v2.png` — upload, preset selection, rights declaration, and confirmation.
 - `results-concept-v2.png` — completed job summary and two-candidate comparison.
 
@@ -19,5 +24,5 @@ The original neutral SaaS explorations are retained as `upload-flow-concept.png`
 - Open two-part workspace on desktop, collapsing to one column on mobile.
 
 All real application text, controls, waveforms, status, audio playback, and interactions must be
-implemented as accessible code-native React UI. The PNG files are specifications, not production
-interface assets.
+implemented as accessible code-native React UI. The concept PNG files are specifications, not production
+interface assets. Browser captures beginning with `implementation-` record the verified implementation.
