@@ -19,6 +19,7 @@ This document records only verifiable repository capabilities and public safety 
 - [x] Worker Static Assets 與 API 使用同一 Worker；`/app*` 及 `/api/*` 先經 Access 與 Worker JWT 驗證。
 - [x] `/health`、法律頁及公開法律 manifest 可匿名讀取，但不建立 owner 紀錄。
 - [x] Mock provider 模式不需要付費憑證，CI 不會呼叫外部生成服務。
+- [x] fal ACE-Step audio-to-audio adapter 與 provider factory：非同步 queue mapping、Zod 外部回應驗證、provider JSON 不保留、有限輸出期限、預期輸出 host、最小 metadata 及全離線 contract tests；尚未接入正式 Workflow。
 - [x] Cloudflare Workers Builds 可用的部署指令以受保護設定生成 ignored config，不把資源識別資料寫入版本庫。
 - [x] GitHub 存放庫已連接至 Cloudflare Workers Builds；生產與預覽命令採用加密建置設定，不在版本庫保存資源識別資料。
 - [x] Feature-gated 私人 R2 直接上載切片：server-controlled key、短效且綁定 content type／不可覆寫條件的 PUT URL、R2 metadata 確認、owner 隔離、明確刪除、短效輸出下載簽名及本機整合測試。
@@ -29,7 +30,7 @@ This document records only verifiable repository capabilities and public safety 
 
 - 正式環境的瀏覽器私人 R2 上載；`R2_TRANSFER_ENABLED` 預設及正式環境仍須保持 `false`，直至私人 staging bucket、CORS、到期失效及監察完成實測。
 - 正式環境的 server-side mock Workflow；`JOB_WORKFLOW_ENABLED` 預設保持 `false`，且未批准的部署不加入 Workflow binding。
-- 真實 AI 音訊生成、外部 callback 與正式輸出交付。
+- 真實 AI 音訊生成、外部 callback 與正式輸出交付；fal adapter 邊界已完成本機 contract tests，但仍未接入或啟用正式 Workflow。
 - 正式環境的自動保留期執行；`RETENTION_CLEANUP_ENABLED` 預設保持 `false`，直至 staging Cron、R2 刪除重試及監察完成實測。程式與本機 Worker 測試已覆蓋清理及 terminal job 即時刪除。
 - 公開註冊、非受邀帳戶及公開使用者內容。
 

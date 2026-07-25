@@ -126,6 +126,11 @@ small synthetic WAV tones. It does not send the source to an external provider o
 Workflow integration tests exercise retries, D1 state, private R2 output metadata, and cross-owner denial.
 Both `R2_TRANSFER_ENABLED` and `JOB_WORKFLOW_ENABLED` remain `false` by default.
 
+The provider package also contains an offline-tested fal ACE-Step audio-to-audio adapter. It uses the
+asynchronous queue, validates external responses, disables provider JSON payload storage, requests a
+bounded output lifetime, and returns only allowlisted result metadata. It is not connected to the Worker
+or enabled in production; local development and CI continue to use the credential-free mock provider.
+
 The production build uses one Cloudflare Worker: Vite output is served through Workers Static Assets,
 while `/api/*` is routed to the Hono Worker. The product overview, legal pages, `/health`, and
 `/legal/documents.json` are public. Cloudflare Access and Worker-side JWT verification protect `/app*`
