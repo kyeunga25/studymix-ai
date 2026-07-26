@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildWranglerEnvironment,
   buildDeploymentReport,
   selectActiveVersionId,
   summarizeMigrations,
@@ -60,6 +61,12 @@ const passingLiveStatus = {
 };
 
 describe("privacy-safe Cloudflare deployment verification", () => {
+  it("keeps Wrangler JSON output enabled while discarding its log file", () => {
+    expect(
+      buildWranglerEnvironment({ WRANGLER_LOG: "error", EXISTING_SETTING: "preserved" }, "darwin"),
+    ).toEqual({ EXISTING_SETTING: "preserved", WRANGLER_LOG_PATH: "/dev/null" });
+  });
+
   it("reports readiness without returning external identifiers or configuration values", () => {
     const report = buildDeploymentReport({
       deployments: deploymentFixture,
