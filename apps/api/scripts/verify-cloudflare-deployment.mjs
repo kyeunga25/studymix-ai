@@ -79,12 +79,17 @@ class VerificationError extends Error {
   }
 }
 
-function wranglerEnvironment() {
-  return {
-    ...process.env,
-    WRANGLER_LOG: "error",
-    WRANGLER_LOG_PATH: process.platform === "win32" ? "NUL" : "/dev/null",
+export function buildWranglerEnvironment(environment, platform) {
+  const result = {
+    ...environment,
+    WRANGLER_LOG_PATH: platform === "win32" ? "NUL" : "/dev/null",
   };
+  delete result.WRANGLER_LOG;
+  return result;
+}
+
+function wranglerEnvironment() {
+  return buildWranglerEnvironment(process.env, process.platform);
 }
 
 function runWranglerJson(label, args) {
