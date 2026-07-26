@@ -14,8 +14,7 @@ test-results/
 !.env.example
 .dev.vars
 .dev.vars.*
-wrangler.deploy.json
-wrangler.r2-cors.json
+wrangler.*.json
 
 pnpm-debug.log*
 npm-debug.log*

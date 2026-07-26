@@ -63,8 +63,16 @@ const passingLiveStatus = {
 describe("privacy-safe Cloudflare deployment verification", () => {
   it("keeps Wrangler JSON output enabled while discarding its log file", () => {
     expect(
-      buildWranglerEnvironment({ WRANGLER_LOG: "error", EXISTING_SETTING: "preserved" }, "darwin"),
-    ).toEqual({ EXISTING_SETTING: "preserved", WRANGLER_LOG_PATH: "/dev/null" });
+      buildWranglerEnvironment({
+        WRANGLER_LOG: "error",
+        WRANGLER_LOG_PATH: "private-log-path",
+        EXISTING_SETTING: "preserved",
+      }),
+    ).toEqual({
+      EXISTING_SETTING: "preserved",
+      WRANGLER_LOG_SANITIZE: "true",
+      WRANGLER_WRITE_LOGS: "false",
+    });
   });
 
   it("reports readiness without returning external identifiers or configuration values", () => {

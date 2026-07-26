@@ -163,6 +163,11 @@ Access, R2 signing, and legal settings stay in Cloudflare and are retained durin
 [`docs/CLOUDFLARE_ACCESS.md`](docs/CLOUDFLARE_ACCESS.md); never commit Cloudflare account IDs, D1 IDs,
 Access identifiers, actual resource names, contact details, or deployment tokens.
 
+`DEPLOY_CONFIG_PATH` may select a separate ignored file such as `wrangler.staging.json` or
+`wrangler.production.json`. The generator and Wrangler runner validate and use the same exact file, so
+switching environments cannot silently reuse or overwrite the other environment's protected config.
+If omitted, both commands use the backward-compatible `wrangler.deploy.json` default.
+
 After preparing the ignored deployment config, verify the active deployment without printing its Worker,
 database, bucket, Workflow, hostname, account identifiers, runtime values, or secret values:
 
@@ -170,6 +175,7 @@ database, bucket, Workflow, hostname, account identifiers, runtime values, or se
 DEPLOY_WORKER_NAME="PRIVATE_VALUE" \
 DEPLOY_PUBLIC_URL="https://PRIVATE_HOSTNAME" \
 DEPLOY_EXPECT_ENV=production \
+DEPLOY_CONFIG_PATH=wrangler.production.json \
 pnpm deploy:verify
 ```
 
