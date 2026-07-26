@@ -163,6 +163,19 @@ Access, R2 signing, and legal settings stay in Cloudflare and are retained durin
 [`docs/CLOUDFLARE_ACCESS.md`](docs/CLOUDFLARE_ACCESS.md); never commit Cloudflare account IDs, D1 IDs,
 Access identifiers, actual resource names, contact details, or deployment tokens.
 
+After preparing the ignored deployment config, verify the active deployment without printing its Worker,
+database, bucket, Workflow, hostname, account identifiers, runtime values, or secret values:
+
+```bash
+DEPLOY_WORKER_NAME="PRIVATE_VALUE" \
+DEPLOY_PUBLIC_URL="https://PRIVATE_HOSTNAME" \
+DEPLOY_EXPECT_ENV=production \
+pnpm deploy:verify
+```
+
+The command returns only boolean readiness gates and migration counts. A non-zero exit means the public
+surface is not yet demonstrably ready; private mock and real-provider readiness are reported separately.
+
 Workers Builds treats pushes to the configured production branch as production builds. Other branches
 remain preview-only when non-production builds are enabled, so a successful preview check must not be
 described as an active production deployment.

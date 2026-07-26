@@ -27,6 +27,7 @@ This document records only verifiable repository capabilities and public safety 
 - [x] fal callback 邊界：精確公開路徑、Ed25519/JWKS 原始 body 驗證、預期 fal user、五分鐘時間窗、已知 request ID、最小 Workflow wake-up signal、duplicate-safe 行為及 polling correctness fallback；完整 callback payload 不保存。
 - [x] CSP 資料最小化：R2 API origin 只加入成功且已驗證的 `/app` 文件回應；公開頁、公開 callback、API JSON 及未授權 app 回應不攜帶該部署識別資料。
 - [x] Cloudflare Workers Builds 可用的部署指令以受保護設定生成 ignored config，不把資源識別資料寫入版本庫。
+- [x] 私隱安全的 active-deployment 診斷只輸出 bindings、runtime／secret presence、migration counts、live-route booleans 及分層 readiness，不輸出資源名稱、識別碼、hostname、聯絡值或 secret。
 - [x] GitHub 存放庫已連接至 Cloudflare Workers Builds；生產與預覽命令採用加密建置設定，不在版本庫保存資源識別資料。
 - [x] Feature-gated 私人 R2 直接上載切片：server-controlled key、短效且綁定 content type／不可覆寫條件的 PUT URL、R2 metadata 確認、owner 隔離、明確刪除、短效輸出下載簽名及本機整合測試。
 - [x] Feature-gated server-side mock generation 切片：嚴格 job contracts、現行法律接受及逐工作權利聲明、active-job quota、owner-scoped job API、Cloudflare Workflow、兩個無付費服務的合成 WAV 候選版本、私人 R2 輸出、短效播放連結及 Workflow introspection 測試。
