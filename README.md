@@ -237,3 +237,7 @@ Production R2 transfer and both server-side Workflow modes remain disabled until
 pass. External generation and provider callbacks remain disabled in production. Production retention
 cleanup also stays off until its staging Cron, retry, and monitoring checks pass. See
 [`docs/TODO.md`](docs/TODO.md) for the current verified status without internal planning material.
+
+An isolated Cloudflare staging deployment now has current D1 migrations plus private R2, Workflow, and
+Rate Limiting bindings. It intentionally has no public route, runtime credentials, or enabled audio feature
+flags until the Access, legal-contact, exact-origin CORS, signing, and browser checks are complete.
