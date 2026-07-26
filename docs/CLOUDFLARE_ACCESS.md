@@ -258,6 +258,9 @@ protected build setting; the actual name must not be copied into the checked-in 
    `DEPLOY_RATE_LIMIT_NAMESPACE_ID` only to an approved private staging build; omitting a setting leaves
    that binding out of the generated deployment config. Their values must never be committed or printed
    in public build documentation.
+   For authenticated local staging or production operations, set `DEPLOY_CONFIG_PATH` to a distinct
+   ignored filename such as `wrangler.staging.json` or `wrangler.production.json`; config generation,
+   deployment, preview upload, migration checks, and deployment verification must all use that same file.
 5. Keep `APP_ENV`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `LEGAL_CONTACT_EMAIL`, `R2_ACCOUNT_ID`,
    `R2_BUCKET_NAME`, the R2 limits/TTLs, `R2_TRANSFER_ENABLED=false`,
    `JOB_WORKFLOW_ENABLED=false`, `RETENTION_CLEANUP_ENABLED=false`,

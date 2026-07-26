@@ -27,6 +27,7 @@ This document records only verifiable repository capabilities and public safety 
 - [x] fal callback 邊界：精確公開路徑、Ed25519/JWKS 原始 body 驗證、預期 fal user、五分鐘時間窗、已知 request ID、最小 Workflow wake-up signal、duplicate-safe 行為及 polling correctness fallback；完整 callback payload 不保存。
 - [x] CSP 資料最小化：R2 API origin 只加入成功且已驗證的 `/app` 文件回應；公開頁、公開 callback、API JSON 及未授權 app 回應不攜帶該部署識別資料。
 - [x] Cloudflare Workers Builds 可用的部署指令以受保護設定生成 ignored config，不把資源識別資料寫入版本庫。
+- [x] Staging 與 production 可使用各自的 ignored Wrangler config；生成、deploy／preview 及 verifier 會驗證並共用同一個環境檔案，避免私有資源設定互相覆寫。Wrangler 指令停用本機 debug log 寫入並保留輸出資料清理。
 - [x] 私隱安全的 active-deployment 診斷只輸出 bindings、runtime／secret presence、migration counts、live-route booleans 及分層 readiness，不輸出資源名稱、識別碼、hostname、聯絡值或 secret。
 - [x] GitHub 存放庫已連接至 Cloudflare Workers Builds；生產與預覽命令採用加密建置設定，不在版本庫保存資源識別資料。
 - [x] 獨立 Cloudflare staging 基礎設施已以 fail-closed 狀態部署；D1 migrations 已完成，部署診斷確認私人 R2、Workflow 及 Rate Limiting bindings 均存在。此驗證沒有啟用公開 route、執行期憑證或產品功能旗標。
