@@ -197,6 +197,19 @@ deletion gate in `docs/LEGAL_AND_DATA_USE.md`.
 Before production traffic is enabled:
 
 1. Run `pnpm cf-typegen`, `pnpm typecheck`, `pnpm lint`, `pnpm test`, and `pnpm build`.
+   After preparing the ignored private deployment config, run the privacy-safe active-deployment check:
+
+   ```bash
+   DEPLOY_WORKER_NAME="PRIVATE_VALUE" \
+   DEPLOY_PUBLIC_URL="https://PRIVATE_HOSTNAME" \
+   DEPLOY_EXPECT_ENV=production \
+   pnpm deploy:verify
+   ```
+
+   Its JSON contains only binding/runtime/secret presence, migration counts, live-route booleans, and
+   readiness booleans. It deliberately omits resource names, identifiers, hostnames, contact values,
+   deployment timestamps, and secret values. Keep its non-zero result until the public surface is fully
+   configured and reachable.
 2. In a private browser window, confirm that `/`, `/legal/privacy`, `/health`, and
    `/legal/documents.json` load without login and create no owner row.
 3. Confirm `/app` and `/api/auth/me` show Access login or denial before the Worker is reached.

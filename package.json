@@ -17,6 +17,7 @@
     "deploy:worker": "pnpm --filter @studymix/api deploy:cloudflare",
     "deploy:cloudflare": "pnpm build:web && pnpm --filter @studymix/api deploy:cloudflare",
     "preview:cloudflare": "pnpm build:web && pnpm --filter @studymix/api preview:cloudflare",
+    "deploy:verify": "pnpm --filter @studymix/api deploy:verify",
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier . --check",
