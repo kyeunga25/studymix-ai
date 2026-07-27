@@ -1,0 +1,648 @@
+.login-page,
+.private-gate-page {
+  min-height: 100vh;
+  color: #1d214f;
+  background-color: #b8afe7;
+  background-image:
+    linear-gradient(90deg, rgba(255, 255, 255, 0.08), rgba(63, 48, 137, 0.08)),
+    url("./assets/study-room-bg.png");
+  background-position: center;
+  background-size: cover;
+  font-family:
+    "Avenir Next", ui-rounded, "SF Pro Rounded", "Hiragino Sans", "PingFang HK", system-ui,
+    sans-serif;
+}
+
+.login-page a,
+.login-page button,
+.private-gate-page a,
+.private-gate-page button {
+  -webkit-tap-highlight-color: transparent;
+}
+
+.login-page a:focus-visible,
+.login-page button:focus-visible,
+.private-gate-page a:focus-visible,
+.private-gate-page button:focus-visible {
+  outline: 3px solid rgba(79, 68, 218, 0.36);
+  outline-offset: 4px;
+}
+
+.login-header,
+.private-gate-header {
+  display: flex;
+  width: min(1320px, calc(100% - 48px));
+  min-height: 74px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 auto;
+  padding: 22px 0 0;
+}
+
+.login-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  color: #1d214f;
+  font-size: 1.3rem;
+  font-weight: 780;
+  letter-spacing: -0.03em;
+  text-decoration: none;
+}
+
+.login-brand svg {
+  width: 39px;
+  color: #5548cf;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.6;
+}
+
+.login-language {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 13px;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 12px;
+  color: #35375f;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 9px 24px rgba(51, 41, 104, 0.1);
+  cursor: pointer;
+  font-size: 0.83rem;
+  font-weight: 730;
+  backdrop-filter: blur(15px);
+}
+
+.login-language:hover {
+  color: #5144cf;
+  background: #fff;
+}
+
+.login-language svg {
+  width: 18px;
+}
+
+.login-main {
+  display: grid;
+  width: min(1180px, calc(100% - 64px));
+  min-height: calc(100vh - 190px);
+  grid-template-columns: minmax(0, 1fr) minmax(390px, 500px);
+  align-items: center;
+  gap: clamp(54px, 8vw, 120px);
+  margin: 0 auto;
+  padding: 60px 0 72px;
+}
+
+.login-introduction {
+  display: grid;
+  gap: 34px;
+}
+
+.login-introduction h1 {
+  max-width: 670px;
+  margin: 0;
+  color: #121640;
+  font-family:
+    "Avenir Next Condensed", "Arial Narrow", ui-rounded, "Avenir Next", "Hiragino Sans",
+    "PingFang HK", system-ui, sans-serif;
+  font-size: clamp(3rem, 5vw, 4.85rem);
+  font-weight: 720;
+  letter-spacing: -0.05em;
+  line-height: 1.04;
+  text-wrap: balance;
+}
+
+.login-introduction > div > p {
+  max-width: 660px;
+  margin: 24px 0 0;
+  color: #303352;
+  font-size: clamp(1rem, 1.45vw, 1.18rem);
+  line-height: 1.75;
+}
+
+.login-introduction ul {
+  display: grid;
+  gap: 11px;
+  max-width: 610px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.login-introduction li {
+  display: flex;
+  min-height: 50px;
+  align-items: center;
+  gap: 13px;
+  padding: 9px 15px 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.68);
+  border-radius: 14px;
+  color: #34365c;
+  background: rgba(255, 255, 255, 0.65);
+  font-size: 0.88rem;
+  font-weight: 680;
+  backdrop-filter: blur(13px);
+}
+
+.login-introduction li > span {
+  display: grid;
+  width: 33px;
+  height: 33px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 10px;
+  color: #5549cf;
+  background: #eeeaff;
+}
+
+.login-introduction li svg {
+  width: 18px;
+}
+
+.login-card {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.82);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 28px 72px rgba(49, 37, 111, 0.24);
+  backdrop-filter: blur(20px);
+}
+
+.login-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid #e4dff1;
+}
+
+.login-tabs button {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 0;
+  color: #7c7b96;
+  background: #f8f7fc;
+  font-size: 0.81rem;
+  font-weight: 750;
+}
+
+.login-tabs button.is-active {
+  color: #5144cf;
+  background: #fff;
+  box-shadow: inset 0 -2px #5a4dd4;
+}
+
+.login-tabs button:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+}
+
+.login-tabs small {
+  padding: 3px 6px;
+  border-radius: 5px;
+  color: #76728f;
+  background: #ece9f4;
+  font-size: 0.61rem;
+  font-weight: 760;
+}
+
+.login-card-body {
+  display: grid;
+  gap: 18px;
+  padding: 34px;
+}
+
+.login-card-body header h2 {
+  margin: 0;
+  color: #202451;
+  font-family:
+    ui-rounded, "SF Pro Rounded", "Avenir Next", "Hiragino Sans", "PingFang HK", system-ui,
+    sans-serif;
+  font-size: 1.62rem;
+  letter-spacing: -0.035em;
+  line-height: 1.18;
+}
+
+.login-card-body header p {
+  margin: 9px 0 0;
+  color: #6c6b88;
+  font-size: 0.82rem;
+  line-height: 1.65;
+}
+
+.login-beta-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px 14px;
+  border: 1px solid #dad4ef;
+  border-radius: 12px;
+  color: #514b78;
+  background: #f6f3ff;
+}
+
+.login-beta-note > svg {
+  width: 19px;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: #5a4ed1;
+}
+
+.login-beta-note > span {
+  display: grid;
+  gap: 3px;
+}
+
+.login-beta-note strong {
+  font-size: 0.76rem;
+}
+
+.login-beta-note small {
+  color: #6c6887;
+  font-size: 0.7rem;
+  line-height: 1.5;
+}
+
+.login-submit {
+  display: grid;
+  min-height: 56px;
+  grid-template-columns: 22px 1fr 20px;
+  align-items: center;
+  gap: 11px;
+  padding: 0 18px;
+  border-radius: 12px;
+  color: #fff;
+  background: #5548d0;
+  box-shadow: 0 14px 28px rgba(57, 43, 170, 0.22);
+  font-size: 0.88rem;
+  font-weight: 770;
+  text-decoration: none;
+  transition:
+    transform 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.login-submit:hover {
+  transform: translateY(-2px);
+  background: #4436be;
+  box-shadow: 0 17px 33px rgba(57, 43, 170, 0.28);
+}
+
+.login-submit svg {
+  width: 20px;
+}
+
+.login-password-note {
+  margin: -7px 0 0;
+  color: #7b7992;
+  font-size: 0.68rem;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.login-future-registration {
+  display: grid;
+  gap: 4px;
+  padding: 15px 0 0;
+  border-top: 1px solid #e7e3ee;
+}
+
+.login-future-registration strong {
+  color: #4c4b69;
+  font-size: 0.74rem;
+}
+
+.login-future-registration span {
+  color: #85839a;
+  font-size: 0.69rem;
+  line-height: 1.55;
+}
+
+.login-home-link {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 7px;
+  color: #5a4fc1;
+  font-size: 0.73rem;
+  font-weight: 730;
+  text-decoration: none;
+}
+
+.login-home-link svg {
+  width: 16px;
+}
+
+.login-footer {
+  display: flex;
+  width: min(1320px, calc(100% - 48px));
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 0 auto 18px;
+  padding: 0 18px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 13px;
+  color: #37395f;
+  background: rgba(255, 255, 255, 0.62);
+  font-size: 0.72rem;
+  backdrop-filter: blur(14px);
+}
+
+.login-footer nav {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 18px;
+}
+
+.login-footer a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.login-footer a:hover {
+  color: #4c40c4;
+}
+
+.private-gate-page {
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.private-gate-card {
+  display: grid;
+  width: min(520px, calc(100% - 40px));
+  align-self: center;
+  justify-self: center;
+  justify-items: center;
+  margin: 36px 0 90px;
+  padding: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.84);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 28px 72px rgba(49, 37, 111, 0.24);
+  text-align: center;
+  backdrop-filter: blur(20px);
+}
+
+.private-gate-icon {
+  display: grid;
+  width: 62px;
+  height: 62px;
+  place-items: center;
+  border: 1px solid #cec6ef;
+  border-radius: 18px;
+  color: #574ad0;
+  background: #efebff;
+}
+
+.private-gate-icon svg {
+  width: 29px;
+}
+
+.private-gate-card.is-checking .private-gate-icon svg {
+  animation: private-gate-spin 1.1s linear infinite;
+}
+
+.private-gate-card.is-denied .private-gate-icon {
+  border-color: #eccaca;
+  color: #9b3f4e;
+  background: #fff2f3;
+}
+
+.private-gate-label {
+  margin: 20px 0 7px;
+  color: #5b4fc8;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.private-gate-card h1 {
+  margin: 0;
+  color: #202451;
+  font-size: clamp(1.65rem, 4vw, 2.15rem);
+  letter-spacing: -0.04em;
+  line-height: 1.16;
+}
+
+.private-gate-card > p[role="status"] {
+  max-width: 420px;
+  margin: 13px 0 0;
+  color: #6d6c88;
+  font-size: 0.82rem;
+  line-height: 1.7;
+}
+
+.private-gate-progress {
+  display: flex;
+  height: 34px;
+  align-items: center;
+  gap: 5px;
+  margin-top: 20px;
+}
+
+.private-gate-progress i {
+  display: block;
+  width: 4px;
+  border-radius: 999px;
+  background: #685bd8;
+  animation: private-gate-wave 1s ease-in-out infinite;
+}
+
+.private-gate-progress i:nth-child(1),
+.private-gate-progress i:nth-child(5) {
+  height: 10px;
+}
+
+.private-gate-progress i:nth-child(2),
+.private-gate-progress i:nth-child(4) {
+  height: 20px;
+  animation-delay: 100ms;
+}
+
+.private-gate-progress i:nth-child(3) {
+  height: 30px;
+  animation-delay: 200ms;
+}
+
+.private-gate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 23px;
+}
+
+.private-gate-actions a,
+.private-gate-actions button {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  border: 1px solid #cfc9df;
+  border-radius: 11px;
+  color: #4f4d6c;
+  background: #fff;
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.private-gate-actions a.is-primary,
+.private-gate-actions button {
+  border-color: #5649ce;
+  color: #fff;
+  background: #5649ce;
+}
+
+.private-gate-actions svg {
+  width: 17px;
+}
+
+@keyframes private-gate-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes private-gate-wave {
+  0%,
+  100% {
+    transform: scaleY(0.6);
+    opacity: 0.55;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-submit,
+  .private-gate-card.is-checking .private-gate-icon svg,
+  .private-gate-progress i {
+    animation: none;
+    transition: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .login-main {
+    width: min(680px, calc(100% - 40px));
+    grid-template-columns: 1fr;
+    gap: 36px;
+    padding: 56px 0 62px;
+  }
+
+  .login-introduction {
+    gap: 25px;
+  }
+
+  .login-introduction h1 {
+    max-width: 620px;
+    font-size: clamp(2.75rem, 8vw, 4.1rem);
+  }
+
+  .login-introduction ul {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .login-introduction li {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 620px) {
+  .login-header,
+  .private-gate-header,
+  .login-footer {
+    width: calc(100% - 28px);
+  }
+
+  .login-header,
+  .private-gate-header {
+    padding-top: 12px;
+  }
+
+  .login-brand {
+    font-size: 1.08rem;
+  }
+
+  .login-brand svg {
+    width: 31px;
+  }
+
+  .login-language {
+    min-height: 38px;
+    padding: 0 10px;
+    font-size: 0.76rem;
+  }
+
+  .login-main {
+    width: calc(100% - 28px);
+    padding: 44px 0 50px;
+  }
+
+  .login-introduction h1 {
+    font-size: clamp(2.48rem, 12vw, 3.45rem);
+  }
+
+  .login-introduction > div > p {
+    font-size: 0.96rem;
+  }
+
+  .login-introduction ul {
+    grid-template-columns: 1fr;
+  }
+
+  .login-introduction li {
+    align-items: center;
+    flex-direction: row;
+  }
+
+  .login-card {
+    border-radius: 17px;
+  }
+
+  .login-tabs button {
+    min-height: 54px;
+    gap: 5px;
+    font-size: 0.75rem;
+  }
+
+  .login-card-body,
+  .private-gate-card {
+    padding: 27px 21px;
+  }
+
+  .login-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 17px;
+  }
+
+  .login-footer nav {
+    justify-content: flex-start;
+  }
+
+  .private-gate-card {
+    margin: 30px 0 70px;
+  }
+
+  .private-gate-actions {
+    display: grid;
+    width: 100%;
+  }
+}

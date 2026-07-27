@@ -69,7 +69,7 @@ test("renders a public product overview without exposing the private app", async
   await expect(page.getByText("目前為封閉測試，尚未開放註冊及真實生成。")).toBeVisible();
   await expect(page.getByRole("link", { name: "受邀測試者登入" }).first()).toHaveAttribute(
     "href",
-    "/app",
+    "/login",
   );
   await expect(
     page.getByRole("navigation", { name: "法律文件" }).getByRole("link", {
@@ -77,6 +77,22 @@ test("renders a public product overview without exposing the private app", async
     }),
   ).toHaveAttribute("href", "/legal/terms");
   await expect(page.getByRole("heading", { name: "上載你的音訊" })).toHaveCount(0);
+});
+
+test("provides a dedicated beta sign-in page with future registration space", async ({ page }) => {
+  await page.goto("/login");
+
+  await expect(page.getByRole("heading", { name: "返回你的私人 StudyMix 工作區" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "登入", selected: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: /建立帳戶/ })).toBeDisabled();
+  await expect(page.getByText("公開註冊尚未開放", { exact: false })).toBeVisible();
+  await expect(page.getByRole("link", { name: "繼續安全登入" })).toHaveAttribute("href", "/app");
+  await expect(
+    page.getByRole("navigation", { name: "法律文件" }).getByRole("link", {
+      name: "AI 及輸出聲明",
+    }),
+  ).toHaveAttribute("href", "/legal/ai-output-notice");
+  await expect(page.locator('input[type="email"], input[type="password"]')).toHaveCount(0);
 });
 
 test("verifies the invited test session before showing the private app", async ({ page }) => {
@@ -92,6 +108,7 @@ test("verifies the invited test session before showing the private app", async (
 
 test("does not expose the private workspace when session verification fails", async ({ page }) => {
   await page.route("**/api/auth/me", async (route) => {
+    expect(route.request().headers()["x-requested-with"]).toBe("XMLHttpRequest");
     await route.fulfill({
       body: JSON.stringify({
         data: null,
@@ -104,8 +121,33 @@ test("does not expose the private workspace when session verification fails", as
   });
   await page.goto("/app");
 
-  await expect(page.getByRole("status")).toContainText("未能驗證存取權");
+  await expect(page.getByRole("heading", { name: "登入工作階段已結束" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "返回登入" })).toHaveAttribute("href", "/login");
   await expect(page.getByRole("heading", { name: "把你的音樂變成專注讀書 Mix" })).toHaveCount(0);
+  await expect(page.locator('input[type="file"]')).toHaveCount(0);
+});
+
+test("keeps the workspace locked when an authenticated account lacks beta permission", async ({
+  page,
+}) => {
+  await page.route("**/api/auth/me", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify({
+        data: null,
+        error: { code: "FORBIDDEN", message: "This account is not permitted.", retryable: false },
+        requestId: "req_0123456789abcdef0123456789abcdef",
+      }),
+      contentType: "application/json",
+      status: 403,
+    });
+  });
+  await page.goto("/app");
+
+  await expect(page.getByRole("heading", { name: "此帳戶未獲 Beta 測試權限" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "驗證另一個身份" })).toHaveAttribute(
+    "href",
+    "/cdn-cgi/access/logout",
+  );
   await expect(page.locator('input[type="file"]')).toHaveCount(0);
 });
 

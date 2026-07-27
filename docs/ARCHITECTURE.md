@@ -8,6 +8,7 @@ Use Cloudflare as the control plane and object-storage layer. Use a replaceable 
 Browser
   │
   ├── Public overview and legal pages ──► Cloudflare Worker assets
+  ├── Public `/login` ──────────────────► Worker assets
   ├── Protected `/app*` ────────────────► Cloudflare Access ─► Worker assets
   │
   ├── Protected `/api/*` ───────────────► Cloudflare Access ─► Worker API
@@ -430,11 +431,19 @@ Implement an `OwnerContext` abstraction supporting:
 
 Do not make authentication vendor-specific in domain logic.
 
-Production and staging have no anonymous owner mode. The product overview, legal pages, `/health`, and
+Production and staging have no anonymous owner mode. The product overview, `/login`, legal pages, `/health`, and
 `/legal/documents.json` are public and never resolve or create an owner. Cloudflare Access protects
 `/app*` and user-facing `/api/*`, and the Worker separately verifies the Access JWT signature, algorithm, issuer,
 audience, expiry, application-token type, user subject, and verified email claim. Service tokens are not
 accepted as interactive user identities.
+
+The public `/login` page does not collect a password. Its closed-beta action enters the protected `/app`
+path so Cloudflare Access can authenticate an invited identity. The client then requests `/api/auth/me`
+with `X-Requested-With: XMLHttpRequest`, allowing an expired Access session to be handled as a `401`
+instead of an HTML redirect. The Worker verifies the JWT, upserts only the opaque owner identity, checks
+that the D1 owner remains active, and returns capabilities before the workspace is rendered. A `401`,
+`403`, malformed response, or configuration failure keeps the workspace locked. The disabled registration
+tab is presentation-only; no public registration endpoint or anonymous owner path exists.
 
 The exact `/api/webhooks/fal` path is the only provider callback exception to user authentication. A
 more-specific Access application may bypass interactive login for that path only; the Worker then requires
@@ -588,12 +597,15 @@ Operational metrics:
 
 ### Staging
 
-- Separate D1 database and R2 bucket.
+- No separate persistent Worker service. Remote staging uses a non-production version uploaded to the
+  same `studymix-ai` Worker and must never receive production traffic.
+- Separate D1 database and R2 bucket may be attached only to that approved preview version.
 - fal provider disabled by default.
 - Explicit allowlist for real-generation testers.
 
 ### Production
 
+- The only persistent StudyMix Worker service is `studymix-ai`.
 - Separate secrets and resources.
 - Real generation gated by feature flag.
 - Strict allowed origins.

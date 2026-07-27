@@ -72,7 +72,7 @@ repository.
 
 **Status:** Accepted
 
-Keep `/`, legal pages, `/health`, and `/legal/documents.json` public. Require an interactive Cloudflare
+Keep `/`, `/login`, legal pages, `/health`, and `/legal/documents.json` public. Require an interactive Cloudflare
 Access identity for `/app*` and `/api/*`, then independently verify `Cf-Access-Jwt-Assertion` inside
 the Worker. Derive the application owner ID from the verified Access issuer and subject; never accept
 an owner ID from a browser header, cookie, URL, or request body.
@@ -80,6 +80,11 @@ an owner ID from a browser header, cookie, URL, or request body.
 Cloudflare Access owns the login session. D1 stores only a one-way subject hash and the derived owner
 ID, not passwords, Access JWTs, session cookies, or user email addresses. A fixed development owner is
 allowed only when `APP_ENV` is explicitly `local`, `development`, or `test`.
+
+The bilingual `/login` page is a public entry surface, not an authentication provider. It sends the user
+to the protected `/app` path, then the private client verifies `/api/auth/me` before rendering workspace
+data. Distinct signed-out, denied, and service-unavailable states fail closed. A disabled registration tab
+reserves the future interface location without exposing a registration API or weakening the beta allowlist.
 
 **Reason:** Visitors can understand the project without an account, while Access supplies a maintained
 identity-aware boundary for the private beta. Worker-side JWT verification and owner-scoped D1 queries
@@ -104,3 +109,20 @@ storage, media ACL/expiry, subprocessor, model-provenance, and cross-border disc
 accepted it. Separating necessary privacy notice from contractual acceptance avoids misleading consent,
 while fail-closed release gates prevent planned deletion or third-party controls from being presented as
 already operational.
+
+## ADR-012: One persistent StudyMix Worker service
+
+**Status:** Accepted
+
+Deploy only the `studymix-ai` Worker service. The Worker name is fixed in the checked-in and generated
+Wrangler configuration and cannot be replaced by a build setting. Production deploys promote the reviewed
+`main` version. Non-production builds may upload preview versions to the same service, but a staging
+resource configuration must never be promoted to production traffic. Do not create an environment-suffixed
+StudyMix Worker.
+
+Separate staging D1, R2, and Workflow resources may remain isolated from production, but they are not a
+reason to keep a second persistent Worker. They may be attached only to an approved preview version after
+its Access and route boundary is verified.
+
+**Reason:** A single service avoids duplicate Worker projects, split deployment settings, and accidental
+public endpoints while retaining version-level preview and rollback support.

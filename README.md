@@ -4,7 +4,7 @@ StudyMix AI 是一個 Cloudflare-first、雙語及安全優先的音訊風格重
 
 StudyMix AI is a bilingual, security-first, Cloudflare-native application for restyling audio that the user owns or is authorized to process.
 
-公開首頁提供產品、運作方式及私隱安全概覽；AI 工作區位於 `/app`，只限受邀測試者經 Cloudflare Access 登入。沒有公開註冊，正式音訊上載及外部生成保持停用。公開程式碼可在不使用付費憑證的情況下，以本機 mock 或預設關閉的 Cloudflare Workflow 合成音調展示完整介面狀態。
+公開首頁提供產品、運作方式及私隱安全概覽；`/login` 提供封閉測試登入介面並預留日後公開註冊位置，AI 工作區位於 `/app`。只有通過 Cloudflare Access 及 Worker/D1 Beta 權限檢查的受邀測試者才可進入。目前沒有公開註冊，正式音訊上載及外部生成保持停用。公開程式碼可在不使用付費憑證的情況下，以本機 mock 或預設關閉的 Cloudflare Workflow 合成音調展示完整介面狀態。
 
 ## Target MVP outcome
 
@@ -106,8 +106,8 @@ pnpm cf-typegen
 pnpm dev
 ```
 
-The public product page runs at `http://localhost:5173/`, the invited-tester workspace at
-`http://localhost:5173/app`, and the Worker API at
+The public product page runs at `http://localhost:5173/`, the closed-beta sign-in page at
+`http://localhost:5173/login`, the invited-tester workspace at `http://localhost:5173/app`, and the Worker API at
 `http://localhost:8787`. Local Wrangler development uses one fixed development owner and the mock
 provider; no Cloudflare account, fal key, or paid API is required. The development identity is enabled
 only by the local `dev` script and is ignored by production and staging authentication. `pnpm dev`
@@ -143,7 +143,7 @@ generation uses this boundary before marking an output ready. The real-provider 
 until the staging, legal, abuse-control, and deletion gates are verified.
 
 The production build uses one Cloudflare Worker: Vite output is served through Workers Static Assets,
-while `/api/*` is routed to the Hono Worker. The product overview, legal pages, `/health`, and
+while `/api/*` is routed to the Hono Worker. The product overview, `/login`, legal pages, `/health`, and
 `/legal/documents.json` are public. Cloudflare Access and Worker-side JWT verification protect `/app*`
 and user-facing `/api/*` routes. The exact `/api/webhooks/fal` path is separately authenticated with the
 provider signature and cannot create an owner. Build it from the repository root:
@@ -152,27 +152,27 @@ provider signature and cannot create an owner. Build it from the repository root
 pnpm build
 ```
 
-The checked-in Wrangler file contains placeholders only and is intentionally not a deployable production
-configuration. `pnpm deploy:cloudflare` generates an ignored deployment file from the protected
-`DEPLOY_WORKER_NAME`, `DEPLOY_D1_NAME`, and `DEPLOY_D1_ID` build settings. The optional protected
-`DEPLOY_R2_BUCKET` setting adds the private R2 binding only for an approved staging deployment; optional
-`DEPLOY_WORKFLOW_NAME` does the same for the Workflow binding. The optional protected
+The checked-in Wrangler file fixes the only deployable Worker name to `studymix-ai`, while resource IDs
+and runtime values remain non-deployable placeholders. `pnpm deploy:cloudflare` generates an ignored
+deployment file from the protected `DEPLOY_D1_NAME` and `DEPLOY_D1_ID` build settings. The Worker name
+cannot be overridden by build settings, so this workflow cannot create a second environment-suffixed
+Worker. The optional protected `DEPLOY_R2_BUCKET` setting adds the private R2 binding only for an
+approved preview; optional `DEPLOY_WORKFLOW_NAME` does the same for the Workflow binding. The optional protected
 `DEPLOY_RATE_LIMIT_NAMESPACE_ID` setting adds the Cloudflare Rate Limiting binding required by real
 generation. Runtime
 Access, R2 signing, and legal settings stay in Cloudflare and are retained during deployment. Follow
 [`docs/CLOUDFLARE_ACCESS.md`](docs/CLOUDFLARE_ACCESS.md); never commit Cloudflare account IDs, D1 IDs,
 Access identifiers, actual resource names, contact details, or deployment tokens.
 
-`DEPLOY_CONFIG_PATH` may select a separate ignored file such as `wrangler.staging.json` or
-`wrangler.production.json`. The generator and Wrangler runner validate and use the same exact file, so
-switching environments cannot silently reuse or overwrite the other environment's protected config.
-If omitted, both commands use the backward-compatible `wrangler.deploy.json` default.
+`DEPLOY_CONFIG_PATH` may select a separate ignored resource file such as `wrangler.staging.json` or
+`wrangler.production.json`, but every generated file still targets the same `studymix-ai` Worker.
+Staging resource files are valid only with `pnpm preview:cloudflare`; never promote them with
+`pnpm deploy:cloudflare`. If omitted, both commands use the `wrangler.deploy.json` default.
 
 After preparing the ignored deployment config, verify the active deployment without printing its Worker,
 database, bucket, Workflow, hostname, account identifiers, runtime values, or secret values:
 
 ```bash
-DEPLOY_WORKER_NAME="PRIVATE_VALUE" \
 DEPLOY_PUBLIC_URL="https://PRIVATE_HOSTNAME" \
 DEPLOY_EXPECT_ENV=production \
 DEPLOY_CONFIG_PATH=wrangler.production.json \
@@ -206,8 +206,10 @@ The repository currently includes:
 
 - pnpm workspaces for the React/Vite web app, Hono Worker API, and shared packages.
 - Strict TypeScript, ESLint, Prettier, Vitest, Playwright, and GitHub Actions.
-- A bilingual public product overview with an explicit closed-beta status and no registration flow.
-- A separate `/app` workspace that verifies the invited Access session before exposing application UI.
+- A bilingual public product overview and dedicated `/login` page with an explicit closed-beta state,
+  no password collection, and a disabled future-registration surface.
+- A separate `/app` workspace that verifies the invited Access session and active D1 owner permission
+  before exposing application UI, with distinct signed-out, denied, and unavailable states.
 - Generated Wrangler binding types and a credential-free Worker dry-run build.
 - An interactive bilingual upload UI shell with pending, result-comparison, and safe retry states backed
   by a development-only mock HTTP API.
@@ -244,6 +246,7 @@ pass. External generation and provider callbacks remain disabled in production. 
 cleanup also stays off until its staging Cron, retry, and monitoring checks pass. See
 [`docs/TODO.md`](docs/TODO.md) for the current verified status without internal planning material.
 
-An isolated Cloudflare staging deployment now has current D1 migrations plus private R2, Workflow, and
-Rate Limiting bindings. It intentionally has no public route, runtime credentials, or enabled audio feature
-flags until the Access, legal-contact, exact-origin CORS, signing, and browser checks are complete.
+The former separate staging Worker has been retired. Its isolated D1, private R2, and Workflow resources
+remain unbound and inactive until they are reused by an approved preview or explicitly removed. StudyMix
+keeps one persistent Cloudflare Worker; production audio features remain disabled until the Access,
+legal-contact, exact-origin CORS, signing, retention, and browser checks are complete.
