@@ -10,7 +10,6 @@ import {
 } from "./run-protected-wrangler.mjs";
 
 const requiredSettings = {
-  DEPLOY_WORKER_NAME: "private-worker",
   DEPLOY_D1_NAME: "private_database",
   DEPLOY_D1_ID: "123e4567-e89b-42d3-a456-426614174000",
 };
@@ -32,7 +31,12 @@ describe("protected Cloudflare deployment configuration", () => {
   });
 
   it("includes only explicitly configured optional Cloudflare bindings", () => {
-    expect(buildProtectedCloudflareConfig(requiredSettings)).not.toHaveProperty("r2_buckets");
+    const minimalConfig = buildProtectedCloudflareConfig({
+      ...requiredSettings,
+      DEPLOY_WORKER_NAME: "studymix-ai-staging",
+    });
+    expect(minimalConfig.name).toBe("studymix-ai");
+    expect(minimalConfig).not.toHaveProperty("r2_buckets");
 
     const config = buildProtectedCloudflareConfig({
       ...requiredSettings,
