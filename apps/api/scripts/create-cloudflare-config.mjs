@@ -3,6 +3,8 @@ import { isAbsolute, relative, resolve } from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
+import { CLOUDFLARE_WORKER_NAME } from "./cloudflare-deployment.mjs";
+
 function requiredEnvironment(environment, name, pattern) {
   const value = environment[name]?.trim();
   if (value === undefined || value.length === 0 || !pattern.test(value)) {
@@ -38,11 +40,6 @@ export function resolveProtectedConfigPath(rawPath, workingDirectory = process.c
 }
 
 export function buildProtectedCloudflareConfig(environment) {
-  const workerName = requiredEnvironment(
-    environment,
-    "DEPLOY_WORKER_NAME",
-    /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/,
-  );
   const databaseName = requiredEnvironment(
     environment,
     "DEPLOY_D1_NAME",
@@ -71,7 +68,7 @@ export function buildProtectedCloudflareConfig(environment) {
 
   return {
     $schema: "../../node_modules/wrangler/config-schema.json",
-    name: workerName,
+    name: CLOUDFLARE_WORKER_NAME,
     main: "src/index.ts",
     compatibility_date: "2026-07-24",
     compatibility_flags: ["nodejs_compat"],

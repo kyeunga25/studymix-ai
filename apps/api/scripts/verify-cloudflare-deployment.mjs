@@ -5,7 +5,8 @@ import process from "node:process";
 import { pathToFileURL, URL } from "node:url";
 import { z } from "zod";
 
-const workerNamePattern = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+import { CLOUDFLARE_WORKER_NAME } from "./cloudflare-deployment.mjs";
+
 const reservedContactPattern =
   /(?:change[-_ ]?me|@(?:example(?:\.(?:com|net|org))?|localhost|[^@]+\.(?:invalid|localhost|test)))$/i;
 
@@ -129,14 +130,6 @@ function runMigrationCheck(configPath) {
     throw new VerificationError("MIGRATIONS_COMMAND_FAILED");
   }
   return summarizeMigrations(result.stdout);
-}
-
-function requiredEnvironment(name, pattern) {
-  const value = process.env[name]?.trim();
-  if (value === undefined || value.length === 0 || !pattern.test(value)) {
-    throw new VerificationError(`INVALID_${name}`);
-  }
-  return value;
 }
 
 function resolvePrivateConfigPath(rawPath) {
@@ -382,7 +375,7 @@ async function checkLiveOrigin(origin) {
 }
 
 async function main() {
-  const workerName = requiredEnvironment("DEPLOY_WORKER_NAME", workerNamePattern);
+  const workerName = CLOUDFLARE_WORKER_NAME;
   const expectedEnvironment = expectedEnvironmentSchema.parse(
     process.env.DEPLOY_EXPECT_ENV?.trim() || "production",
   );

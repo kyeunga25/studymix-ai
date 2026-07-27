@@ -156,7 +156,7 @@ export function LandingPage() {
                 {copy.hero.primaryAction}
                 <ArrowIcon />
               </a>
-              <a className="landing-secondary-action" href="/app">
+              <a className="landing-secondary-action" href="/login">
                 {copy.login}
               </a>
             </div>
@@ -224,7 +224,7 @@ export function LandingPage() {
             <h2>{copy.status.heading}</h2>
             <p>{copy.status.body}</p>
             <p className="landing-beta-limitation">{copy.status.limitation}</p>
-            <a className="landing-primary-action" href="/app">
+            <a className="landing-primary-action" href="/login">
               {copy.login}
               <ArrowIcon />
             </a>
@@ -276,7 +276,7 @@ function PublicHeader({
         <button type="button" onClick={() => onLanguageChange(language === "en" ? "zh-HK" : "en")}>
           {copy.language}
         </button>
-        <a href="/app">
+        <a href="/login">
           <span className="landing-login-wide">{copy.login}</span>
           <span className="landing-login-compact">{copy.mobileLogin}</span>
         </a>

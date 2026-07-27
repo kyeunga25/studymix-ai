@@ -4,7 +4,6 @@ import {
   currentRightsDeclarationVersion,
   legalAcceptanceStatusSchema,
   legalDocumentsManifestSchema,
-  ownerIdSchema,
   type LegalDocumentId,
   type PublicJob,
   type PublicUpload,
@@ -18,8 +17,10 @@ import {
   type FormEvent,
   type ReactNode,
 } from "react";
-import { z } from "zod";
 import { LandingPage } from "./LandingPage";
+import { LoginPage } from "./LoginPage";
+import { PrivateAccessGate } from "./PrivateAccessGate";
+import { loadPrivateSession, type PrivateAccessStatus } from "./auth-session";
 import { legalPageContent, legalPathToDocumentId, type Language } from "./legal-content";
 import { JobExperience, isPendingJob } from "./job-experience";
 import {
@@ -181,20 +182,6 @@ const legalLinkCopy = {
 
 const legalAcceptanceEnvelopeSchema = apiEnvelopeSchema(legalAcceptanceStatusSchema);
 const legalManifestEnvelopeSchema = apiEnvelopeSchema(legalDocumentsManifestSchema);
-const authMeEnvelopeSchema = apiEnvelopeSchema(
-  z.object({
-    capabilities: z
-      .object({
-        mockGeneration: z.boolean(),
-        privateAudioUpload: z.boolean(),
-        realGeneration: z.boolean(),
-        retentionCleanup: z.boolean(),
-      })
-      .strict(),
-    kind: z.enum(["authenticated", "development"]),
-    ownerId: ownerIdSchema,
-  }),
-);
 const mockApiEnabled = import.meta.env.DEV;
 const maxJobPollAttempts = 150;
 
@@ -239,6 +226,9 @@ export function App() {
   if (path === "/" || path === "/index.html") {
     return <LandingPage />;
   }
+  if (path === "/login") {
+    return <LoginPage />;
+  }
   if (legalDocumentId !== undefined) {
     return <PublicLegalExperience documentId={legalDocumentId} />;
   }
@@ -254,9 +244,8 @@ function PrivateApp() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [rightsAccepted, setRightsAccepted] = useState(false);
   const [legalAccepted, setLegalAccepted] = useState(false);
-  const [accessStatus, setAccessStatus] = useState<"checking" | "unavailable" | "verified">(
-    "checking",
-  );
+  const [accessStatus, setAccessStatus] = useState<PrivateAccessStatus>("checking");
+  const [accessRetryVersion, setAccessRetryVersion] = useState(0);
   const [isSavingAcceptance, setIsSavingAcceptance] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [activeJob, setActiveJob] = useState<PublicJob | null>(null);
@@ -294,21 +283,14 @@ function PrivateApp() {
     const controller = new AbortController();
     const verifyAccess = async () => {
       try {
-        const response = await fetch("/api/auth/me", {
-          credentials: "same-origin",
-          signal: controller.signal,
-        });
-        const body: unknown = await response.json();
-        const parsed = authMeEnvelopeSchema.safeParse(body);
-        if (response.ok && parsed.success && parsed.data.error === null) {
-          setMockGenerationEnabled(parsed.data.data.capabilities.mockGeneration);
-          setRealGenerationEnabled(parsed.data.data.capabilities.realGeneration);
-          setPrivateAudioUploadEnabled(parsed.data.data.capabilities.privateAudioUpload);
-          setRetentionCleanupEnabled(parsed.data.data.capabilities.retentionCleanup);
-          setAccessStatus("verified");
-          return;
+        const result = await loadPrivateSession(controller.signal);
+        if (result.status === "verified") {
+          setMockGenerationEnabled(result.session.capabilities.mockGeneration);
+          setRealGenerationEnabled(result.session.capabilities.realGeneration);
+          setPrivateAudioUploadEnabled(result.session.capabilities.privateAudioUpload);
+          setRetentionCleanupEnabled(result.session.capabilities.retentionCleanup);
         }
-        setAccessStatus("unavailable");
+        setAccessStatus(result.status);
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
           setAccessStatus("unavailable");
@@ -318,7 +300,7 @@ function PrivateApp() {
 
     void verifyAccess();
     return () => controller.abort();
-  }, []);
+  }, [accessRetryVersion]);
 
   const activeJobId = activeJob?.jobId;
   const activeJobStatus = activeJob?.status;
@@ -601,6 +583,20 @@ function PrivateApp() {
     jobIdempotencyKey.current = null;
   };
 
+  if (accessStatus !== "verified") {
+    return (
+      <PrivateAccessGate
+        language={language}
+        onLanguageChange={() => setLanguage(language === "en" ? "zh-HK" : "en")}
+        onRetry={() => {
+          setAccessStatus("checking");
+          setAccessRetryVersion((version) => version + 1);
+        }}
+        status={accessStatus}
+      />
+    );
+  }
+
   return (
     <div className="app-shell">
       <div className="ambient-glow" aria-hidden="true" />
@@ -628,7 +624,7 @@ function PrivateApp() {
       </header>
 
       <main>
-        <AccessVerificationStatus language={language} status={accessStatus} />
+        <AccessVerificationStatus language={language} />
         {accessStatus === "verified" ? (
           activeJob !== null || jobError !== null ? (
             <JobExperience
@@ -873,7 +869,7 @@ function PublicLegalExperience({ documentId }: { documentId: LegalDocumentId }) 
             <GlobeIcon />
             <span>{language === "en" ? "繁體中文" : "EN"}</span>
           </button>
-          <a className="logout-link" href="/app">
+          <a className="logout-link" href="/login">
             {language === "en" ? "Invited tester sign in" : "受邀測試者登入"}
           </a>
         </div>
@@ -890,33 +886,16 @@ function PublicLegalExperience({ documentId }: { documentId: LegalDocumentId }) 
   );
 }
 
-function AccessVerificationStatus({
-  language,
-  status,
-}: {
-  language: Language;
-  status: "checking" | "unavailable" | "verified";
-}) {
+function AccessVerificationStatus({ language }: { language: Language }) {
   const statusCopy = {
-    en: {
-      checking: "Verifying private-beta access…",
-      unavailable: "Access could not be verified. Sign in again before testing the app.",
-      verified: "Private-beta access verified. This session is approved for testing.",
-    },
-    "zh-HK": {
-      checking: "正在驗證私密測試存取權……",
-      unavailable: "未能驗證存取權；請重新登入後再測試應用程式。",
-      verified: "私密測試存取權已驗證；此工作階段可進行測試。",
-    },
-  } satisfies Record<Language, Record<typeof status, string>>;
+    en: "Private-beta access verified. This session is approved for testing.",
+    "zh-HK": "私密測試存取權已驗證；此工作階段可進行測試。",
+  } satisfies Record<Language, string>;
 
   return (
-    <section className={`access-verification is-${status}`} role="status">
+    <section className="access-verification is-verified" role="status">
       <ShieldIcon />
-      <span>{statusCopy[language][status]}</span>
-      {status === "unavailable" ? (
-        <a href="/app">{language === "en" ? "Sign in again" : "重新登入"}</a>
-      ) : null}
+      <span>{statusCopy[language]}</span>
     </section>
   );
 }

@@ -31,7 +31,7 @@ Create separate private staging and production buckets. Do not enable an `r2.dev
 domain. Keep `R2_TRANSFER_ENABLED=false` in production while the implemented retention handler and live
 expiry monitoring have not passed isolated staging checks.
 
-The staging Worker needs:
+A staging preview version of the single `studymix-ai` Worker needs:
 
 - an `AUDIO_BUCKET` binding to the staging bucket;
 - protected runtime values for `R2_ACCOUNT_ID`, `R2_BUCKET_NAME`, `MAX_UPLOAD_BYTES`,
@@ -77,7 +77,7 @@ to an external service.
 For Workers Builds, provide the actual Workflow name only through the protected
 `DEPLOY_WORKFLOW_NAME` build setting. Omitting it leaves the binding out of the generated deployment
 configuration. Set `MAX_ACTIVE_JOBS_PER_OWNER` and `OUTPUT_RETENTION_HOURS` as private runtime values,
-then enable `JOB_WORKFLOW_ENABLED=true` only for the approved staging Worker. Keep
+then enable `JOB_WORKFLOW_ENABLED=true` only for the approved staging preview version. Keep
 `GENERATION_PROVIDER=mock` and `REAL_GENERATION_ENABLED=false`.
 
 Before any production decision, verify owner isolation, exact current legal acceptance, one persisted
@@ -96,7 +96,7 @@ Set `FAL_KEY` and the expected `FAL_WEBHOOK_USER_ID` only as Worker secrets. The
 intentionally invalid type-generation placeholders; the protected deployment generator does not publish
 them and `keep_vars` preserves the runtime secrets.
 
-Configure these non-secret bounds in the staging Worker without printing their protected environment or
+Configure these non-secret bounds in the staging preview version without printing their protected environment or
 resource values:
 
 ```text
@@ -136,7 +136,9 @@ and expiry cleanup. An ambiguous submission must fail closed rather than send a 
 In Cloudflare Zero Trust:
 
 1. Go to **Access controls → Applications** and add a **Self-hosted** application.
-2. Add the production custom hostname destinations for `/app*` and `/api/*` to the same application.
+2. Keep `/login` public, and add the production custom hostname destinations for `/app*` and `/api/*`
+   to the same application. The sign-in page links to `/app`, which starts Access authentication when
+   no valid application session exists.
 3. Before enabling fal callbacks, add a separate, more-specific application for the exact
    `/api/webhooks/fal` path with a narrowly scoped **Bypass / Everyone** policy. Do not add a wildcard or
    change the parent private-path policy. The Worker independently rejects callbacks unless the Ed25519
@@ -200,7 +202,6 @@ Before production traffic is enabled:
    After preparing the ignored private deployment config, run the privacy-safe active-deployment check:
 
    ```bash
-   DEPLOY_WORKER_NAME="PRIVATE_VALUE" \
    DEPLOY_PUBLIC_URL="https://PRIVATE_HOSTNAME" \
    DEPLOY_EXPECT_ENV=production \
    pnpm deploy:verify
@@ -210,12 +211,18 @@ Before production traffic is enabled:
    readiness booleans. It deliberately omits resource names, identifiers, hostnames, contact values,
    deployment timestamps, and secret values. Keep its non-zero result until the public surface is fully
    configured and reachable.
-2. In a private browser window, confirm that `/`, `/legal/privacy`, `/health`, and
-   `/legal/documents.json` load without login and create no owner row.
-3. Confirm `/app` and `/api/auth/me` show Access login or denial before the Worker is reached.
+2. In a private browser window, confirm that `/`, `/login`, `/legal/privacy`, `/health`, and
+   `/legal/documents.json` load without login and create no owner row. Confirm `/login` has no password
+   field or active public-registration control.
+3. Follow the `/login` action and confirm `/app` and `/api/auth/me` show Access login or denial before
+   the Worker is reached.
 4. Confirm an approved identity can load `/api/auth/me` and receives a valid owner ID response. Do not
    copy the value into screenshots, issues, commits, or public documentation.
 5. Confirm an unapproved email is denied by Access.
+   After Access authentication, confirm a D1 owner whose status is `disabled` receives `403` and no
+   workspace interface. Browser session checks must send `X-Requested-With: XMLHttpRequest` so expiry is
+   handled as `401` without treating redirected HTML as a valid session. This follows Cloudflare's current
+   [Access session-management guidance](https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/session-management/#ajax).
 6. Send a request without `Cf-Access-Jwt-Assertion` directly to a protected Worker path and confirm a `401`
    response with no owner row created.
 7. Send a malformed or expired JWT and confirm it is rejected without token details in the response
@@ -244,8 +251,8 @@ Cloudflare deployment token in the repository or GitHub Actions secrets.
 
 The connection procedure and branch behavior below were rechecked against Cloudflare's current Workers
 Builds documentation on 2026-07-26. An existing Worker is connected through **Settings → Builds →
-Connect**. The Worker selected in the dashboard must match the deployment name generated from the
-protected build setting; the actual name must not be copied into the checked-in Wrangler file.
+Connect**. The Worker selected in the dashboard must be `studymix-ai`, matching the fixed name in both
+the checked-in and generated Wrangler configuration.
 
 1. In the Worker's **Settings → Builds**, connect the GitHub repository through the Cloudflare Workers
    Builds GitHub App. This is a one-time account-authorized action.
@@ -253,14 +260,16 @@ protected build setting; the actual name must not be copied into the checked-in 
 3. Use repository root `/`, build command `pnpm build:web`, deploy command
    `pnpm --filter @studymix/api deploy:cloudflare`, and preview command
    `pnpm --filter @studymix/api preview:cloudflare`.
-4. Add `DEPLOY_WORKER_NAME`, `DEPLOY_D1_NAME`, and `DEPLOY_D1_ID` as protected build settings in
-   Cloudflare. Add `DEPLOY_R2_BUCKET`, `DEPLOY_WORKFLOW_NAME`, and
+4. Add `DEPLOY_D1_NAME` and `DEPLOY_D1_ID` as protected build settings in Cloudflare. The Worker name is
+   fixed in code and must not be added as a configurable build setting. Add `DEPLOY_R2_BUCKET`, `DEPLOY_WORKFLOW_NAME`, and
    `DEPLOY_RATE_LIMIT_NAMESPACE_ID` only to an approved private staging build; omitting a setting leaves
    that binding out of the generated deployment config. Their values must never be committed or printed
    in public build documentation.
    For authenticated local staging or production operations, set `DEPLOY_CONFIG_PATH` to a distinct
    ignored filename such as `wrangler.staging.json` or `wrangler.production.json`; config generation,
-   deployment, preview upload, migration checks, and deployment verification must all use that same file.
+   preview upload, migration checks, and deployment verification must all use that same file. Every file
+   still targets `studymix-ai`; use staging resource files only with `preview:cloudflare`, never with the
+   production deploy command.
 5. Keep `APP_ENV`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `LEGAL_CONTACT_EMAIL`, `R2_ACCOUNT_ID`,
    `R2_BUCKET_NAME`, the R2 limits/TTLs, `R2_TRANSFER_ENABLED=false`,
    `JOB_WORKFLOW_ENABLED=false`, `RETENTION_CLEANUP_ENABLED=false`,

@@ -57,6 +57,39 @@ describe("Worker authentication boundary", () => {
     expect(ownerCount?.total).toBe(1);
   });
 
+  it("rejects an authenticated owner whose beta access has been disabled", async () => {
+    const initialResponse = await app.request(
+      "https://studymix.example/api/auth/me",
+      undefined,
+      env,
+    );
+    const initialBody = (await initialResponse.json()) as {
+      data: { ownerId: string } | null;
+    };
+    expect(initialResponse.status).toBe(200);
+    expect(initialBody.data).not.toBeNull();
+
+    await env.DB.prepare("UPDATE owners SET status = 'disabled' WHERE id = ?1")
+      .bind(initialBody.data?.ownerId)
+      .run();
+
+    const deniedResponse = await app.request(
+      "https://studymix.example/api/auth/me",
+      undefined,
+      env,
+    );
+
+    expect(deniedResponse.status).toBe(403);
+    expect(await deniedResponse.json()).toMatchObject({
+      data: null,
+      error: {
+        code: "FORBIDDEN",
+        message: "This account is not permitted to use StudyMix AI.",
+        retryable: false,
+      },
+    });
+  });
+
   it("serves the public product page without creating an owner", async () => {
     const productionEnv: Env = {
       ...env,

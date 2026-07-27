@@ -1,6 +1,6 @@
 # 實作狀態 / Implementation Status
 
-更新日期：2026-07-26
+更新日期：2026-07-28
 
 本文件只記錄目前程式庫可驗證的能力與公開安全限制；未落實的工作不在此列出。
 
@@ -10,11 +10,11 @@ This document records only verifiable repository capabilities and public safety 
 
 - [x] pnpm monorepo、嚴格 TypeScript、ESLint、Prettier、Vitest、Playwright 與 GitHub Actions；CI 會執行 unit、Worker、build 及 Chromium E2E。
 - [x] React/Vite 雙語介面，支援鍵盤操作、狀態公告、錯誤提示及兩個候選結果比較。
-- [x] 公開雙語產品主頁、封閉測試狀態、無註冊入口，以及獨立 `/app` 受邀測試工作區。
+- [x] 公開雙語產品主頁、獨立 `/login` 封閉測試登入介面、停用的日後註冊位置，以及獨立 `/app` 受邀測試工作區。
 - [x] 僅限本機開發的 mock HTTP job API；正式 bundle 不包含 mock 路由或測試控制標記。
 - [x] Zod API contracts、加密安全 ID、job state machine 及 provider abstraction。
 - [x] D1 additive migrations 與 owner-scoped repositories。
-- [x] Cloudflare Access JWT 驗證、server-derived owner ID 及跨 owner 拒絕測試。
+- [x] Cloudflare Access JWT 驗證、server-derived owner ID、active／disabled Beta 權限檢查及跨 owner 拒絕測試。
 - [x] 版本化中英文法律文件、D1 接受紀錄與 fail-closed 正式環境設定。
 - [x] Worker Static Assets 與 API 使用同一 Worker；`/app*` 及 `/api/*` 先經 Access 與 Worker JWT 驗證。
 - [x] `/health`、法律頁及公開法律 manifest 可匿名讀取，但不建立 owner 紀錄。
@@ -27,10 +27,10 @@ This document records only verifiable repository capabilities and public safety 
 - [x] fal callback 邊界：精確公開路徑、Ed25519/JWKS 原始 body 驗證、預期 fal user、五分鐘時間窗、已知 request ID、最小 Workflow wake-up signal、duplicate-safe 行為及 polling correctness fallback；完整 callback payload 不保存。
 - [x] CSP 資料最小化：R2 API origin 只加入成功且已驗證的 `/app` 文件回應；公開頁、公開 callback、API JSON 及未授權 app 回應不攜帶該部署識別資料。
 - [x] Cloudflare Workers Builds 可用的部署指令以受保護設定生成 ignored config，不把資源識別資料寫入版本庫。
-- [x] Staging 與 production 可使用各自的 ignored Wrangler config；生成、deploy／preview 及 verifier 會驗證並共用同一個環境檔案，避免私有資源設定互相覆寫。Wrangler 指令停用本機 debug log 寫入並保留輸出資料清理。
+- [x] Staging 與 production 可使用各自的 ignored Wrangler resource config，但生成器會固定使用唯一 `studymix-ai` Worker；staging config 只可上載 preview，不能作 production deploy。Wrangler 指令停用本機 debug log 寫入並保留輸出資料清理。
 - [x] 私隱安全的 active-deployment 診斷只輸出 bindings、runtime／secret presence、migration counts、live-route booleans 及分層 readiness，不輸出資源名稱、識別碼、hostname、聯絡值或 secret。
 - [x] GitHub 存放庫已連接至 Cloudflare Workers Builds；生產與預覽命令採用加密建置設定，不在版本庫保存資源識別資料。
-- [x] 獨立 Cloudflare staging 基礎設施已以 fail-closed 狀態部署；D1 migrations 已完成，部署診斷確認私人 R2、Workflow 及 Rate Limiting bindings 均存在。此驗證沒有啟用公開 route、執行期憑證或產品功能旗標。
+- [x] 獨立 staging Worker 已撤下，Cloudflare 現只保留一個 `studymix-ai` Worker。原 staging D1、私人 R2 與 Workflow 資源目前未綁定且不處理流量；如要重用，只可連到經批准的同一 Worker preview version。
 - [x] Feature-gated 私人 R2 直接上載切片：server-controlled key、短效且綁定 content type／不可覆寫條件的 PUT URL、R2 metadata 確認、owner 隔離、明確刪除、短效輸出下載簽名及本機整合測試。
 - [x] Feature-gated server-side mock generation 切片：嚴格 job contracts、現行法律接受及逐工作權利聲明、active-job quota、owner-scoped job API、Cloudflare Workflow、兩個無付費服務的合成 WAV 候選版本、私人 R2 輸出、短效播放連結及 Workflow introspection 測試。
 - [x] Feature-gated 保留期與刪除切片：owner-scoped terminal job 即時刪除、24 小時未附加上載／失敗 artifact 清理、完成後 72 小時來源清理、7 日輸出到期、每小時 Cron handler、可重試 metadata 狀態及另一 owner 拒絕測試。
@@ -42,7 +42,7 @@ This document records only verifiable repository capabilities and public safety 
 - 真實 AI 音訊生成、Turnstile、callback 的精確 Access 路徑例外與正式輸出交付；fal Workflow、已簽 callback/polling fallback、私人 web 流程及兩層 quota 已完成本機接線與離線測試，但 production 仍保持 `REAL_GENERATION_ENABLED=false`，亦未作任何付費或真實音訊測試。
 - 正式環境的自動保留期執行；`RETENTION_CLEANUP_ENABLED` 預設保持 `false`，直至 staging Cron、R2 刪除重試及監察完成實測。程式與本機 Worker 測試已覆蓋清理及 terminal job 即時刪除。
 - 公開註冊、非受邀帳戶及公開使用者內容。
-- Staging 基礎設施雖已建立，但在 Access、法律聯絡設定、私人 R2 簽名憑證、精確 CORS、受保護 hostname 與實機瀏覽器流程通過前，不會開啟公開 route 或任何處理音訊的旗標。
+- Staging 資料資源雖仍存在，但沒有獨立 Worker 或公開 route；在 Access、法律聯絡設定、私人 R2 簽名憑證、精確 CORS、受保護 preview 與實機瀏覽器流程通過前，不會綁定或開啟任何處理音訊的旗標。
 
 介面可用本機 mock 或受旗標保護的 server-side 合成音調完整示範狀態流程，但不會把任何 mock 結果描述為真實 AI 生成。
 
