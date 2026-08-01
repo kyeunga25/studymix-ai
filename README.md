@@ -53,6 +53,7 @@ packages/
   contracts/              Shared Zod schemas and API types
   core/                   Domain logic and state transitions
   providers/              Music generation provider adapters
+  payments/               Provider-neutral disabled/synthetic payment boundary
   presets/                Versioned style presets
   test-fixtures/           Non-copyrighted test assets and metadata
 docs/
@@ -74,6 +75,8 @@ README.md
 - Treat all presigned URLs as short-lived bearer credentials.
 - Do not hold a request open while AI generation runs.
 - Every job must be idempotent and recoverable.
+- Reserve private-beta credits atomically before starting a server-side generation job.
+- Settle or release each credit reservation exactly once with the terminal Workflow state.
 - Use a provider interface so the AI vendor can be replaced.
 - The repository must run without paid services by using the mock provider.
 - Do not store or log user audio, signed URLs, API keys, or full webhook payloads.
@@ -121,10 +124,18 @@ production build; production upload and generation remain disabled until their s
 
 The Worker also contains a separate feature-gated mock job API and Cloudflare Workflow. When explicitly
 enabled in an isolated test environment with private R2, it validates the owner, current legal acceptance,
-confirmed upload, rights declaration, preset, idempotency key, and active-job limit before producing two
-small synthetic WAV tones. It does not send the source to an external provider or make a paid API call.
+confirmed upload, rights declaration, preset, idempotency key, active-job limit, active beta entitlement,
+and available beta credits before producing two small synthetic WAV tones. It does not send the source to
+an external provider or make a paid API call.
 Workflow integration tests exercise retries, D1 state, private R2 output metadata, and cross-owner denial.
-Both `R2_TRANSFER_ENABLED` and `JOB_WORKFLOW_ENABLED` remain `false` by default.
+`R2_TRANSFER_ENABLED`, `JOB_WORKFLOW_ENABLED`, and `CREDIT_ACCOUNTING_ENABLED` remain `false` by default.
+
+The D1 credit boundary uses an append-only owner-scoped ledger. First-time job creation and credit
+reservation share one D1 batch transaction; Workflow success settles once and terminal failure releases
+once. `/api/credits` exposes only the authenticated owner's aggregate available, reserved, and settled
+beta units. There is no browser grant, checkout, subscription, top-up, or payment route. The separate
+`@studymix/payments` package contains only strict provider-neutral lifecycle contracts plus disabled and
+synthetic adapters for offline tests; no live payment provider is connected.
 
 The provider package also contains an offline-tested fal ACE-Step audio-to-audio adapter. It uses the
 asynchronous queue, validates external responses, disables provider JSON payload storage, requests a
@@ -237,6 +248,10 @@ The repository currently includes:
   polling, two private playback/download links, safe bilingual failures, and terminal data deletion.
 - A D1 rolling owner quota plus a Cloudflare Rate Limiting binding keyed by owner and hashed connecting IP
   before a real-provider job can create metadata.
+- An active-entitlement gate and append-only D1 credit ledger with atomic job reservation, idempotent
+  settlement/release, an owner-only aggregate API, and a bilingual private-workspace balance indicator.
+- A provider-neutral payment-boundary package whose runtime adapter is disabled by default and whose mock
+  accepts only strict synthetic events; it does not create payment or checkout objects.
 - A feature-gated retention path with owner-scoped terminal-job deletion, hourly Cron handling, retry-safe
   private R2 purging, 24-hour unattached/failed-artifact cleanup, 72-hour completed-source cleanup, and
   7-day output expiry.
@@ -245,6 +260,7 @@ Production R2 transfer and both server-side Workflow modes remain disabled until
 pass. External generation and provider callbacks remain disabled in production. Production retention
 cleanup also stays off until its staging Cron, retry, and monitoring checks pass. See
 [`docs/TODO.md`](docs/TODO.md) for the current verified status without internal planning material.
+Payment collection and public pricing are not implemented or approved.
 
 The former separate staging Worker has been retired. Its isolated D1, private R2, and Workflow resources
 remain unbound and inactive until they are reused by an approved preview or explicitly removed. StudyMix

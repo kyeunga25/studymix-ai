@@ -273,6 +273,22 @@ test("uses the private real-provider API flow without browser-to-provider calls"
       status: 200,
     });
   });
+  await page.route("**/api/credits", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify(
+        successEnvelope({
+          availableCredits: 20,
+          plan: "private-beta",
+          reservedCredits: 0,
+          settledCredits: 0,
+          status: "active",
+          updatedAt: "2026-08-02T00:00:00.000Z",
+        }),
+      ),
+      contentType: "application/json",
+      status: 200,
+    });
+  });
   await page.route("**/api/uploads", async (route) => {
     await route.fulfill({
       body: JSON.stringify(
@@ -342,6 +358,7 @@ test("uses the private real-provider API flow without browser-to-provider calls"
   }
 
   await prepareAuthorizedMix(page);
+  await expect(page.getByText("20 · 0")).toBeVisible();
   await page.getByRole("button", { name: "Securely upload audio" }).click();
   await expect(page.getByText("Private upload confirmed.", { exact: false })).toBeVisible();
   expect(directUploadSeen).toBe(true);

@@ -74,6 +74,12 @@ unless the same isolated staging environment has passed the private R2 checks ab
 creates two small synthetic WAV tones, makes no paid request, and does not transmit the uploaded source
 to an external service.
 
+The same preview must keep `CREDIT_ACCOUNTING_ENABLED=false` until an approved beta owner has an active
+entitlement and a bounded synthetic credit grant in D1. Set a positive `CREDITS_PER_JOB`, then enable the
+flag only for that preview. There is no browser credit-grant route. Verify that job creation and reserve
+commit together, idempotent replay creates no second reserve, Workflow success settles once, and terminal
+failure releases once before using the server-side mock or real provider mode.
+
 For Workers Builds, provide the actual Workflow name only through the protected
 `DEPLOY_WORKFLOW_NAME` build setting. Omitting it leaves the binding out of the generated deployment
 configuration. Set `MAX_ACTIVE_JOBS_PER_OWNER` and `OUTPUT_RETENTION_HOURS` as private runtime values,
@@ -272,7 +278,8 @@ the checked-in and generated Wrangler configuration.
    production deploy command.
 5. Keep `APP_ENV`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `LEGAL_CONTACT_EMAIL`, `R2_ACCOUNT_ID`,
    `R2_BUCKET_NAME`, the R2 limits/TTLs, `R2_TRANSFER_ENABLED=false`,
-   `JOB_WORKFLOW_ENABLED=false`, `RETENTION_CLEANUP_ENABLED=false`,
+   `JOB_WORKFLOW_ENABLED=false`, `CREDIT_ACCOUNTING_ENABLED=false`,
+   `CREDITS_PER_JOB`, `RETENTION_CLEANUP_ENABLED=false`,
    `MAX_ACTIVE_JOBS_PER_OWNER`, `MAX_DAILY_JOBS_PER_OWNER`,
    `ABANDONED_UPLOAD_RETENTION_HOURS`,
    `SOURCE_RETENTION_HOURS`, `FAILED_ARTIFACT_RETENTION_HOURS`, `OUTPUT_RETENTION_HOURS`,

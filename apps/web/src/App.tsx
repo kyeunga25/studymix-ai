@@ -4,6 +4,7 @@ import {
   currentRightsDeclarationVersion,
   legalAcceptanceStatusSchema,
   legalDocumentsManifestSchema,
+  type CreditSummary,
   type LegalDocumentId,
   type PublicJob,
   type PublicUpload,
@@ -21,6 +22,7 @@ import { LandingPage } from "./LandingPage";
 import { LoginPage } from "./LoginPage";
 import { PrivateAccessGate } from "./PrivateAccessGate";
 import { loadPrivateSession, type PrivateAccessStatus } from "./auth-session";
+import { getCreditSummary } from "./credit-api";
 import { legalPageContent, legalPathToDocumentId, type Language } from "./legal-content";
 import { JobExperience, isPendingJob } from "./job-experience";
 import {
@@ -105,6 +107,8 @@ const copy = {
       "Audio stays in private R2. Test candidates are synthetic tones created without an external AI provider and remain private.",
     privacyDetailReal:
       "Audio stays in private R2. When you generate, a short-lived source URL is shared with the configured AI provider; validated outputs return to private R2.",
+    credits: "Beta credits",
+    creditsUnavailable: "Credits unavailable",
     logout: "Sign out",
   },
   "zh-HK": {
@@ -161,6 +165,8 @@ const copy = {
       "音訊只存於私人 R2；測試候選版本是無需外部 AI 供應商的合成音調，並保持私密。",
     privacyDetailReal:
       "音訊只存於私人 R2；生成時會把短效來源連結交給已設定的 AI 供應商，經驗證的輸出會存回私人 R2。",
+    credits: "Beta 額度",
+    creditsUnavailable: "額度暫時不可用",
     logout: "登出",
   },
 } satisfies Record<Language, Record<string, string>>;
@@ -255,6 +261,8 @@ function PrivateApp() {
   const [downloadRetryVersion, setDownloadRetryVersion] = useState(0);
   const [jobPollAttempt, setJobPollAttempt] = useState(0);
   const [mockGenerationEnabled, setMockGenerationEnabled] = useState(false);
+  const [creditAccountingEnabled, setCreditAccountingEnabled] = useState(false);
+  const [creditSummary, setCreditSummary] = useState<CreditSummary | null>(null);
   const [realGenerationEnabled, setRealGenerationEnabled] = useState(false);
   const [privateAudioUploadEnabled, setPrivateAudioUploadEnabled] = useState(false);
   const [retentionCleanupEnabled, setRetentionCleanupEnabled] = useState(false);
@@ -273,6 +281,8 @@ function PrivateApp() {
     selectedFile !== null && rightsAccepted && legalAccepted && confirmedUpload === null;
   const canStartPrivateGeneration =
     confirmedUpload !== null && privateGenerationMode !== null && rightsAccepted && legalAccepted;
+  const activeJobId = activeJob?.jobId;
+  const activeJobStatus = activeJob?.status;
 
   useEffect(() => {
     document.documentElement.lang = language;
@@ -285,6 +295,7 @@ function PrivateApp() {
       try {
         const result = await loadPrivateSession(controller.signal);
         if (result.status === "verified") {
+          setCreditAccountingEnabled(result.session.capabilities.creditAccounting);
           setMockGenerationEnabled(result.session.capabilities.mockGeneration);
           setRealGenerationEnabled(result.session.capabilities.realGeneration);
           setPrivateAudioUploadEnabled(result.session.capabilities.privateAudioUpload);
@@ -302,8 +313,21 @@ function PrivateApp() {
     return () => controller.abort();
   }, [accessRetryVersion]);
 
-  const activeJobId = activeJob?.jobId;
-  const activeJobStatus = activeJob?.status;
+  useEffect(() => {
+    if (accessStatus !== "verified" || !creditAccountingEnabled) {
+      setCreditSummary(null);
+      return;
+    }
+    const controller = new AbortController();
+    void getCreditSummary(controller.signal)
+      .then((summary) => setCreditSummary(summary))
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setCreditSummary(null);
+        }
+      });
+    return () => controller.abort();
+  }, [accessStatus, activeJobStatus, creditAccountingEnabled]);
 
   useEffect(() => {
     if (
@@ -606,6 +630,16 @@ function PrivateApp() {
           <span>StudyMix AI</span>
         </a>
         <div className="header-actions">
+          {creditAccountingEnabled ? (
+            <div className="credit-status" aria-live="polite">
+              <span>{strings.credits}</span>
+              <strong>
+                {creditSummary === null
+                  ? strings.creditsUnavailable
+                  : `${creditSummary.availableCredits.toString()} · ${creditSummary.reservedCredits.toString()}`}
+              </strong>
+            </div>
+          ) : null}
           <button
             className="language-switch"
             type="button"

@@ -182,6 +182,36 @@ describe("D1 repositories", () => {
     expect(counts).toEqual({ jobs: 0, reserves: 0 });
   });
 
+  it("does not reactivate a cancelled entitlement when an old grant is replayed", async () => {
+    const owner = ownerContext("1");
+    await upsertOwner(env.DB, owner, now);
+    const grant = {
+      createdAt: now,
+      eventId: createSecureId("evt"),
+      ownerId: owner.ownerId,
+      quantity: 5,
+      referenceKey: "test:grant:cancelled-replay",
+    };
+    await grantPrivateBetaCredits(env.DB, grant);
+    await env.DB.prepare(
+      "UPDATE owner_entitlements SET status = 'cancelled', updated_at = ?1 WHERE owner_id = ?2",
+    )
+      .bind(later, owner.ownerId)
+      .run();
+    await grantPrivateBetaCredits(env.DB, { ...grant, eventId: createSecureId("evt") });
+
+    expect(await getOwnedCreditSummary(env.DB, owner.ownerId)).toMatchObject({
+      availableCredits: 5,
+      status: "cancelled",
+    });
+    const grants = await env.DB.prepare(
+      "SELECT COUNT(*) AS total FROM credit_ledger WHERE owner_id = ?1 AND event_type = 'grant'",
+    )
+      .bind(owner.ownerId)
+      .first<{ total: number }>();
+    expect(grants?.total).toBe(1);
+  });
+
   it("settles or releases one reservation atomically with the terminal job state", async () => {
     const owner = ownerContext("1");
     const firstUploadId = await createConfirmedUpload(owner);

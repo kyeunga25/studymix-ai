@@ -232,6 +232,15 @@ function featureFlag(bindings, name) {
   return value === "true" ? true : value === "false" ? false : null;
 }
 
+function positiveIntegerBinding(bindings, name, maximum) {
+  const value = plainText(bindings, name);
+  if (value === undefined || !/^\d+$/.test(value)) {
+    return false;
+  }
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= maximum;
+}
+
 export function summarizeMigrations(output) {
   const pending = new Set(output.match(/\b\d{4}_[A-Za-z0-9_-]+\.sql\b/g) ?? []);
   const current = /No migrations to apply/i.test(output) && pending.size === 0;
@@ -270,6 +279,8 @@ export function buildDeploymentReport({
     generationProviderConfigured: ["mock", "fal"].includes(
       plainText(bindings, "GENERATION_PROVIDER") ?? "",
     ),
+    creditAccountingEnabled: featureFlag(bindings, "CREDIT_ACCOUNTING_ENABLED"),
+    creditCostConfigured: positiveIntegerBinding(bindings, "CREDITS_PER_JOB", 1_000),
     r2TransferEnabled: featureFlag(bindings, "R2_TRANSFER_ENABLED"),
     workflowEnabled: featureFlag(bindings, "JOB_WORKFLOW_ENABLED"),
     retentionEnabled: featureFlag(bindings, "RETENTION_CLEANUP_ENABLED"),
@@ -312,6 +323,8 @@ export function buildDeploymentReport({
     secretStatus.r2SigningPair &&
     runtimeStatus.r2TransferEnabled === true &&
     runtimeStatus.workflowEnabled === true &&
+    runtimeStatus.creditAccountingEnabled === true &&
+    runtimeStatus.creditCostConfigured &&
     runtimeStatus.retentionEnabled === true &&
     liveStatus.privateAppProtected &&
     liveStatus.privateApiProtected;

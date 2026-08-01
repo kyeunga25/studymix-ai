@@ -84,9 +84,7 @@ export async function grantPrivateBetaCredits(
         SELECT id, 'private-beta', 'active', ?2, ?2
         FROM owners
         WHERE id = ?1
-        ON CONFLICT (owner_id) DO UPDATE SET
-          status = 'active',
-          updated_at = excluded.updated_at`,
+        ON CONFLICT (owner_id) DO NOTHING`,
       )
       .bind(parsed.ownerId, parsed.createdAt),
     db
