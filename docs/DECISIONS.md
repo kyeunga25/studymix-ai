@@ -126,3 +126,32 @@ its Access and route boundary is verified.
 
 **Reason:** A single service avoids duplicate Worker projects, split deployment settings, and accidental
 public endpoints while retaining version-level preview and rollback support.
+
+## ADR-013: Append-only private-beta credit ledger
+
+**Status:** Accepted for MVP safety controls
+
+Require an active owner entitlement and reserve a fixed, configured credit quantity in the same D1
+batch transaction that creates a generation job. Derive available, reserved, and settled totals from
+append-only grant, reserve, settle, and release events. Workflow completion settles the reservation;
+terminal failure releases it. Unique owner-scoped reference keys make every operation idempotent.
+
+Credits are a private-beta usage and spend-control unit. They are not public pricing, and the browser
+has no credit-grant endpoint.
+
+**Reason:** An append-only ledger is auditable, avoids mutable-balance drift, and remains correct across
+duplicate HTTP requests and Workflow retries.
+
+## ADR-014: Isolate future payment providers from the public repository
+
+**Status:** Accepted architecture boundary; provider implementation deferred
+
+Keep the StudyMix application and public repository provider-neutral. A future approved payment service
+may be reached only through an authenticated generic Service Binding or equivalent server-to-server
+contract. The browser never receives merchant credentials or privileged provider requests. This
+repository may contain disabled and synthetic adapters for contract testing, but no live provider
+dependency, signing implementation, merchant mapping, or checkout endpoint.
+
+**Reason:** Payment collection is not required for the private audio MVP. Isolating it prevents vendor
+details and privileged credentials from leaking into the public application while retaining a testable
+domain boundary.

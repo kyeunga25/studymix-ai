@@ -14,6 +14,7 @@ Browser
   ├── Protected `/api/*` ───────────────► Cloudflare Access ─► Worker API
   │                                         │
   │                                         ├── D1
+  │                                         │    └── owner entitlement + append-only credit ledger
   │                                         ├── Workflow binding
   │                                         ├── Turnstile verification
   │                                         └── R2 signing service
@@ -487,6 +488,8 @@ DEV_AUTH_SUBJECT          # local development only; ignored in production/stagin
 LEGAL_CONTACT_EMAIL       # real monitored address required outside local/test
 GENERATION_PROVIDER
 REAL_GENERATION_ENABLED
+CREDIT_ACCOUNTING_ENABLED
+CREDITS_PER_JOB
 JOB_WORKFLOW_ENABLED
 R2_TRANSFER_ENABLED
 MAX_UPLOAD_BYTES
@@ -517,7 +520,36 @@ TURNSTILE_SECRET_KEY
 
 Generate Worker binding types using Wrangler. Do not hand-maintain an `Env` interface.
 
-## 14.1 Data lifecycle and disclosure status
+## 14.1 Private-beta credits and future payment isolation
+
+The invited beta uses an owner-scoped, append-only D1 credit ledger as a spend and abuse-control
+boundary. It does not publish a price or activate payment collection. The ledger records only positive
+`grant`, `reserve`, `settle`, and `release` events with unique owner-scoped reference keys.
+
+Balances are derived rather than updated in place:
+
+```text
+available = grants + releases - reserves
+reserved  = reserves - settles - releases
+settled   = settles
+```
+
+First-time job creation and its reserve event run in one D1 `batch()` transaction. An idempotent replay
+uses the existing job and cannot create a second reservation. Workflow completion settles once; a
+terminal Workflow failure releases once. Every query and mutation includes the owner ID, and the browser
+receives aggregates only.
+
+`CREDIT_ACCOUNTING_ENABLED=false` is a fail-closed default. Enabling a server-side generation mode
+requires an active entitlement, a configured positive `CREDITS_PER_JOB`, and sufficient credits.
+There is no browser route for granting credits.
+
+Any future payment-provider implementation remains outside this public Worker behind a generic,
+authenticated Service Binding or equivalent server-to-server boundary. The public repository may define
+only provider-neutral contracts plus disabled or synthetic adapters. Provider credentials, merchant
+mapping, signing logic, hosted-checkout endpoints, and verified webhook ingestion are not part of this
+repository or the current MVP.
+
+## 14.2 Data lifecycle and disclosure status
 
 The codebase contains a feature-gated direct-to-private-R2 upload slice, owner-scoped upload and
 terminal-job deletion, mock and fal Workflow modes, and an hourly retention handler. The default and
@@ -533,7 +565,7 @@ Legal acceptance records are metadata evidence, not audio. Their final retention
 documented before launch and limited to what is necessary for governing-version proof, security, and
 live disputes.
 
-## 14.2 Data recipients, sources, and location claims
+## 14.3 Data recipients, sources, and location claims
 
 - Cloudflare is the current identity, Worker, and D1 processor. Automatic placement and
   location hints do not justify a Hong Kong-only residency claim.

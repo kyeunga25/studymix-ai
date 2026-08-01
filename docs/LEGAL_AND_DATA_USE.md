@@ -51,6 +51,7 @@ declaration versions are enforced by the shared Zod contract. A client checkbox 
 | Feature-gated real-provider audio | Approved tester using authorized audio | Private audio-to-audio generation and result delivery | Cloudflare, fal.ai, private R2, and owner-scoped D1 metadata | Default/production off; Workflow mapping and bounded private ingestion are offline-tested, but no paid or real-audio staging check has run |
 | fal completion callback | fal.ai | Wake the matching Workflow before it rechecks the provider API | Cloudflare Worker and Workflow | Signed raw body is verified within a five-minute window; only known request ID and candidate index are signaled, while the complete body is discarded and not stored |
 | Real-generation rate key | Cloudflare request metadata | Coarse abuse protection before job creation | Cloudflare Rate Limiting binding | Short per-location counter window; the application hashes the connecting IP before use and does not store the raw IP or hash in D1 |
+| Private-beta entitlement and credit ledger | Approved operator grant plus generation state | Bound invited-beta usage and provider spend | Worker and owner-scoped D1 | Append-only grant/reserve/settle/release metadata; no card, bank, checkout, or payment-provider data |
 | Operational event data | Worker | Security and troubleshooting | Cloudflare observability | Must exclude audio, filename, signed URL, assertion, secrets, and raw provider payloads |
 
 StudyMix AI does not ingest arbitrary remote URLs, scrape tracks or personal data from official sites,

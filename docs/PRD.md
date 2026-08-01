@@ -50,6 +50,7 @@ Manually commissioning or producing piano, music-box, and lo-fi arrangements is 
 - Mock generation provider.
 - fal.ai provider adapter.
 - Basic quota and abuse controls.
+- Owner-scoped private-beta usage credits with atomic reservation, settlement, and release.
 - Operational logs without sensitive audio data.
 - English and Traditional Chinese UI strings.
 - Public bilingual product overview with no registration or user-content surface.
@@ -72,6 +73,7 @@ Manually commissioning or producing piano, music-box, and lo-fi arrangements is 
 - Self-hosted GPU inference.
 - Formal automated musical-quality scoring.
 - Audio mastering beyond basic output validation.
+- Public pricing, checkout, subscriptions, top-ups, or a browser-to-payment-provider integration.
 
 ## 6. Functional requirements
 
@@ -267,6 +269,24 @@ User-visible failure categories:
 
 A failed job must record whether a safe retry is permitted.
 
+### FR-13: Private-beta usage credits
+
+Server-side generation requires an active owner entitlement and enough private-beta usage credits.
+Credits are an abuse and spend-control unit for the invited beta; they are not a published price or a
+claim about the final commercial unit.
+
+The API must:
+
+1. Reserve the configured job cost atomically with first-time job creation.
+2. Return the existing job without creating another reservation for an idempotent replay.
+3. Settle the reservation exactly once after successful private output processing.
+4. Release the reservation exactly once when the Workflow reaches a terminal failure.
+5. Keep grant, reserve, settle, and release events owner-scoped and append-only.
+6. Expose only the authenticated owner's aggregate available, reserved, and settled credit totals.
+
+There is no public grant, checkout, payment, or subscription route in the MVP. Beta entitlements and
+credit grants are provisioned through an approved operational process outside the browser application.
+
 ## 7. Non-functional requirements
 
 ### Security
@@ -426,6 +446,24 @@ A failed job must record whether a safe retry is permitted.
 - `quantity`
 - `created_at`
 
+### owner_entitlements
+
+- `owner_id`
+- `plan_code`
+- `status`
+- `created_at`
+- `updated_at`
+
+### credit_ledger
+
+- `id`
+- `owner_id`
+- `job_id` when the event belongs to a generation job
+- `event_type`: grant, reserve, settle, or release
+- `quantity`
+- `reference_key`
+- `created_at`
+
 ## 9. API outline
 
 ```text
@@ -441,6 +479,7 @@ POST   /api/uploads/:uploadId/confirm
 DELETE /api/uploads/:uploadId
 
 GET    /api/presets
+GET    /api/credits
 
 POST   /api/jobs
 GET    /api/jobs/:jobId
@@ -498,3 +537,5 @@ The MVP is accepted when:
     `/api/*`. The exact `/api/webhooks/fal` callback is the only provider-authenticated exception and
     requires the strongest current fal signature verification. Public routes expose no owner state,
     audio, signed URLs, or private application data.
+16. A generation job cannot be created without an active owner entitlement and sufficient credits;
+    repeated requests, Workflow retries, and terminal failures do not duplicate or strand credit events.
