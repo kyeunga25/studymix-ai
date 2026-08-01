@@ -4,6 +4,7 @@ import { loadPrivateSession } from "./auth-session";
 const validSession = {
   data: {
     capabilities: {
+      creditAccounting: false,
       mockGeneration: true,
       privateAudioUpload: false,
       realGeneration: false,

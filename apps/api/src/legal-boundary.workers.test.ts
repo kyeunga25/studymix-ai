@@ -6,6 +6,8 @@ import { app } from "./index";
 describe("legal document and acceptance boundary", () => {
   beforeEach(async () => {
     await env.DB.prepare("DELETE FROM legal_acceptances").run();
+    await env.DB.prepare("DELETE FROM credit_ledger").run();
+    await env.DB.prepare("DELETE FROM owner_entitlements").run();
     await env.DB.prepare("DELETE FROM owners").run();
   });
 

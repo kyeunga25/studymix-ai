@@ -4,6 +4,8 @@ import { app } from "../index";
 
 describe("Worker authentication boundary", () => {
   beforeEach(async () => {
+    await env.DB.prepare("DELETE FROM credit_ledger").run();
+    await env.DB.prepare("DELETE FROM owner_entitlements").run();
     await env.DB.prepare("DELETE FROM owners").run();
   });
 
@@ -44,6 +46,7 @@ describe("Worker authentication boundary", () => {
     expect(body).toMatchObject({
       data: {
         capabilities: {
+          creditAccounting: true,
           mockGeneration: true,
           privateAudioUpload: true,
           realGeneration: false,

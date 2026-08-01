@@ -5,11 +5,12 @@ import {
   deleteJobResponseSchema,
   publicJobSchema,
 } from "@studymix/contracts";
+import { createSecureId } from "@studymix/core";
 import { env, introspectWorkflow } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { app } from "./index";
-import { recordCurrentLegalAcceptances } from "./repositories";
+import { grantPrivateBetaCredits, recordCurrentLegalAcceptances } from "./repositories";
 import { runRetentionCleanup } from "./retention";
 
 const uploadEnvelopeSchema = apiEnvelopeSchema(createUploadResponseSchema);
@@ -30,6 +31,8 @@ async function resetStorage(): Promise<void> {
 
 async function resetDatabase(): Promise<void> {
   await env.DB.prepare("DELETE FROM legal_acceptances").run();
+  await env.DB.prepare("DELETE FROM credit_ledger").run();
+  await env.DB.prepare("DELETE FROM owner_entitlements").run();
   await env.DB.prepare("DELETE FROM usage_events").run();
   await env.DB.prepare("DELETE FROM rights_declarations").run();
   await env.DB.prepare("DELETE FROM outputs").run();
@@ -74,6 +77,13 @@ async function createConfirmedUpload(): Promise<{
   if (owner === null) {
     throw new Error("Retention test owner was not created.");
   }
+  await grantPrivateBetaCredits(env.DB, {
+    createdAt: new Date().toISOString(),
+    eventId: createSecureId("evt"),
+    ownerId: owner.id,
+    quantity: 20,
+    referenceKey: `test:retention-grant:${owner.id}`,
+  });
   return {
     objectKey: envelope.data.objectKey,
     ownerId: owner.id,

@@ -25,6 +25,8 @@ import { ProviderOutputIngestionError, ingestProviderOutput } from "../provider-
 import {
   createOutput,
   createProviderRequest,
+  completeOwnedJobWithCredits,
+  failOwnedJobWithCreditRelease,
   getOwnedJob,
   getOwnedUpload,
   markOwnedOutputReady,
@@ -498,16 +500,14 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationWorkfl
         });
         return { recorded: true };
       });
-      await step.do("mark job completed", stepConfiguration, async () => {
+      await step.do("settle credits and complete job", stepConfiguration, async () => {
         const completedAt = new Date().toISOString();
-        return await transitionOwnedJob(
-          this.env.DB,
-          payload.ownerId,
-          payload.jobId,
-          ["processing_output"],
-          "completed",
-          { completedAt, errorCode: null, updatedAt: completedAt },
-        );
+        return await completeOwnedJobWithCredits(this.env.DB, {
+          eventId: createSecureId("evt"),
+          jobId: payload.jobId,
+          ownerId: payload.ownerId,
+          timestamp: completedAt,
+        });
       });
       return { jobId: payload.jobId, status: "completed" };
     } catch {
@@ -522,21 +522,16 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationWorkfl
           case "generating":
           case "processing_output": {
             const failedAt = new Date().toISOString();
-            return await transitionOwnedJob(
-              this.env.DB,
-              payload.ownerId,
-              payload.jobId,
-              [current.status],
-              "failed",
-              {
-                completedAt: failedAt,
-                errorCode:
-                  validatingJob.provider === "mock"
-                    ? "MOCK_WORKFLOW_FAILED"
-                    : "PROVIDER_WORKFLOW_FAILED",
-                updatedAt: failedAt,
-              },
-            );
+            return await failOwnedJobWithCreditRelease(this.env.DB, {
+              errorCode:
+                validatingJob.provider === "mock"
+                  ? "MOCK_WORKFLOW_FAILED"
+                  : "PROVIDER_WORKFLOW_FAILED",
+              eventId: createSecureId("evt"),
+              jobId: payload.jobId,
+              ownerId: payload.ownerId,
+              timestamp: failedAt,
+            });
           }
           default:
             return current;

@@ -34,6 +34,24 @@ export class RepositoryLegalAcceptanceRequiredError extends Error {
   }
 }
 
+export class RepositoryEntitlementRequiredError extends Error {
+  readonly code = "ENTITLEMENT_REQUIRED";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "RepositoryEntitlementRequiredError";
+  }
+}
+
+export class RepositoryCreditsInsufficientError extends Error {
+  readonly code = "INSUFFICIENT_CREDITS";
+
+  constructor(message: string) {
+    super(message);
+    this.name = "RepositoryCreditsInsufficientError";
+  }
+}
+
 export class RepositoryStateError extends Error {
   readonly code = "ILLEGAL_JOB_TRANSITION";
 

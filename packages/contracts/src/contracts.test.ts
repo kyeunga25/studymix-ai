@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   currentRightsDeclarationVersion,
+  creditSummarySchema,
   apiEnvelopeSchema,
   acceptLegalDocumentsRequestSchema,
   createJobRequestSchema,
@@ -16,6 +17,26 @@ import {
 const uploadId = "upl_0123456789abcdef0123456789abcdef";
 const jobId = "job_0123456789abcdef0123456789abcdef";
 const now = "2026-07-24T00:00:00.000Z";
+
+describe("private-beta credit contracts", () => {
+  it("exposes only bounded owner aggregate credit state", () => {
+    const summary = {
+      availableCredits: 8,
+      plan: "private-beta",
+      reservedCredits: 2,
+      settledCredits: 4,
+      status: "active",
+      updatedAt: now,
+    };
+
+    expect(creditSummarySchema.parse(summary)).toEqual(summary);
+    expect(
+      creditSummarySchema.safeParse({ ...summary, providerCustomerId: "private-reference" })
+        .success,
+    ).toBe(false);
+    expect(creditSummarySchema.safeParse({ ...summary, availableCredits: -1 }).success).toBe(false);
+  });
+});
 
 describe("upload contracts", () => {
   it("accepts supported audio upload metadata", () => {

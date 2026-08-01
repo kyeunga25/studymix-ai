@@ -5,6 +5,7 @@ const privateSessionSchema = apiEnvelopeSchema(
   z.object({
     capabilities: z
       .object({
+        creditAccounting: z.boolean(),
         mockGeneration: z.boolean(),
         privateAudioUpload: z.boolean(),
         realGeneration: z.boolean(),

@@ -18,6 +18,8 @@ export default defineConfig({
             LEGAL_CONTACT_EMAIL: "privacy@example.test",
             GENERATION_PROVIDER: "mock",
             REAL_GENERATION_ENABLED: "false",
+            CREDIT_ACCOUNTING_ENABLED: "true",
+            CREDITS_PER_JOB: "2",
             FAL_KEY: "CHANGE_ME_FAL_KEY_000000",
             FAL_WEBHOOK_URL: "https://studymix.example/api/webhooks/fal",
             FAL_WEBHOOK_USER_ID: "test-fal-user",

@@ -39,6 +39,7 @@ export const generationWorkflowPayloadSchema = z
 export type GenerationWorkflowPayload = z.infer<typeof generationWorkflowPayloadSchema>;
 
 type GenerationWorkflowBaseConfiguration = Readonly<{
+  creditCost: number;
   maxActiveJobs: number;
   maxDailyJobs: number;
   outputRetentionHours: number;
@@ -70,6 +71,22 @@ function parseInteger(value: string, minimum: number, maximum: number): number {
     throw new GenerationWorkflowConfigurationError();
   }
   return parsed;
+}
+
+export function resolveGenerationCreditCost(env: Env): number {
+  if (env.CREDIT_ACCOUNTING_ENABLED !== "true") {
+    throw new GenerationWorkflowDisabledError();
+  }
+  return parseInteger(env.CREDITS_PER_JOB, 1, 1_000);
+}
+
+export function isCreditAccountingAvailable(env: Env): boolean {
+  try {
+    resolveGenerationCreditCost(env);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function resolveFalGenerationConfiguration(env: Env): FalGenerationConfiguration {
@@ -151,6 +168,7 @@ export function resolveGenerationWorkflowConfiguration(env: Env): GenerationWork
   }
 
   const base = {
+    creditCost: resolveGenerationCreditCost(env),
     maxActiveJobs: parseInteger(env.MAX_ACTIVE_JOBS_PER_OWNER, 1, 20),
     maxDailyJobs: parseInteger(env.MAX_DAILY_JOBS_PER_OWNER, 1, 100),
     outputRetentionHours: parseInteger(env.OUTPUT_RETENTION_HOURS, 1, 720),

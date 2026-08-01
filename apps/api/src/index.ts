@@ -23,6 +23,7 @@ import {
   createJobRequestFingerprint,
   ensureWorkflowStarted,
   getOwnedPublicJob,
+  isCreditAccountingAvailable,
   isMockGenerationAvailable,
   isRealGenerationAvailable,
   isRealGenerationRequestWithinRateLimit,
@@ -31,6 +32,8 @@ import {
 import { LegalConfigurationError, resolveLegalDocumentsManifest } from "./legal-documents";
 import {
   RepositoryConflictError,
+  RepositoryCreditsInsufficientError,
+  RepositoryEntitlementRequiredError,
   RepositoryLegalAcceptanceRequiredError,
   RepositoryNotFoundError,
   RepositoryQuotaError,
@@ -41,6 +44,7 @@ import {
   createUpload,
   expireOwnedUpload,
   getCurrentLegalAcceptanceStatus,
+  getOwnedCreditSummary,
   getOwnedOutput,
   getOwnedUpload,
   markOwnedUploadDeleted,
@@ -331,6 +335,7 @@ app.get("/api/auth/me", (context) => {
   return context.json({
     data: {
       capabilities: {
+        creditAccounting: isCreditAccountingAvailable(context.env),
         mockGeneration: isMockGenerationAvailable(context.env),
         privateAudioUpload: isR2TransferAvailable(context.env),
         realGeneration: isRealGenerationAvailable(context.env),
@@ -351,6 +356,30 @@ app.get("/api/presets", (context) =>
     requestId: createRequestId(),
   }),
 );
+
+app.get("/api/credits", async (context) => {
+  if (!isCreditAccountingAvailable(context.env)) {
+    return errorResponse(
+      context,
+      503,
+      "INTERNAL_ERROR",
+      "Private beta credit accounting is not enabled.",
+      false,
+    );
+  }
+  const owner = context.get("owner");
+  const summary = await getOwnedCreditSummary(context.env.DB, owner.ownerId);
+  if (summary === null || summary.status !== "active") {
+    return errorResponse(
+      context,
+      403,
+      "ENTITLEMENT_REQUIRED",
+      "An active private beta entitlement is required.",
+      false,
+    );
+  }
+  return context.json({ data: summary, error: null, requestId: createRequestId() });
+});
 
 app.get("/api/legal/acceptances", async (context) => {
   try {
@@ -726,6 +755,7 @@ app.post("/api/jobs", async (context) => {
   try {
     jobResult = await createJobIdempotently(context.env.DB, {
       createdAt: now.toISOString(),
+      creditCost: configuration.creditCost,
       dailyWindowStartedAt: new Date(now.getTime() - 24 * 60 * 60 * 1_000).toISOString(),
       expiresAt: new Date(
         now.getTime() + configuration.outputRetentionHours * 60 * 60 * 1_000,
@@ -757,6 +787,24 @@ app.post("/api/jobs", async (context) => {
         409,
         "LEGAL_ACCEPTANCE_REQUIRED",
         "Accept the current legal documents before creating a job.",
+        false,
+      );
+    }
+    if (error instanceof RepositoryEntitlementRequiredError) {
+      return errorResponse(
+        context,
+        403,
+        "ENTITLEMENT_REQUIRED",
+        "An active private beta entitlement is required.",
+        false,
+      );
+    }
+    if (error instanceof RepositoryCreditsInsufficientError) {
+      return errorResponse(
+        context,
+        409,
+        "INSUFFICIENT_CREDITS",
+        "The private beta credit balance is insufficient.",
         false,
       );
     }

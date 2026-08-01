@@ -259,6 +259,7 @@ test("uses the private real-provider API flow without browser-to-provider calls"
       body: JSON.stringify(
         successEnvelope({
           capabilities: {
+            creditAccounting: true,
             mockGeneration: false,
             privateAudioUpload: true,
             realGeneration: true,

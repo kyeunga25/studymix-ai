@@ -4,6 +4,7 @@ import {
   currentRightsDeclarationVersion,
   publicJobSchema,
 } from "@studymix/contracts";
+import { createSecureId } from "@studymix/core";
 import { env, introspectWorkflow } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -15,7 +16,12 @@ import {
   isRealGenerationAvailable,
   resolveGenerationWorkflowConfiguration,
 } from "./job-service";
-import { recordCurrentLegalAcceptances } from "./repositories";
+import {
+  getOwnedCreditReservationStatus,
+  getOwnedCreditSummary,
+  grantPrivateBetaCredits,
+  recordCurrentLegalAcceptances,
+} from "./repositories";
 import { ensureFirstProviderSubmissionAttempt } from "./workflows/generation-workflow";
 
 const uploadEnvelopeSchema = apiEnvelopeSchema(createUploadResponseSchema);
@@ -24,6 +30,8 @@ const errorEnvelopeSchema = z.object({ error: z.object({ code: z.string() }) });
 
 async function resetDatabase(): Promise<void> {
   await env.DB.prepare("DELETE FROM legal_acceptances").run();
+  await env.DB.prepare("DELETE FROM credit_ledger").run();
+  await env.DB.prepare("DELETE FROM owner_entitlements").run();
   await env.DB.prepare("DELETE FROM usage_events").run();
   await env.DB.prepare("DELETE FROM rights_declarations").run();
   await env.DB.prepare("DELETE FROM outputs").run();
@@ -61,11 +69,18 @@ async function createConfirmedUpload(withLegalAcceptance: boolean): Promise<stri
   );
   expect(confirmResponse.status).toBe(200);
 
+  const owner = await env.DB.prepare("SELECT id FROM owners LIMIT 1").first<{ id: string }>();
+  if (owner === null) {
+    throw new Error("Test owner was not created.");
+  }
+  await grantPrivateBetaCredits(env.DB, {
+    createdAt: new Date().toISOString(),
+    eventId: createSecureId("evt"),
+    ownerId: owner.id,
+    quantity: 20,
+    referenceKey: `test:workflow-grant:${owner.id}`,
+  });
   if (withLegalAcceptance) {
-    const owner = await env.DB.prepare("SELECT id FROM owners LIMIT 1").first<{ id: string }>();
-    if (owner === null) {
-      throw new Error("Test owner was not created.");
-    }
     await recordCurrentLegalAcceptances(env.DB, owner.id, new Date().toISOString());
   }
   return uploadEnvelope.data.uploadId;
@@ -173,6 +188,18 @@ describe("feature-gated mock generation Workflow", () => {
         provider_requests: 2,
         rights_declarations: 1,
         usage_events: 1,
+      });
+      const owner = await env.DB.prepare("SELECT id FROM owners LIMIT 1").first<{ id: string }>();
+      if (owner === null) {
+        throw new Error("Test owner was not created.");
+      }
+      expect(
+        await getOwnedCreditReservationStatus(env.DB, owner.id, createEnvelope.data.jobId),
+      ).toBe("settled");
+      expect(await getOwnedCreditSummary(env.DB, owner.id)).toMatchObject({
+        availableCredits: 18,
+        reservedCredits: 0,
+        settledCredits: 2,
       });
 
       const repeatedResponse = await app.request(

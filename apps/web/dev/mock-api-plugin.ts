@@ -249,6 +249,7 @@ async function handleMockRequest(
     sendJson(response, 200, {
       data: {
         capabilities: {
+          creditAccounting: false,
           mockGeneration: false,
           privateAudioUpload: false,
           realGeneration: false,
