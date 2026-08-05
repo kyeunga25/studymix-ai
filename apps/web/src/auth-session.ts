@@ -1,20 +1,42 @@
-import { apiEnvelopeSchema, ownerIdSchema } from "@studymix/contracts";
+import { apiEnvelopeSchema } from "@studymix/contracts";
 import { z } from "zod";
 
+const workspacePermissionSchema = z.enum([
+  "workspace:read",
+  "workspace:manage",
+  "jobs:create",
+  "jobs:read",
+  "credits:read",
+  "approvals:manage",
+]);
+
 const privateSessionSchema = apiEnvelopeSchema(
-  z.object({
-    capabilities: z
-      .object({
-        creditAccounting: z.boolean(),
-        mockGeneration: z.boolean(),
-        privateAudioUpload: z.boolean(),
-        realGeneration: z.boolean(),
-        retentionCleanup: z.boolean(),
-      })
-      .strict(),
-    kind: z.enum(["authenticated", "development"]),
-    ownerId: ownerIdSchema,
-  }),
+  z
+    .object({
+      authorization: z
+        .object({
+          accountStatus: z.literal("active"),
+          aiJobApprovalMode: z.literal("manual"),
+          membershipStatus: z.literal("active"),
+          paymentStatus: z.enum(["disabled", "review_required", "approved"]),
+          permissions: z.array(workspacePermissionSchema).min(1),
+          realProviderStatus: z.enum(["disabled", "review_required", "approved"]),
+          role: z.literal("owner"),
+          workspaceStatus: z.literal("active"),
+        })
+        .strict(),
+      capabilities: z
+        .object({
+          creditAccounting: z.boolean(),
+          mockGeneration: z.boolean(),
+          privateAudioUpload: z.boolean(),
+          realGeneration: z.boolean(),
+          retentionCleanup: z.boolean(),
+        })
+        .strict(),
+      kind: z.enum(["authenticated", "development"]),
+    })
+    .strict(),
 );
 
 export type PrivateSession = NonNullable<z.infer<typeof privateSessionSchema>["data"]>;
@@ -29,7 +51,7 @@ export async function loadPrivateSession(
   request: typeof fetch = fetch,
 ): Promise<PrivateSessionResult> {
   try {
-    const response = await request("/api/auth/me", {
+    const response = await request("/api/session", {
       credentials: "same-origin",
       headers: {
         Accept: "application/json",

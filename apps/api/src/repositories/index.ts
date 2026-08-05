@@ -6,3 +6,4 @@ export * from "./legal-acceptance-repository";
 export * from "./owner-repository";
 export * from "./retention-repository";
 export * from "./upload-repository";
+export * from "./workspace-repository";

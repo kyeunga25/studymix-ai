@@ -68,8 +68,10 @@ const liveSchema = z.object({
   publicOverview: z.boolean(),
   health: z.boolean(),
   legalManifest: z.boolean(),
-  privateAppProtected: z.boolean(),
-  privateApiProtected: z.boolean(),
+  privateAppParentProtected: z.boolean(),
+  privateAppDeepProtected: z.boolean(),
+  privateApiParentProtected: z.boolean(),
+  privateApiSessionProtected: z.boolean(),
 });
 
 class VerificationError extends Error {
@@ -287,6 +289,7 @@ export function buildDeploymentReport({
     realGenerationEnabled: featureFlag(bindings, "REAL_GENERATION_ENABLED"),
   };
   const secretStatus = {
+    ownerIdentityPepper: secretNames.has("OWNER_IDENTITY_PEPPER"),
     r2SigningPair:
       secretNames.has("R2_S3_ACCESS_KEY_ID") && secretNames.has("R2_S3_SECRET_ACCESS_KEY"),
     falProviderPair: secretNames.has("FAL_KEY") && secretNames.has("FAL_WEBHOOK_USER_ID"),
@@ -300,8 +303,10 @@ export function buildDeploymentReport({
       publicOverview: false,
       health: false,
       legalManifest: false,
-      privateAppProtected: false,
-      privateApiProtected: false,
+      privateAppParentProtected: false,
+      privateAppDeepProtected: false,
+      privateApiParentProtected: false,
+      privateApiSessionProtected: false,
     },
   );
   const publicSurface =
@@ -315,9 +320,16 @@ export function buildDeploymentReport({
     liveStatus.publicOverview &&
     liveStatus.health &&
     liveStatus.legalManifest;
-  const privateMock =
+  const ownerAccess =
     publicSurface &&
     runtimeStatus.accessConfigured &&
+    secretStatus.ownerIdentityPepper &&
+    liveStatus.privateAppParentProtected &&
+    liveStatus.privateAppDeepProtected &&
+    liveStatus.privateApiParentProtected &&
+    liveStatus.privateApiSessionProtected;
+  const privateMock =
+    ownerAccess &&
     bindingStatus.privateR2 &&
     bindingStatus.workflow &&
     secretStatus.r2SigningPair &&
@@ -326,8 +338,7 @@ export function buildDeploymentReport({
     runtimeStatus.creditAccountingEnabled === true &&
     runtimeStatus.creditCostConfigured &&
     runtimeStatus.retentionEnabled === true &&
-    liveStatus.privateAppProtected &&
-    liveStatus.privateApiProtected;
+    liveStatus.privateApiSessionProtected;
   const realProvider =
     privateMock &&
     bindingStatus.rateLimit &&
@@ -337,7 +348,7 @@ export function buildDeploymentReport({
     runtimeStatus.realGenerationEnabled === true;
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     activeDeployment: newestDeployment(parsedDeployments).versions.length > 0,
     bindings: bindingStatus,
     runtime: runtimeStatus,
@@ -345,6 +356,7 @@ export function buildDeploymentReport({
     migrations: parsedMigrations,
     live: liveStatus,
     readiness: {
+      ownerAccess,
       publicSurface,
       privateMock,
       realProvider,
@@ -360,8 +372,10 @@ async function checkLiveOrigin(origin) {
     ["publicOverview", "/", new Set([200])],
     ["health", "/health", new Set([200])],
     ["legalManifest", "/legal/documents.json", new Set([200])],
-    ["privateAppProtected", "/app", new Set([302, 303, 401, 403])],
-    ["privateApiProtected", "/api/auth/me", new Set([302, 303, 401, 403])],
+    ["privateAppParentProtected", "/app", new Set([302, 303, 401, 403])],
+    ["privateAppDeepProtected", "/app/acceptance-check", new Set([302, 303, 401, 403])],
+    ["privateApiParentProtected", "/api", new Set([302, 303, 401, 403])],
+    ["privateApiSessionProtected", "/api/session", new Set([302, 303, 401, 403])],
   ];
   const result = {
     checked: true,
@@ -369,8 +383,10 @@ async function checkLiveOrigin(origin) {
     publicOverview: false,
     health: false,
     legalManifest: false,
-    privateAppProtected: false,
-    privateApiProtected: false,
+    privateAppParentProtected: false,
+    privateAppDeepProtected: false,
+    privateApiParentProtected: false,
+    privateApiSessionProtected: false,
   };
   try {
     for (const [name, path, acceptedStatuses] of checks) {

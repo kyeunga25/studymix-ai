@@ -1,6 +1,6 @@
 # 實作狀態 / Implementation Status
 
-更新日期：2026-08-02
+更新日期：2026-08-05
 
 本文件只記錄目前程式庫可驗證的能力與公開安全限制；未落實的工作不在此列出。
 
@@ -14,9 +14,11 @@ This document records only verifiable repository capabilities and public safety 
 - [x] 僅限本機開發的 mock HTTP job API；正式 bundle 不包含 mock 路由或測試控制標記。
 - [x] Zod API contracts、加密安全 ID、job state machine 及 provider abstraction。
 - [x] D1 additive migrations 與 owner-scoped repositories。
-- [x] Cloudflare Access JWT 驗證、server-derived owner ID、active／disabled Beta 權限檢查及跨 owner 拒絕測試。
+- [x] Cloudflare Access JWT 的簽章、issuer、audience、時效及 identity claims 驗證；server-derived owner ID、active／disabled Beta 權限檢查及跨 owner 拒絕測試。
 - [x] 版本化中英文法律文件、D1 接受紀錄與 fail-closed 正式環境設定。
-- [x] Worker Static Assets 與 API 使用同一 Worker；`/app*` 及 `/api/*` 先經 Access 與 Worker JWT 驗證。
+- [x] Worker Static Assets 與 API 使用同一 Worker；`/app`、`/app/*`、`/api` 及使用者 `/api/*` 先經 Access JWT 與 active D1 owner／workspace／membership 驗證。
+- [x] 私密 exact-login onboarding 只接收環境輸入，以 keyed hash 儲存邀請，不保存登入地址；首次登入原子建立 active owner workspace、manual AI approval、bounded job cost 及 idempotent bounded credit grant。
+- [x] `/api/session` 只回傳 account／workspace／membership 狀態、owner role、權限、審批狀態及 capabilities，不回傳 owner／workspace identifier；disabled membership 及跨 workspace assertion 均 fail closed。
 - [x] `/health`、法律頁及公開法律 manifest 可匿名讀取，但不建立 owner 紀錄。
 - [x] Mock provider 模式不需要付費憑證，CI 不會呼叫外部生成服務。
 - [x] fal ACE-Step audio-to-audio adapter 與 provider factory：非同步 queue mapping、Zod 外部回應驗證、provider JSON 不保留、有限輸出期限、預期輸出 host、最小 metadata 及全離線 contract tests。
@@ -56,7 +58,7 @@ The interface demonstrates the state flow, but local mock results are never repr
 
 - Cloudflare Account、D1、Worker、Access 及其他資源識別資料只可保存在 Cloudflare 或未納入版本控制的本機部署設定。
 - 檢入的 Wrangler 設定只可包含明確的非真實佔位值。
-- Cloudflare Access 必須保護 `/app*` 及使用者 `/api/*`；唯一例外是精確的 fal callback 路徑，並由 Worker 驗證供應商簽名。公開主頁不得繞過任何私人 API 的驗證。
+- Cloudflare Access 必須同時保護 `/app`、`/app/*`、`/api` 及使用者 `/api/*`；唯一例外是精確的 fal callback 路徑，並由 Worker 驗證供應商簽名。公開主頁不得繞過任何私人 API 的驗證。
 - 法律聯絡方法必須在部署環境設定；佔位值會令相關 API fail closed。
 - 未完成私人 R2、刪除及供應商資料控制前，真實音訊生成保持停用。
 - R2 bucket 必須保持私人；staging 與 production 分離，且 CORS 只容許確切 web origins、`PUT/GET/HEAD`、`Content-Type` 及 `If-None-Match`。

@@ -154,10 +154,12 @@ generation uses this boundary before marking an output ready. The real-provider 
 until the staging, legal, abuse-control, and deletion gates are verified.
 
 The production build uses one Cloudflare Worker: Vite output is served through Workers Static Assets,
-while `/api/*` is routed to the Hono Worker. The product overview, `/login`, legal pages, `/health`, and
-`/legal/documents.json` are public. Cloudflare Access and Worker-side JWT verification protect `/app*`
-and user-facing `/api/*` routes. The exact `/api/webhooks/fal` path is separately authenticated with the
-provider signature and cannot create an owner. Build it from the repository root:
+while `/api`, `/api/*`, `/app`, and `/app/*` are routed through the Hono Worker first. The product
+overview, `/login`, legal pages, `/health`, and `/legal/documents.json` are public. Cloudflare Access and
+Worker-side JWT verification protect both private route parents and their deep routes. The Worker then
+requires an active invited D1 owner, workspace, and owner membership. The exact `/api/webhooks/fal`
+path is separately authenticated with the provider signature and cannot create an owner. Build it from
+the repository root:
 
 ```bash
 pnpm build
@@ -221,6 +223,9 @@ The repository currently includes:
   no password collection, and a disabled future-registration surface.
 - A separate `/app` workspace that verifies the invited Access session and active D1 owner permission
   before exposing application UI, with distinct signed-out, denied, and unavailable states.
+- Exact-identity, HMAC-keyed private owner onboarding that stores no login address, creates one active
+  owner workspace with manual AI approval and bounded credits, and returns a session without owner or
+  workspace identifiers.
 - Generated Wrangler binding types and a credential-free Worker dry-run build.
 - An interactive bilingual upload UI shell with pending, result-comparison, and safe retry states backed
   by a development-only mock HTTP API.

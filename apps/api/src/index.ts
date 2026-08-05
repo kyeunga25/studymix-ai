@@ -50,7 +50,9 @@ import {
   markOwnedUploadDeleted,
   recordRightsDeclaration,
   recordCurrentLegalAcceptances,
-  upsertOwner,
+  authorizeWorkspaceAccess,
+  WorkspaceAccessError,
+  type WorkspaceAccess,
 } from "./repositories";
 import type { UploadRecord } from "./repositories/upload-repository";
 import {
@@ -81,6 +83,7 @@ type AppBindings = {
   Bindings: Env;
   Variables: {
     owner: OwnerContext;
+    workspaceAccess: WorkspaceAccess;
   };
 };
 
@@ -309,45 +312,80 @@ app.post(
 
 app.use("/app", requireAuthentication);
 app.use("/app/*", requireAuthentication);
+app.use("/api", requireAuthentication);
 app.use("/api/*", requireAuthentication);
 
-app.use("/api/*", async (context, next) => {
-  const owner = context.get("owner");
-  const record = await upsertOwner(context.env.DB, owner, new Date().toISOString());
-  if (record.id !== owner.ownerId || record.status !== "active") {
-    return errorResponse(
-      context,
-      403,
-      "FORBIDDEN",
-      "This account is not permitted to use StudyMix AI.",
-      false,
+const requireWorkspaceAccess = async (
+  context: Context<AppBindings>,
+  next: () => Promise<void>,
+): Promise<Response | undefined> => {
+  try {
+    const access = await authorizeWorkspaceAccess(
+      context.env.DB,
+      context.get("owner"),
+      context.req.header("X-Workspace-Id") ?? null,
+      new Date().toISOString(),
     );
+    context.set("workspaceAccess", access);
+    await next();
+    return;
+  } catch (error) {
+    if (error instanceof WorkspaceAccessError) {
+      const configurationFailure = error.reason === "WORKSPACE_ACCESS_CONFIGURATION_INVALID";
+      return errorResponse(
+        context,
+        error.status,
+        configurationFailure ? "INTERNAL_ERROR" : "FORBIDDEN",
+        configurationFailure
+          ? "Workspace authorization is temporarily unavailable."
+          : "This account is not permitted to use StudyMix AI.",
+        configurationFailure,
+      );
+    }
+    throw error;
   }
-  await next();
-  return;
-});
+};
+
+app.use("/app", requireWorkspaceAccess);
+app.use("/app/*", requireWorkspaceAccess);
+app.use("/api", requireWorkspaceAccess);
+app.use("/api/*", requireWorkspaceAccess);
 
 app.get("/api/health", healthHandler);
 app.get("/api/legal/documents", legalDocumentsHandler);
 
-app.get("/api/auth/me", (context) => {
+const sessionHandler = (context: Context<AppBindings>) => {
   const owner = context.get("owner");
+  const access = context.get("workspaceAccess");
   return context.json({
     data: {
+      authorization: {
+        accountStatus: access.ownerStatus,
+        aiJobApprovalMode: access.aiJobApprovalMode,
+        membershipStatus: access.membershipStatus,
+        paymentStatus: access.paymentStatus,
+        permissions: access.permissions,
+        realProviderStatus: access.realProviderStatus,
+        role: access.role,
+        workspaceStatus: access.workspaceStatus,
+      },
       capabilities: {
         creditAccounting: isCreditAccountingAvailable(context.env),
         mockGeneration: isMockGenerationAvailable(context.env),
         privateAudioUpload: isR2TransferAvailable(context.env),
-        realGeneration: isRealGenerationAvailable(context.env),
+        realGeneration:
+          access.realProviderStatus === "approved" && isRealGenerationAvailable(context.env),
         retentionCleanup: isRetentionCleanupAvailable(context.env),
       },
       kind: owner.kind,
-      ownerId: owner.ownerId,
     },
     error: null,
     requestId: createRequestId(),
   });
-});
+};
+
+app.get("/api/session", sessionHandler);
+app.get("/api/auth/me", sessionHandler);
 
 app.get("/api/presets", (context) =>
   context.json({
@@ -716,6 +754,20 @@ app.post("/api/jobs", async (context) => {
       );
     }
     throw error;
+  }
+
+  const workspaceAccess = context.get("workspaceAccess");
+  if (
+    configuration.creditCost > workspaceAccess.maxJobCreditCost ||
+    (configuration.provider === "fal" && workspaceAccess.realProviderStatus !== "approved")
+  ) {
+    return errorResponse(
+      context,
+      403,
+      "FORBIDDEN",
+      "Workspace approval is required for this generation request.",
+      false,
+    );
   }
 
   const body = await readJobJson(context);

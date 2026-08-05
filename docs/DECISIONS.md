@@ -60,7 +60,8 @@ Position the product for recordings the user owns or is authorized to process.
 
 **Status:** Accepted
 
-Deploy the Vite build as Cloudflare Workers Static Assets on the same Worker that serves `/api/*`.
+Deploy the Vite build as Cloudflare Workers Static Assets on the same Worker that serves `/api` and
+`/api/*`.
 Use SPA fallback for browser navigation. The Worker serves a public product overview and legal pages,
 then applies the ADR-010 authentication boundary before the private application or API is reached.
 
@@ -72,19 +73,26 @@ repository.
 
 **Status:** Accepted
 
-Keep `/`, `/login`, legal pages, `/health`, and `/legal/documents.json` public. Require an interactive Cloudflare
-Access identity for `/app*` and `/api/*`, then independently verify `Cf-Access-Jwt-Assertion` inside
-the Worker. Derive the application owner ID from the verified Access issuer and subject; never accept
-an owner ID from a browser header, cookie, URL, or request body.
+Keep `/`, `/login`, legal pages, `/health`, and `/legal/documents.json` public. Require an interactive
+Cloudflare Access identity for the exact `/app` and `/api` parents plus `/app/*` and user-facing
+`/api/*` deep routes, then independently verify `Cf-Access-Jwt-Assertion` inside the Worker. After JWT
+verification, require an active invited D1 owner, active workspace, and active owner membership. Derive
+the application owner ID from the verified Access issuer and subject; never accept an owner ID from a
+browser header, cookie, URL, or request body.
 
-Cloudflare Access owns the login session. D1 stores only a one-way subject hash and the derived owner
-ID, not passwords, Access JWTs, session cookies, or user email addresses. A fixed development owner is
-allowed only when `APP_ENV` is explicitly `local`, `development`, or `test`.
+Cloudflare Access owns the login session. D1 stores only a one-way subject hash, a keyed exact-login
+invitation hash, and the derived owner ID, not passwords, Access JWTs, session cookies, or user email
+addresses. The invitation is consumed atomically into one active owner workspace with manual AI
+approval, bounded job cost, and a bounded idempotent credit grant. A fixed development owner is allowed
+only when `APP_ENV` is explicitly `local`, `development`, or `test`.
 
 The bilingual `/login` page is a public entry surface, not an authentication provider. It sends the user
-to the protected `/app` path, then the private client verifies `/api/auth/me` before rendering workspace
-data. Distinct signed-out, denied, and service-unavailable states fail closed. A disabled registration tab
-reserves the future interface location without exposing a registration API or weakening the beta allowlist.
+to the protected `/app` path, then the private client verifies `/api/session` before rendering workspace
+data. The compatibility `/api/auth/me` route uses the same handler. Session responses expose only
+authorization states, role, permissions, approval states, and capabilities; they omit owner and workspace
+identifiers. Distinct signed-out, denied, and service-unavailable states fail closed. A disabled
+registration tab reserves the future interface location without exposing a registration API or weakening
+the beta allowlist.
 
 **Reason:** Visitors can understand the project without an account, while Access supplies a maintained
 identity-aware boundary for the private beta. Worker-side JWT verification and owner-scoped D1 queries
@@ -155,3 +163,19 @@ dependency, signing implementation, merchant mapping, or checkout endpoint.
 **Reason:** Payment collection is not required for the private audio MVP. Isolating it prevents vendor
 details and privileged credentials from leaking into the public application while retaining a testable
 domain boundary.
+
+## ADR-015: Keyed owner invitations and server-selected workspaces
+
+**Status:** Accepted for private-beta authorization
+
+Provision owner access through a private operational tool that accepts the exact Access login identity and
+an application-specific pepper without echoing either value. Store only the HMAC identity hash in a pending
+D1 invitation. After full Access JWT verification, consume that invitation into one active owner, active
+workspace, active owner membership, manual AI-approval controls, and an idempotent beta entitlement/grant.
+Every private API and Static Assets request must recheck the active D1 scope. The browser receives no owner
+or workspace identifier and cannot select a different workspace.
+
+**Reason:** Access policy is the edge allowlist, while D1 supplies revocable application authorization,
+role, spend cap, approval state, and a stable scope for future private jobs. Keyed hashing avoids storing a
+guessable email digest, and server selection prevents cross-workspace client assertions from becoming an
+authorization source.

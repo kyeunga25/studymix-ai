@@ -3,6 +3,7 @@ import { z } from "zod";
 
 const ACCESS_TOKEN_HEADER = "cf-access-jwt-assertion";
 const DEVELOPMENT_ISSUER = "urn:studymix:development";
+const INVITATION_HASH_CONTEXT = "studymix-owner-invite-v1";
 
 const accessClaimsSchema = z
   .object({
@@ -17,10 +18,18 @@ const accessClaimsSchema = z
 
 const accessAudienceSchema = z.string().regex(/^[a-f0-9]{64}$/i);
 const developmentSubjectSchema = z.string().trim().min(8).max(128);
+const ownerIdentityPepperSchema = z
+  .string()
+  .trim()
+  .min(43)
+  .max(128)
+  .regex(/^[A-Za-z0-9_-]+$/)
+  .refine((value) => !/change[-_ ]?me/i.test(value));
 
 export type OwnerContext = {
   authIssuer: string;
   authSubjectHash: string;
+  invitationIdentityHash: string | null;
   kind: "authenticated" | "development";
   ownerId: string;
 };
@@ -30,6 +39,7 @@ export type AuthEnvironment = {
   ACCESS_TEAM_DOMAIN: string;
   APP_ENV: string;
   DEV_AUTH_SUBJECT: string;
+  OWNER_IDENTITY_PEPPER: string;
 };
 
 type AccessJwtVerifier = (token: string, issuer: string, audience: string) => Promise<JWTPayload>;
@@ -99,6 +109,7 @@ async function createOwnerContext(
   issuer: string,
   subject: string,
   kind: OwnerContext["kind"],
+  invitationIdentityHash: string | null,
 ): Promise<OwnerContext> {
   const identityBytes = new TextEncoder().encode(`${issuer}\u0000${subject}`);
   const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", identityBytes));
@@ -107,9 +118,31 @@ async function createOwnerContext(
   return {
     authIssuer: issuer,
     authSubjectHash: subjectHash,
+    invitationIdentityHash,
     kind,
     ownerId: `own_${subjectHash.slice(0, 32)}`,
   };
+}
+
+function normalizeLoginIdentity(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+async function createInvitationIdentityHash(identity: string, pepper: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(pepper),
+    { hash: "SHA-256", name: "HMAC" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    encoder.encode(`${INVITATION_HASH_CONTEXT}\u0000${normalizeLoginIdentity(identity)}`),
+  );
+  return bytesToHex(new Uint8Array(signature));
 }
 
 function isDevelopmentEnvironment(value: string): boolean {
@@ -127,7 +160,7 @@ export async function resolveOwnerContext(
       throw new AuthenticationError("AUTH_CONFIGURATION_INVALID", 503);
     }
 
-    return createOwnerContext(DEVELOPMENT_ISSUER, parsedSubject.data, "development");
+    return createOwnerContext(DEVELOPMENT_ISSUER, parsedSubject.data, "development", null);
   }
 
   if (environment.APP_ENV !== "production" && environment.APP_ENV !== "staging") {
@@ -136,7 +169,8 @@ export async function resolveOwnerContext(
 
   const issuer = normalizeAccessIssuer(environment.ACCESS_TEAM_DOMAIN);
   const audience = accessAudienceSchema.safeParse(environment.ACCESS_AUD);
-  if (issuer === null || !audience.success) {
+  const identityPepper = ownerIdentityPepperSchema.safeParse(environment.OWNER_IDENTITY_PEPPER);
+  if (issuer === null || !audience.success || !identityPepper.success) {
     throw new AuthenticationError("AUTH_CONFIGURATION_INVALID", 503);
   }
 
@@ -151,7 +185,11 @@ export async function resolveOwnerContext(
   try {
     const payload = await verifier(token, issuer, audience.data);
     const claims = accessClaimsSchema.parse(payload);
-    return await createOwnerContext(issuer, claims.sub, "authenticated");
+    const invitationIdentityHash = await createInvitationIdentityHash(
+      claims.email,
+      identityPepper.data,
+    );
+    return await createOwnerContext(issuer, claims.sub, "authenticated", invitationIdentityHash);
   } catch {
     throw new AuthenticationError("AUTH_TOKEN_INVALID", 401);
   }

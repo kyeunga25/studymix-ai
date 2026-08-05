@@ -9,9 +9,9 @@ Browser
   │
   ├── Public overview and legal pages ──► Cloudflare Worker assets
   ├── Public `/login` ──────────────────► Worker assets
-  ├── Protected `/app*` ────────────────► Cloudflare Access ─► Worker assets
+  ├── Protected `/app`, `/app/*` ───────► Cloudflare Access ─► Worker assets
   │
-  ├── Protected `/api/*` ───────────────► Cloudflare Access ─► Worker API
+  ├── Protected `/api`, `/api/*` ───────► Cloudflare Access ─► Worker API
   │                                         │
   │                                         ├── D1
   │                                         │    └── owner entitlement + append-only credit ledger
@@ -434,17 +434,27 @@ Do not make authentication vendor-specific in domain logic.
 
 Production and staging have no anonymous owner mode. The product overview, `/login`, legal pages, `/health`, and
 `/legal/documents.json` are public and never resolve or create an owner. Cloudflare Access protects
-`/app*` and user-facing `/api/*`, and the Worker separately verifies the Access JWT signature, algorithm, issuer,
-audience, expiry, application-token type, user subject, and verified email claim. Service tokens are not
-accepted as interactive user identities.
+the exact `/app` and `/api` parents plus `/app/*` and user-facing `/api/*` deep routes. The Worker
+separately verifies the Access JWT signature, algorithm, issuer, audience, expiry, application-token type,
+user subject, and verified email claim. Service tokens are not accepted as interactive user identities.
 
 The public `/login` page does not collect a password. Its closed-beta action enters the protected `/app`
-path so Cloudflare Access can authenticate an invited identity. The client then requests `/api/auth/me`
+path so Cloudflare Access can authenticate an invited identity. The client then requests `/api/session`
 with `X-Requested-With: XMLHttpRequest`, allowing an expired Access session to be handled as a `401`
-instead of an HTML redirect. The Worker verifies the JWT, upserts only the opaque owner identity, checks
-that the D1 owner remains active, and returns capabilities before the workspace is rendered. A `401`,
-`403`, malformed response, or configuration failure keeps the workspace locked. The disabled registration
-tab is presentation-only; no public registration endpoint or anonymous owner path exists.
+instead of an HTML redirect. `/api/session` is the canonical session endpoint; `/api/auth/me` remains a
+compatibility alias. The Worker verifies the JWT, derives a keyed one-way hash of the verified email, and
+requires a matching D1 invitation. The first valid login atomically consumes the invitation into an opaque
+owner, active workspace, active owner membership, manual approval controls, private-beta entitlement, and
+idempotent initial credit grant. Later requests require the owner, default membership, and workspace all to
+remain active before either an API handler or the Static Assets binding runs. A `401`, `403`, malformed
+response, or configuration failure keeps the workspace locked. The disabled registration tab is
+presentation-only; no public registration endpoint or anonymous owner path exists.
+
+The session response contains only active status, role, derived permissions, approval state, and capability
+booleans. It does not expose the login identity, invitation hash, owner ID, or workspace ID. A client-supplied
+workspace assertion can only confirm the server-selected default workspace; a different or malformed value
+is rejected before route logic. The current beta has one active owner workspace. Any future multi-workspace
+data model must add workspace predicates to every owner-owned entity before enabling a second active scope.
 
 The exact `/api/webhooks/fal` path is the only provider callback exception to user authentication. A
 more-specific Access application may bypass interactive login for that path only; the Worker then requires
@@ -452,7 +462,8 @@ fal's Ed25519 signature, expected fal user, fresh timestamp, matching raw body, 
 signaling a Workflow. The callback route never resolves or creates an owner.
 
 Derive the stable owner ID from a SHA-256 digest of the verified issuer and subject. Store only the
-subject hash and owner ID in D1. Never trust `X-User-Id`, `X-Owner-Id`, request bodies, URL parameters,
+subject hash and owner ID in D1. Store only an HMAC of the normalized login identity for onboarding, with
+the pepper held as a Worker secret. Never trust `X-User-Id`, `X-Owner-Id`, request bodies, URL parameters,
 or unsigned cookies as identity sources. All owner-owned repository reads and writes include the
 resolved owner ID in the SQL predicate.
 
@@ -541,7 +552,9 @@ receives aggregates only.
 
 `CREDIT_ACCOUNTING_ENABLED=false` is a fail-closed default. Enabling a server-side generation mode
 requires an active entitlement, a configured positive `CREDITS_PER_JOB`, and sufficient credits.
-There is no browser route for granting credits.
+The workspace cost cap must also cover the configured job cost. A real-provider job additionally requires
+the workspace's manual approval state to be `approved`; onboarding always initializes real-provider and
+payment states as `disabled`. There is no browser route for granting credits or changing approval state.
 
 Any future payment-provider implementation remains outside this public Worker behind a generic,
 authenticated Service Binding or equivalent server-to-server boundary. The public repository may define

@@ -7,6 +7,7 @@ const productionEnvironment = {
   ACCESS_TEAM_DOMAIN: "https://example-team.cloudflareaccess.com",
   APP_ENV: "production",
   DEV_AUTH_SUBJECT: "must-not-be-used-in-production",
+  OWNER_IDENTITY_PEPPER: "p".repeat(64),
 };
 
 describe("StudyMix authentication boundary", () => {
@@ -73,6 +74,8 @@ describe("StudyMix authentication boundary", () => {
 
     expect(first).toEqual(second);
     expect(first.kind).toBe("authenticated");
+    expect(first.invitationIdentityHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(first.invitationIdentityHash).not.toContain("authorized");
     expect(first.ownerId).toMatch(/^own_[0-9a-f]{32}$/);
     expect(first.ownerId).not.toBe("own_ffffffffffffffffffffffffffffffff");
   });
@@ -98,6 +101,7 @@ describe("StudyMix authentication boundary", () => {
       ACCESS_TEAM_DOMAIN: "",
       APP_ENV: "development",
       DEV_AUTH_SUBJECT: "local-developer",
+      OWNER_IDENTITY_PEPPER: "",
     });
 
     expect(owner.kind).toBe("development");

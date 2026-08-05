@@ -137,14 +137,34 @@ provider request IDs, verified callback wake-ups, polling fallback, streamed pri
 URL, signed URL, or complete callback body in D1 or logs, owner-only playback/download, terminal deletion,
 and expiry cleanup. An ambiguous submission must fail closed rather than send a second request automatically.
 
+## 1.4 Provision an invited owner without storing the login identity
+
+Apply the reviewed D1 migrations before onboarding. Generate a high-entropy
+`OWNER_IDENTITY_PEPPER`, store it as a Worker secret with Wrangler's interactive secret prompt, and
+make the same value available only to the protected onboarding process. Never place the pepper in a
+Wrangler `vars` block, command argument, CI log, or tracked file.
+
+The operational onboarding command is `pnpm owner:onboard`. It requires `OWNER_LOGIN_IDENTITY` and
+`OWNER_IDENTITY_PEPPER` through a private, non-echoing environment, accepts optional bounded
+`OWNER_BETA_CREDITS` and `OWNER_MAX_JOB_CREDIT_COST` values, and uses the ignored deployment config
+selected by `DEPLOY_CONFIG_PATH`. The command prints only a boolean completion result. It never prints
+the identity, keyed hash, owner ID, workspace ID, D1 mapping, or Wrangler output.
+
+The tool stores only a keyed one-way identity hash in a pending invitation. On the first valid Access
+login, the Worker atomically consumes that invitation into one active owner, active workspace, active
+owner membership, manual AI-approval controls, an active private-beta entitlement, and at most one
+initial credit grant. Re-running onboarding can re-enable the same consumed owner/workspace without
+adding a duplicate grant. There is no browser onboarding, credit grant, or user-management endpoint.
+
 ## 2. Protect the private paths with Access
 
 In Cloudflare Zero Trust:
 
 1. Go to **Access controls → Applications** and add a **Self-hosted** application.
-2. Keep `/login` public, and add the production custom hostname destinations for `/app*` and `/api/*`
-   to the same application. The sign-in page links to `/app`, which starts Access authentication when
-   no valid application session exists.
+2. Keep `/login` public, and add four production custom-hostname destinations to the same application:
+   the exact parents `/app` and `/api`, plus the deep-route patterns `/app/*` and `/api/*`. A wildcard
+   path does not cover its parent. The sign-in page links to `/app`, which starts Access authentication
+   when no valid application session exists.
 3. Before enabling fal callbacks, add a separate, more-specific application for the exact
    `/api/webhooks/fal` path with a narrowly scoped **Bypass / Everyone** policy. Do not add a wildcard or
    change the parent private-path policy. The Worker independently rejects callbacks unless the Ed25519
@@ -157,8 +177,9 @@ and [Access policy](https://developers.cloudflare.com/cloudflare-one/access-cont
 before applying this narrow exception.
    Do not add the bare hostname or `/`, because the product overview and legal notices are intentionally
    public. The checked-in deployment setting disables the default `workers.dev` hostname.
-3. Add an **Allow** policy for the exact beta-tester email addresses or approved identity-provider
-   group. Do not use an `Everyone` or permanent `Bypass` rule.
+3. Add one **Allow** policy whose Include selector contains only the exact approved owner email. Do not
+   use an email domain, identity-provider group, `Everyone`, or permanent `Bypass` rule for this
+   single-owner beta.
 4. Select only the login method needed by the approved testers. Cloudflare account members may use
    the Cloudflare identity provider. For an invited tester outside the account, explicitly enable
    One-time PIN and keep the exact-email **Allow** selector. A `Login Methods: One-time PIN` include
@@ -180,8 +201,9 @@ From the Access application settings, copy:
 - the team domain, formatted as `https://<team>.cloudflareaccess.com`;
 - the 64-character Application Audience (AUD) tag.
 
-Set `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` only in the private deployment environment. Do not commit
-their values. The Worker validates the JWT signature against Access's rotating remote JWKS and also checks
+Set `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` only in the private deployment environment. Store
+`OWNER_IDENTITY_PEPPER` only as a Worker secret. Do not commit their values. The Worker validates the
+JWT signature against Access's rotating remote JWKS and also checks
 the RS256 algorithm, issuer, audience, time claims, application-token type, user ID, and verified
 email claim.
 
@@ -220,17 +242,19 @@ Before production traffic is enabled:
 2. In a private browser window, confirm that `/`, `/login`, `/legal/privacy`, `/health`, and
    `/legal/documents.json` load without login and create no owner row. Confirm `/login` has no password
    field or active public-registration control.
-3. Follow the `/login` action and confirm `/app` and `/api/auth/me` show Access login or denial before
-   the Worker is reached.
-4. Confirm an approved identity can load `/api/auth/me` and receives a valid owner ID response. Do not
-   copy the value into screenshots, issues, commits, or public documentation.
+3. Follow the `/login` action and confirm `/app`, a deep `/app/*` route, `/api`, and `/api/session` show
+   Access login or denial before the Worker is reached.
+4. Confirm the approved identity can load `/api/session` and receives only active account, workspace,
+   owner-role, permission, and approval-state fields. The response deliberately omits the login identity,
+   keyed hash, owner ID, and workspace ID.
 5. Confirm an unapproved email is denied by Access.
-   After Access authentication, confirm a D1 owner whose status is `disabled` receives `403` and no
-   workspace interface. Browser session checks must send `X-Requested-With: XMLHttpRequest` so expiry is
+   After Access authentication, confirm an uninvited identity, a D1 owner whose status is `disabled`,
+   a disabled workspace, a disabled membership, and a cross-workspace assertion each receive `403` and
+   no workspace interface. Browser session checks must send `X-Requested-With: XMLHttpRequest` so expiry is
    handled as `401` without treating redirected HTML as a valid session. This follows Cloudflare's current
    [Access session-management guidance](https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/session-management/#ajax).
-6. Send a request without `Cf-Access-Jwt-Assertion` directly to a protected Worker path and confirm a `401`
-   response with no owner row created.
+6. Send a request without `Cf-Access-Jwt-Assertion` directly to each protected parent and deep Worker
+   path and confirm a `401` response with no owner row created.
 7. Send a malformed or expired JWT and confirm it is rejected without token details in the response
    or logs.
 8. Confirm `/cdn-cgi/access/logout` clears the application session.
@@ -247,8 +271,8 @@ Before production traffic is enabled:
     another owner receives `404`, and the hourly Cron reports only bounded aggregate counts.
 
 There must be no Bypass policy except the exact signed fal callback path, no broader conflicting
-application, and no preview or default Worker hostname that exposes `/app*` or user-facing `/api/*`
-outside the authentication boundary.
+application, and no preview or default Worker hostname that exposes `/app`, `/app/*`, `/api`, or
+user-facing `/api/*` outside the authentication boundary.
 
 ## 6. Connect GitHub automatic deployment
 
@@ -285,7 +309,7 @@ the checked-in and generated Wrangler configuration.
    `SOURCE_RETENTION_HOURS`, `FAILED_ARTIFACT_RETENTION_HOURS`, `OUTPUT_RETENTION_HOURS`,
    `RETENTION_CLEANUP_BATCH_SIZE`,
    `GENERATION_PROVIDER=mock`, and `REAL_GENERATION_ENABLED=false` as Worker runtime variables. Store
-   the two R2 S3 credentials only as Worker secrets. The
+   the two R2 S3 credentials and `OWNER_IDENTITY_PEPPER` only as Worker secrets. The
    generated deployment config uses `keep_vars` and does not redefine them.
 6. Require the GitHub `CI` check before merging to `main`. A merged production commit is then deployed
    by Workers Builds; non-production branch uploads do not receive production traffic.

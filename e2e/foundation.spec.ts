@@ -107,7 +107,7 @@ test("verifies the invited test session before showing the private app", async (
 });
 
 test("does not expose the private workspace when session verification fails", async ({ page }) => {
-  await page.route("**/api/auth/me", async (route) => {
+  await page.route("**/api/session", async (route) => {
     expect(route.request().headers()["x-requested-with"]).toBe("XMLHttpRequest");
     await route.fulfill({
       body: JSON.stringify({
@@ -130,7 +130,7 @@ test("does not expose the private workspace when session verification fails", as
 test("keeps the workspace locked when an authenticated account lacks beta permission", async ({
   page,
 }) => {
-  await page.route("**/api/auth/me", async (route) => {
+  await page.route("**/api/session", async (route) => {
     await route.fulfill({
       body: JSON.stringify({
         data: null,
@@ -254,10 +254,27 @@ test("uses the private real-provider API flow without browser-to-provider calls"
 }) => {
   let directUploadSeen = false;
   let submittedJob: unknown;
-  await page.route("**/api/auth/me", async (route) => {
+  await page.route("**/api/session", async (route) => {
     await route.fulfill({
       body: JSON.stringify(
         successEnvelope({
+          authorization: {
+            accountStatus: "active",
+            aiJobApprovalMode: "manual",
+            membershipStatus: "active",
+            paymentStatus: "disabled",
+            permissions: [
+              "workspace:read",
+              "workspace:manage",
+              "jobs:create",
+              "jobs:read",
+              "credits:read",
+              "approvals:manage",
+            ],
+            realProviderStatus: "approved",
+            role: "owner",
+            workspaceStatus: "active",
+          },
           capabilities: {
             creditAccounting: true,
             mockGeneration: false,
@@ -266,7 +283,6 @@ test("uses the private real-provider API flow without browser-to-provider calls"
             retentionCleanup: true,
           },
           kind: "development",
-          ownerId: "own_66666666666666666666666666666666",
         }),
       ),
       contentType: "application/json",
