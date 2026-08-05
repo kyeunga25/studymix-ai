@@ -3,6 +3,7 @@ import { z } from "zod";
 import { isLoopbackRequest } from "../local-runtime";
 
 const ACCESS_TOKEN_HEADER = "cf-access-jwt-assertion";
+const ACCESS_CLOCK_TOLERANCE_SECONDS = 5;
 const DEVELOPMENT_ISSUER = "urn:studymix:development";
 const INVITATION_HASH_CONTEXT = "studymix-owner-invite-v1";
 
@@ -106,6 +107,19 @@ function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function parseCurrentAccessClaims(payload: JWTPayload): z.infer<typeof accessClaimsSchema> {
+  const claims = accessClaimsSchema.parse(payload);
+  const now = Math.floor(Date.now() / 1_000);
+  if (
+    claims.exp < now - ACCESS_CLOCK_TOLERANCE_SECONDS ||
+    claims.nbf > now + ACCESS_CLOCK_TOLERANCE_SECONDS ||
+    claims.iat > now + ACCESS_CLOCK_TOLERANCE_SECONDS
+  ) {
+    throw new TypeError("The Access assertion is outside its valid time window.");
+  }
+  return claims;
+}
+
 async function createOwnerContext(
   issuer: string,
   subject: string,
@@ -185,7 +199,7 @@ export async function resolveOwnerContext(
 
   try {
     const payload = await verifier(token, issuer, audience.data);
-    const claims = accessClaimsSchema.parse(payload);
+    const claims = parseCurrentAccessClaims(payload);
     const invitationIdentityHash = await createInvitationIdentityHash(
       claims.email,
       identityPepper.data,

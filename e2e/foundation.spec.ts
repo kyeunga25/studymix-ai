@@ -99,6 +99,9 @@ test("verifies the invited test session before showing the private app", async (
   await page.goto("/app");
 
   await expect(page.getByRole("status")).toContainText("私密測試存取權已驗證");
+  await expect(page.getByRole("status")).toContainText("擁有者工作區：啟用");
+  await expect(page.getByRole("status")).toContainText("真實 AI：不可用");
+  await expect(page.getByRole("status")).toContainText("付款：不可用");
   await expect(page.getByRole("heading", { name: "把你的音樂變成專注讀書 Mix" })).toBeVisible();
   await expect(page.getByRole("link", { name: "登出" })).toHaveAttribute(
     "href",

@@ -18,7 +18,7 @@ const identityPepperSchema = z
   .max(128)
   .regex(/^[A-Za-z0-9_-]+$/)
   .refine((value) => !/change[-_ ]?me/i.test(value));
-const creditGrantSchema = z.coerce.number().int().min(0).max(100_000);
+const creditGrantSchema = z.coerce.number().int().min(0).max(1_000);
 const maxJobCreditCostSchema = z.coerce.number().int().positive().max(1_000);
 const timestampSchema = z.iso.datetime({ offset: true });
 const invitationIdSchema = z.string().regex(/^inv_[0-9a-f]{32}$/);

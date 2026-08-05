@@ -60,7 +60,7 @@ CREATE TABLE owner_invitations (
   role TEXT NOT NULL CHECK (role = 'owner'),
   status TEXT NOT NULL CHECK (status IN ('pending', 'consumed', 'revoked')),
   initial_credit_grant INTEGER NOT NULL CHECK (
-    initial_credit_grant >= 0 AND initial_credit_grant <= 100000
+    initial_credit_grant >= 0 AND initial_credit_grant <= 1000
   ),
   max_job_credit_cost INTEGER NOT NULL CHECK (
     max_job_credit_cost > 0 AND max_job_credit_cost <= 1000
