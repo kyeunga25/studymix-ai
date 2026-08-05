@@ -6,6 +6,8 @@ import { app } from "./index";
 describe("legal document and acceptance boundary", () => {
   beforeEach(async () => {
     await env.DB.prepare("DELETE FROM legal_acceptances").run();
+    await env.DB.prepare("DELETE FROM credit_ledger").run();
+    await env.DB.prepare("DELETE FROM owner_entitlements").run();
     await env.DB.prepare("DELETE FROM owners").run();
   });
 
@@ -28,12 +30,12 @@ describe("legal document and acceptance boundary", () => {
           expect.objectContaining({
             documentId: "privacy-notice",
             requiresAcceptance: false,
-            version: "2026-07-24",
+            version: "2026-08-05",
           }),
           expect.objectContaining({
             documentId: "terms-of-use",
             requiresAcceptance: true,
-            version: "2026-07-24",
+            version: "2026-08-05",
           }),
         ]),
       },

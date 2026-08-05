@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { OwnerContext } from "../auth/owner-context";
 import {
   RepositoryConflictError,
+  RepositoryCreditsInsufficientError,
+  RepositoryEntitlementRequiredError,
   RepositoryLegalAcceptanceRequiredError,
   RepositoryNotFoundError,
   RepositoryQuotaError,
@@ -11,16 +13,21 @@ import {
   attachOwnedJobWorkflow,
   confirmOwnedUpload,
   createJobIdempotently,
+  completeOwnedJobWithCredits,
   createOutput,
   createProviderRequest,
   createUpload,
   getCurrentLegalAcceptanceStatus,
+  getOwnedCreditReservationStatus,
+  getOwnedCreditSummary,
   getOwnedJob,
   getOwnedOutput,
   listOwnedOutputs,
   markOwnedOutputReady,
   markOwnedProviderRequestCompleted,
   markOwnedProviderRequestSubmitted,
+  failOwnedJobWithCreditRelease,
+  grantPrivateBetaCredits,
   recordRightsDeclaration,
   recordCurrentLegalAcceptances,
   recordUsageEvent,
@@ -44,8 +51,18 @@ function ownerContext(seed: "1" | "2"): OwnerContext {
 async function createConfirmedUpload(
   owner: OwnerContext,
   withLegalAcceptance = true,
+  credits = 100,
 ): Promise<string> {
   await upsertOwner(env.DB, owner, now);
+  if (credits > 0) {
+    await grantPrivateBetaCredits(env.DB, {
+      createdAt: now,
+      eventId: createSecureId("evt"),
+      ownerId: owner.ownerId,
+      quantity: credits,
+      referenceKey: `test:grant:${owner.ownerId}`,
+    });
+  }
   if (withLegalAcceptance) {
     await recordCurrentLegalAcceptances(env.DB, owner.ownerId, now);
   }
@@ -75,6 +92,8 @@ async function createConfirmedUpload(
 describe("D1 repositories", () => {
   beforeEach(async () => {
     await env.DB.prepare("DELETE FROM legal_acceptances").run();
+    await env.DB.prepare("DELETE FROM credit_ledger").run();
+    await env.DB.prepare("DELETE FROM owner_entitlements").run();
     await env.DB.prepare("DELETE FROM usage_events").run();
     await env.DB.prepare("DELETE FROM rights_declarations").run();
     await env.DB.prepare("DELETE FROM outputs").run();
@@ -110,6 +129,190 @@ describe("D1 repositories", () => {
     expect(first.created).toBe(true);
     expect(second.created).toBe(false);
     expect(second.job.id).toBe(first.job.id);
+    expect(await getOwnedCreditReservationStatus(env.DB, owner.ownerId, first.job.id)).toBe(
+      "reserved",
+    );
+    expect((await getOwnedCreditSummary(env.DB, owner.ownerId))?.availableCredits).toBe(99);
+  });
+
+  it("requires an active entitlement and sufficient credits before atomically creating a job", async () => {
+    const ownerWithoutEntitlement = ownerContext("1");
+    const uploadWithoutEntitlement = await createConfirmedUpload(ownerWithoutEntitlement, true, 0);
+    await expect(
+      createJobIdempotently(env.DB, {
+        createdAt: now,
+        creditCost: 2,
+        expiresAt: later,
+        id: createSecureId("job"),
+        idempotencyKey: "job-request-no-entitlement",
+        maxActiveJobs: 2,
+        ownerId: ownerWithoutEntitlement.ownerId,
+        presetId: "soft-piano",
+        presetVersion: 1,
+        provider: "mock",
+        requestFingerprint: "7".repeat(64),
+        uploadId: uploadWithoutEntitlement,
+      }),
+    ).rejects.toBeInstanceOf(RepositoryEntitlementRequiredError);
+
+    const ownerWithOneCredit = ownerContext("2");
+    const uploadWithOneCredit = await createConfirmedUpload(ownerWithOneCredit, true, 1);
+    await expect(
+      createJobIdempotently(env.DB, {
+        createdAt: now,
+        creditCost: 2,
+        expiresAt: later,
+        id: createSecureId("job"),
+        idempotencyKey: "job-request-insufficient-credit",
+        maxActiveJobs: 2,
+        ownerId: ownerWithOneCredit.ownerId,
+        presetId: "soft-piano",
+        presetVersion: 1,
+        provider: "mock",
+        requestFingerprint: "6".repeat(64),
+        uploadId: uploadWithOneCredit,
+      }),
+    ).rejects.toBeInstanceOf(RepositoryCreditsInsufficientError);
+
+    const counts = await env.DB.prepare(
+      `SELECT
+        (SELECT COUNT(*) FROM jobs) AS jobs,
+        (SELECT COUNT(*) FROM credit_ledger WHERE event_type = 'reserve') AS reserves`,
+    ).first<{ jobs: number; reserves: number }>();
+    expect(counts).toEqual({ jobs: 0, reserves: 0 });
+  });
+
+  it("does not reactivate a cancelled entitlement when an old grant is replayed", async () => {
+    const owner = ownerContext("1");
+    await upsertOwner(env.DB, owner, now);
+    const grant = {
+      createdAt: now,
+      eventId: createSecureId("evt"),
+      ownerId: owner.ownerId,
+      quantity: 5,
+      referenceKey: "test:grant:cancelled-replay",
+    };
+    await grantPrivateBetaCredits(env.DB, grant);
+    await env.DB.prepare(
+      "UPDATE owner_entitlements SET status = 'cancelled', updated_at = ?1 WHERE owner_id = ?2",
+    )
+      .bind(later, owner.ownerId)
+      .run();
+    await grantPrivateBetaCredits(env.DB, { ...grant, eventId: createSecureId("evt") });
+
+    expect(await getOwnedCreditSummary(env.DB, owner.ownerId)).toMatchObject({
+      availableCredits: 5,
+      status: "cancelled",
+    });
+    const grants = await env.DB.prepare(
+      "SELECT COUNT(*) AS total FROM credit_ledger WHERE owner_id = ?1 AND event_type = 'grant'",
+    )
+      .bind(owner.ownerId)
+      .first<{ total: number }>();
+    expect(grants?.total).toBe(1);
+  });
+
+  it("settles or releases one reservation atomically with the terminal job state", async () => {
+    const owner = ownerContext("1");
+    const firstUploadId = await createConfirmedUpload(owner);
+    const completedJob = await createJobIdempotently(env.DB, {
+      createdAt: now,
+      creditCost: 2,
+      expiresAt: later,
+      id: createSecureId("job"),
+      idempotencyKey: "job-request-credit-settle",
+      maxActiveJobs: 2,
+      ownerId: owner.ownerId,
+      presetId: "soft-piano",
+      presetVersion: 1,
+      provider: "mock",
+      requestFingerprint: "5".repeat(64),
+      uploadId: firstUploadId,
+    });
+    await transitionOwnedJob(
+      env.DB,
+      owner.ownerId,
+      completedJob.job.id,
+      ["created"],
+      "validating",
+      { completedAt: null, errorCode: null, updatedAt: now },
+    );
+    await transitionOwnedJob(env.DB, owner.ownerId, completedJob.job.id, ["validating"], "queued", {
+      completedAt: null,
+      errorCode: null,
+      updatedAt: now,
+    });
+    await transitionOwnedJob(env.DB, owner.ownerId, completedJob.job.id, ["queued"], "generating", {
+      completedAt: null,
+      errorCode: null,
+      updatedAt: now,
+    });
+    await transitionOwnedJob(
+      env.DB,
+      owner.ownerId,
+      completedJob.job.id,
+      ["generating"],
+      "processing_output",
+      { completedAt: null, errorCode: null, updatedAt: now },
+    );
+    await completeOwnedJobWithCredits(env.DB, {
+      eventId: createSecureId("evt"),
+      jobId: completedJob.job.id,
+      ownerId: owner.ownerId,
+      timestamp: later,
+    });
+    await completeOwnedJobWithCredits(env.DB, {
+      eventId: createSecureId("evt"),
+      jobId: completedJob.job.id,
+      ownerId: owner.ownerId,
+      timestamp: later,
+    });
+    expect(await getOwnedCreditReservationStatus(env.DB, owner.ownerId, completedJob.job.id)).toBe(
+      "settled",
+    );
+
+    const secondUploadId = await createConfirmedUpload(owner);
+    const failedJob = await createJobIdempotently(env.DB, {
+      createdAt: now,
+      creditCost: 2,
+      expiresAt: later,
+      id: createSecureId("job"),
+      idempotencyKey: "job-request-credit-release",
+      maxActiveJobs: 2,
+      ownerId: owner.ownerId,
+      presetId: "music-box",
+      presetVersion: 1,
+      provider: "mock",
+      requestFingerprint: "4".repeat(64),
+      uploadId: secondUploadId,
+    });
+    await transitionOwnedJob(env.DB, owner.ownerId, failedJob.job.id, ["created"], "validating", {
+      completedAt: null,
+      errorCode: null,
+      updatedAt: now,
+    });
+    await failOwnedJobWithCreditRelease(env.DB, {
+      errorCode: "MOCK_WORKFLOW_FAILED",
+      eventId: createSecureId("evt"),
+      jobId: failedJob.job.id,
+      ownerId: owner.ownerId,
+      timestamp: later,
+    });
+    await failOwnedJobWithCreditRelease(env.DB, {
+      errorCode: "MOCK_WORKFLOW_FAILED",
+      eventId: createSecureId("evt"),
+      jobId: failedJob.job.id,
+      ownerId: owner.ownerId,
+      timestamp: later,
+    });
+    expect(await getOwnedCreditReservationStatus(env.DB, owner.ownerId, failedJob.job.id)).toBe(
+      "released",
+    );
+    expect(await getOwnedCreditSummary(env.DB, owner.ownerId)).toMatchObject({
+      availableCredits: 98,
+      reservedCredits: 0,
+      settledCredits: 2,
+    });
   });
 
   it("blocks repository-level job creation until current legal versions are accepted", async () => {

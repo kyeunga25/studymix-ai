@@ -57,6 +57,8 @@
     "LEGAL_CONTACT_EMAIL": "CHANGE_ME",
     "GENERATION_PROVIDER": "mock",
     "REAL_GENERATION_ENABLED": "false",
+    "CREDIT_ACCOUNTING_ENABLED": "false",
+    "CREDITS_PER_JOB": "2",
     "FAL_KEY": "CHANGE_ME_FAL_KEY_000000",
     "FAL_WEBHOOK_URL": "https://webhook.invalid/api/webhooks/fal",
     "FAL_WEBHOOK_USER_ID": "CHANGE_ME_FAL_WEBHOOK_USER_ID",

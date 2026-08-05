@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "WRANGLER_WRITE_LOGS=false WRANGLER_LOG_SANITIZE=true WRANGLER_REGISTRY_PATH=.wrangler/registry wrangler dev --var APP_ENV:local --var DEV_AUTH_SUBJECT:local-development-owner --var LEGAL_CONTACT_EMAIL:privacy@example.test",
+    "prepare:local-ai": "node scripts/prepare-local-ai.mjs",
+    "dev:local-ai": "pnpm prepare:local-ai && WRANGLER_WRITE_LOGS=false WRANGLER_LOG_SANITIZE=true WRANGLER_REGISTRY_PATH=.wrangler/registry wrangler dev --local --var APP_ENV:local --var DEV_AUTH_SUBJECT:local-ai-development-owner --var LEGAL_CONTACT_EMAIL:privacy@example.test --var GENERATION_PROVIDER:mock --var REAL_GENERATION_ENABLED:false --var R2_TRANSFER_ENABLED:true --var JOB_WORKFLOW_ENABLED:true --var CREDIT_ACCOUNTING_ENABLED:true --var MAX_DAILY_JOBS_PER_OWNER:20",
     "build": "WRANGLER_WRITE_LOGS=false WRANGLER_LOG_SANITIZE=true wrangler deploy --dry-run --outdir dist",
     "deploy": "pnpm deploy:cloudflare",
     "deploy:cloudflare": "node scripts/create-cloudflare-config.mjs && node scripts/run-protected-wrangler.mjs deploy",
@@ -21,7 +23,7 @@
     "@studymix/presets": "workspace:*",
     "@studymix/providers": "workspace:*",
     "aws4fetch": "^1.0.20",
-    "hono": "^4.12.31",
+    "hono": "^4.12.34",
     "jose": "^6.2.4",
     "zod": "catalog:"
   },

@@ -133,6 +133,8 @@ async function seedKnownProviderRequest(): Promise<void> {
 
 describe("fal webhook boundary", () => {
   beforeEach(async () => {
+    await env.DB.prepare("DELETE FROM credit_ledger").run();
+    await env.DB.prepare("DELETE FROM owner_entitlements").run();
     await env.DB.prepare("DELETE FROM usage_events").run();
     await env.DB.prepare("DELETE FROM rights_declarations").run();
     await env.DB.prepare("DELETE FROM outputs").run();

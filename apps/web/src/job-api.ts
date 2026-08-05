@@ -174,6 +174,26 @@ export async function getJob(jobId: string, signal: AbortSignal): Promise<Public
   }
 }
 
+export async function cancelJob(jobId: string): Promise<PublicJob> {
+  const parsedJobId = jobIdSchema.safeParse(jobId);
+  if (!parsedJobId.success) {
+    throw new JobApiError({
+      code: "VALIDATION_ERROR",
+      message: "The job request is invalid.",
+      retryable: false,
+    });
+  }
+  try {
+    const response = await fetch(`/api/jobs/${encodeURIComponent(parsedJobId.data)}/cancel`, {
+      credentials: "same-origin",
+      method: "POST",
+    });
+    return await parseJobResponse(response);
+  } catch (error) {
+    normalizeFetchError(error);
+  }
+}
+
 export async function deleteJob(jobId: string): Promise<DeleteJobResponse> {
   const parsedJobId = jobIdSchema.safeParse(jobId);
   if (!parsedJobId.success) {

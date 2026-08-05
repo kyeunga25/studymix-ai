@@ -1,9 +1,11 @@
 import {
   apiEnvelopeSchema,
+  creditSummarySchema,
   createUploadResponseSchema,
   currentRightsDeclarationVersion,
   publicJobSchema,
 } from "@studymix/contracts";
+import { createSecureId } from "@studymix/core";
 import { env, introspectWorkflow } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -15,15 +17,23 @@ import {
   isRealGenerationAvailable,
   resolveGenerationWorkflowConfiguration,
 } from "./job-service";
-import { recordCurrentLegalAcceptances } from "./repositories";
+import {
+  getOwnedCreditReservationStatus,
+  getOwnedCreditSummary,
+  grantPrivateBetaCredits,
+  recordCurrentLegalAcceptances,
+} from "./repositories";
 import { ensureFirstProviderSubmissionAttempt } from "./workflows/generation-workflow";
 
 const uploadEnvelopeSchema = apiEnvelopeSchema(createUploadResponseSchema);
 const jobEnvelopeSchema = apiEnvelopeSchema(publicJobSchema);
+const creditEnvelopeSchema = apiEnvelopeSchema(creditSummarySchema);
 const errorEnvelopeSchema = z.object({ error: z.object({ code: z.string() }) });
 
 async function resetDatabase(): Promise<void> {
   await env.DB.prepare("DELETE FROM legal_acceptances").run();
+  await env.DB.prepare("DELETE FROM credit_ledger").run();
+  await env.DB.prepare("DELETE FROM owner_entitlements").run();
   await env.DB.prepare("DELETE FROM usage_events").run();
   await env.DB.prepare("DELETE FROM rights_declarations").run();
   await env.DB.prepare("DELETE FROM outputs").run();
@@ -61,11 +71,18 @@ async function createConfirmedUpload(withLegalAcceptance: boolean): Promise<stri
   );
   expect(confirmResponse.status).toBe(200);
 
+  const owner = await env.DB.prepare("SELECT id FROM owners LIMIT 1").first<{ id: string }>();
+  if (owner === null) {
+    throw new Error("Test owner was not created.");
+  }
+  await grantPrivateBetaCredits(env.DB, {
+    createdAt: new Date().toISOString(),
+    eventId: createSecureId("evt"),
+    ownerId: owner.id,
+    quantity: 20,
+    referenceKey: `test:workflow-grant:${owner.id}`,
+  });
   if (withLegalAcceptance) {
-    const owner = await env.DB.prepare("SELECT id FROM owners LIMIT 1").first<{ id: string }>();
-    if (owner === null) {
-      throw new Error("Test owner was not created.");
-    }
     await recordCurrentLegalAcceptances(env.DB, owner.id, new Date().toISOString());
   }
   return uploadEnvelope.data.uploadId;
@@ -93,6 +110,17 @@ describe("feature-gated mock generation Workflow", () => {
 
   it("creates two private mock outputs and keeps retries and reads owner-scoped", async () => {
     const uploadId = await createConfirmedUpload(true);
+    const creditResponse = await app.request(
+      "https://studymix.example/api/credits",
+      undefined,
+      env,
+    );
+    const creditEnvelope = creditEnvelopeSchema.parse(await creditResponse.json());
+    expect(creditResponse.status).toBe(200);
+    expect(creditEnvelope.error).toBeNull();
+    if (creditEnvelope.error === null) {
+      expect(creditEnvelope.data).toMatchObject({ availableCredits: 20, reservedCredits: 0 });
+    }
     const introspector = await introspectWorkflow(env.GENERATION_WORKFLOW);
     try {
       await introspector.modifyAll(async (modifier) => {
@@ -174,6 +202,18 @@ describe("feature-gated mock generation Workflow", () => {
         rights_declarations: 1,
         usage_events: 1,
       });
+      const owner = await env.DB.prepare("SELECT id FROM owners LIMIT 1").first<{ id: string }>();
+      if (owner === null) {
+        throw new Error("Test owner was not created.");
+      }
+      expect(
+        await getOwnedCreditReservationStatus(env.DB, owner.id, createEnvelope.data.jobId),
+      ).toBe("settled");
+      expect(await getOwnedCreditSummary(env.DB, owner.id)).toMatchObject({
+        availableCredits: 18,
+        reservedCredits: 0,
+        settledCredits: 2,
+      });
 
       const repeatedResponse = await app.request(
         "https://studymix.example/api/jobs",
@@ -195,6 +235,70 @@ describe("feature-gated mock generation Workflow", () => {
       );
       expect(denied.status).toBe(404);
       expect(errorEnvelopeSchema.parse(await denied.json()).error.code).toBe("NOT_FOUND");
+    } finally {
+      await introspector.dispose();
+    }
+  });
+
+  it("releases reserved credits when the Workflow reaches a terminal failure", async () => {
+    const uploadId = await createConfirmedUpload(true);
+    const introspector = await introspectWorkflow(env.GENERATION_WORKFLOW);
+    try {
+      await introspector.modifyAll(async (modifier) => {
+        await modifier.disableRetryDelays();
+        await modifier.mockStepError(
+          { name: "store candidate 0" },
+          new Error("Synthetic terminal failure."),
+          4,
+        );
+      });
+      const createResponse = await app.request(
+        "https://studymix.example/api/jobs",
+        jobRequest(uploadId),
+        env,
+      );
+      const createEnvelope = jobEnvelopeSchema.parse(await createResponse.json());
+      expect(createResponse.status).toBe(202);
+      expect(createEnvelope.error).toBeNull();
+      if (createEnvelope.error !== null) {
+        throw new Error("Test job could not be created.");
+      }
+
+      const instances = await introspector.get();
+      const instance = instances[0];
+      if (instance === undefined) {
+        throw new Error("Test Workflow instance was not created.");
+      }
+      await instance.waitForStatus("complete");
+      await expect(instance.getOutput()).resolves.toEqual({
+        jobId: createEnvelope.data.jobId,
+        status: "failed",
+      });
+
+      const owner = await env.DB.prepare("SELECT id FROM owners LIMIT 1").first<{ id: string }>();
+      if (owner === null) {
+        throw new Error("Test owner was not created.");
+      }
+      expect(
+        await getOwnedCreditReservationStatus(env.DB, owner.id, createEnvelope.data.jobId),
+      ).toBe("released");
+      expect(await getOwnedCreditSummary(env.DB, owner.id)).toMatchObject({
+        availableCredits: 20,
+        reservedCredits: 0,
+        settledCredits: 0,
+      });
+
+      const jobResponse = await app.request(
+        `https://studymix.example/api/jobs/${createEnvelope.data.jobId}`,
+        undefined,
+        env,
+      );
+      const failedEnvelope = jobEnvelopeSchema.parse(await jobResponse.json());
+      expect(jobResponse.status).toBe(200);
+      expect(failedEnvelope.error).toBeNull();
+      if (failedEnvelope.error === null) {
+        expect(failedEnvelope.data.status).toBe("failed");
+      }
     } finally {
       await introspector.dispose();
     }

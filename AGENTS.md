@@ -60,6 +60,25 @@ For each change:
 
 Do not mark a status complete unless its acceptance criteria are demonstrably satisfied.
 
+## Public repository safety
+
+This repository is public. Before editing README, docs, examples, fixtures, commits, pull requests,
+issues, release notes, screenshots, logs, or generated content, read `docs/PUBLICATION_SAFETY.md`.
+
+- Never add personal data, real application data, user audio, filenames, logs, analytics, screenshots,
+  database exports, or production row samples.
+- Never add secrets, tokens, JWTs, signed URLs, cookies, private keys, account/resource identifiers,
+  private hostnames, tester identities, or protected configuration values.
+- Keep public architecture at repository-contract level. Do not publish account-specific topology,
+  production database organization, incident paths, capacity, traffic, cost, or vendor-contract details.
+- Do not infer or publish the operator's location, nationality, residence, governing law, or target
+  market from interface language, locale identifiers, spelling, timezone, domain, or tool environment.
+- Use placeholders, `example.test`, and synthetic fixtures only.
+- Do not copy unredacted terminal, Cloudflare Dashboard, browser Network panel, or deployment output into
+  the repository or an AI conversation.
+- AI-generated content requires human diff review. Do not commit, push, open a pull request, deploy,
+  migrate, or change Cloudflare settings unless the user explicitly authorizes that action.
+
 ## External APIs
 
 Before implementing or changing Cloudflare or fal integrations:

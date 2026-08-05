@@ -126,3 +126,52 @@ its Access and route boundary is verified.
 
 **Reason:** A single service avoids duplicate Worker projects, split deployment settings, and accidental
 public endpoints while retaining version-level preview and rollback support.
+
+## ADR-013: Append-only private-beta credit ledger
+
+**Status:** Accepted for MVP safety controls
+
+Require an active owner entitlement and reserve a fixed, configured credit quantity in the same D1
+batch transaction that creates a generation job. Derive available, reserved, and settled totals from
+append-only grant, reserve, settle, and release events. Workflow completion settles the reservation;
+terminal failure releases it. Unique owner-scoped reference keys make every operation idempotent.
+
+Credits are a private-beta usage and spend-control unit. They are not public pricing, and the browser
+has no credit-grant endpoint.
+
+**Reason:** An append-only ledger is auditable, avoids mutable-balance drift, and remains correct across
+duplicate HTTP requests and Workflow retries.
+
+## ADR-014: Isolate future payment providers from the public repository
+
+**Status:** Accepted architecture boundary; provider implementation deferred
+
+Keep the StudyMix application and public repository provider-neutral. A future approved payment service
+may be reached only through an authenticated generic Service Binding or equivalent server-to-server
+contract. The browser never receives merchant credentials or privileged provider requests. This
+repository may contain disabled and synthetic adapters for contract testing, but no live provider
+dependency, signing implementation, merchant mapping, or checkout endpoint.
+
+**Reason:** Payment collection is not required for the private audio MVP. Isolating it prevents vendor
+details and privileged credentials from leaking into the public application while retaining a testable
+domain boundary.
+
+## ADR-015: Loopback-only synthetic orchestration harness
+
+**Status:** Accepted for local development only
+
+Exercise the canonical owner, legal acceptance, rights declaration, job, credit, Workflow, and private
+object-storage paths with a deterministic provider-neutral audio adapter. The harness is available only
+when `APP_ENV=local`, the request host is loopback, the mock provider is selected, the real-generation
+kill switch is off, and every required local binding flag is explicitly on. It uses local-only additive
+test state for orchestration policy and attempt-cost metadata; production migrations and checked-in
+Wrangler defaults are unchanged.
+
+Provider-attempt cost units remain separate from customer credits. A valid private output settles the
+customer reservation, terminal failure or cancellation releases it, and provider work already attempted
+is retained as synthetic cost evidence. Duplicate or late wake-up signals never authorize a state
+transition by themselves; the Workflow re-reads server state.
+
+**Reason:** The application needs a reproducible browser-to-Workflow integration path before any real
+provider, remote binding, or paid request can be approved. A loopback and environment double gate keeps
+that capability unavailable to deployed environments while testing the same application lifecycle.

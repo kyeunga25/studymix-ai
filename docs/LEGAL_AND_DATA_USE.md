@@ -1,12 +1,17 @@
 # Legal and data-use controls
 
+> This public engineering document must not contain real user records, operator identity details,
+> deployment identifiers, private provider-account information or live database evidence. Follow
+> [`PUBLICATION_SAFETY.md`](PUBLICATION_SAFETY.md) when updating it.
+
 ## Status and scope
 
 This is an engineering and launch-control document, not legal advice. It records the product behavior,
 technical enforcement, official-source checks, and unresolved decisions for the authenticated private
-beta. The English and Traditional Chinese website documents are pre-release drafts. A Hong Kong
-lawyer must confirm the operator identity, service address, consumer terms, liability wording,
-copyright position, cross-border disclosures, and complaint process before a public launch.
+beta. The English and Traditional Chinese website documents are pre-release drafts. Qualified legal
+counsel familiar with the markets where the service will be offered must confirm the operator
+identity, service address, consumer terms, liability wording, copyright position, cross-border
+disclosures, governing law, dispute forum, and complaint process before a public launch.
 
 The current code has authentication, owner-scoped D1 metadata, legal-document APIs, and the web shell.
 It also contains default-off private-R2 upload plus mock and fal Workflow modes. The mock Workflow creates
@@ -19,10 +24,10 @@ pass. Public copy must not describe a test-only control as already operational.
 
 | Document | Route | Current version | Server acceptance required |
 | --- | --- | --- | --- |
-| Terms of Use | `/legal/terms` | `2026-07-24` | Yes |
-| Privacy Notice / PICS | `/legal/privacy` | `2026-07-24` | No; notice is acknowledged, not converted into optional consent |
-| Acceptable Use Policy | `/legal/acceptable-use` | `2026-07-24` | Yes |
-| AI and Output Notice | `/legal/ai-output-notice` | `2026-07-24` | Yes |
+| Terms of Use | `/legal/terms` | `2026-08-05` | Yes |
+| Privacy Notice | `/legal/privacy` | `2026-08-05` | No; notice is acknowledged, not converted into optional consent |
+| Acceptable Use Policy | `/legal/acceptable-use` | `2026-08-05` | Yes |
+| AI and Output Notice | `/legal/ai-output-notice` | `2026-08-05` | Yes |
 
 `GET /legal/documents.json` returns the configured contact and current public manifest without creating
 an owner record. The authenticated compatibility route `GET /api/legal/documents` returns the same
@@ -51,6 +56,7 @@ declaration versions are enforced by the shared Zod contract. A client checkbox 
 | Feature-gated real-provider audio | Approved tester using authorized audio | Private audio-to-audio generation and result delivery | Cloudflare, fal.ai, private R2, and owner-scoped D1 metadata | Default/production off; Workflow mapping and bounded private ingestion are offline-tested, but no paid or real-audio staging check has run |
 | fal completion callback | fal.ai | Wake the matching Workflow before it rechecks the provider API | Cloudflare Worker and Workflow | Signed raw body is verified within a five-minute window; only known request ID and candidate index are signaled, while the complete body is discarded and not stored |
 | Real-generation rate key | Cloudflare request metadata | Coarse abuse protection before job creation | Cloudflare Rate Limiting binding | Short per-location counter window; the application hashes the connecting IP before use and does not store the raw IP or hash in D1 |
+| Private-beta entitlement and credit ledger | Approved operator grant plus generation state | Bound invited-beta usage and provider spend | Worker and owner-scoped D1 | Append-only grant/reserve/settle/release metadata; no card, bank, checkout, or payment-provider data |
 | Operational event data | Worker | Security and troubleshooting | Cloudflare observability | Must exclude audio, filename, signed URL, assertion, secrets, and raw provider payloads |
 
 StudyMix AI does not ingest arbitrary remote URLs, scrape tracks or personal data from official sites,
@@ -58,35 +64,36 @@ third-party websites, public databases, social platforms, or data-source APIs. P
 treated as permission. User uploads are not used to train a StudyMix AI model. No equivalent promise
 may be made for an external provider until a signed contract or DPA expressly supports it.
 
-## Hong Kong privacy controls
+## Jurisdiction-neutral privacy controls
 
-The Office of the Privacy Commissioner for Personal Data describes six Data Protection Principles:
-lawful and non-excessive collection with notice; data accuracy and limited retention; purpose-limited
-use; security, including processor controls; openness; and access/correction rights. The website notice
-therefore identifies the categories and purposes, required nature, recipients, planned retention,
-security controls, contact route, and access/correction/deletion process. Processor arrangements need
+The public documentation uses jurisdiction-neutral privacy principles as an engineering baseline:
+collection limitation, data quality, purpose specification, use limitation, security safeguards,
+openness, individual participation, and accountability. The website notice therefore identifies the
+data categories and purposes, required nature, recipients, planned retention, security controls,
+contact route, and access/correction/deletion process where applicable. Processor arrangements need
 contractual or other means to enforce retention and security, not just a link to a vendor privacy page.
 
-Official references checked on 2026-07-24:
+This baseline is not a claim of compliance in every country. Before serving a market, the operator must
+identify the laws and regulator that apply there, complete any required notices or transfer safeguards,
+and obtain qualified advice without publishing assumptions about the operator's location.
 
-- [PCPD: The Data Protection Principles](https://www.pcpd.org.hk/english/data_privacy_law/ordinance_at_a_Glance/ordinance.html)
-- [PCPD: Data Security](https://www.pcpd.org.hk/english/data_security/index.html)
-- [PCPD: Privacy Management Programme and PICS/PPS guidance](https://www.pcpd.org.hk/english/news_events/media_statements/press_20130729.html)
-- [PCPD: Personal data obtained from the public domain remains protected](https://www.pcpd.org.hk/english/news_events/media_statements/press_20130813a.html)
+Global reference checked on 2026-08-05:
+
+- [OECD Guidelines Governing the Protection of Privacy and Transborder Flows of Personal Data](https://legalinstruments.oecd.org/public/doc/114/body-text.en.html)
 
 Public launch is not approved while the checked-in legal contact remains a placeholder or while the
 operator and processing disclosures are incomplete.
 
 ## Copyright, recordings, and public data
 
-Hong Kong's Intellectual Property Department explains that copyright protection is automatic and can
-cover musical works, sound recordings, and sufficiently substantial parts. A source being short,
-downloadable, indexed, or publicly accessible does not establish that adaptation or distribution is
-permitted. The product therefore limits positioning to recordings the user owns or is authorized to
-process, forbids artist-name imitation and remote URL ingestion, requires a job-specific rights
-declaration, and does not provide a public result or distribution licence.
+Copyright and related rights vary by jurisdiction, but public availability does not itself establish
+permission to copy, adapt, process, or distribute a work or recording. The product therefore limits
+positioning to recordings the user owns or is authorized to process, forbids artist-name imitation and
+remote URL ingestion, requires a job-specific rights declaration, and does not provide a public result
+or distribution licence.
 
-- [Hong Kong IPD: What is copyright?](https://www.ipd.gov.hk/tc/copyright/what-is-copyright/index.html)
+- [World Intellectual Property Organization: Copyright](https://www.wipo.int/zh/web/copyright/)
+- [WIPO copyright FAQ: Using works available online](https://www.wipo.int/zh/web/copyright/faq-copyright)
 
 The operator cannot technically prove the user's chain of title. Engineering must preserve versioned
 declarations, prevent cross-owner access, provide a complaint/takedown route, and avoid copy suggesting
@@ -100,9 +107,9 @@ security, subprocessor, deletion, and incident terms. Execute or otherwise confi
 for the operator account and keep a copy of the accepted version and subprocessor review.
 
 R2 and D1 automatically choose locations. Cloudflare's location hints are best-effort, not guarantees.
-R2 jurisdiction restrictions can guarantee only supported jurisdictions, and D1's current jurisdiction
-options do not provide a Hong Kong residency commitment. The Privacy Notice must therefore not promise
-Hong Kong-only storage or processing.
+R2 jurisdiction restrictions can guarantee only supported jurisdictions. The Privacy Notice must not
+promise storage or processing in a particular country or region unless the deployed configuration and
+applicable contract have been verified to provide that commitment.
 
 - [Cloudflare Customer DPA](https://www.cloudflare.com/en-gb/cloudflare-customer-dpa/)
 - [Cloudflare R2 data location](https://developers.cloudflare.com/r2/reference/data-location/)

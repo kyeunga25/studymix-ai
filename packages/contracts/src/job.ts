@@ -75,7 +75,10 @@ export const publicJobSchema = z
 export const downloadOutputResponseSchema = z
   .object({
     downloadMethod: z.literal("GET"),
-    downloadUrl: httpsUrlSchema,
+    downloadUrl: z.union([
+      httpsUrlSchema,
+      z.string().regex(/^\/api\/local\/outputs\/out_[0-9a-f]{32}\/content$/),
+    ]),
     expiresAt: isoDateTimeSchema,
     outputId: outputIdSchema,
   })

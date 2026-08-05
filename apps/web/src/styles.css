@@ -110,6 +110,24 @@ label:has(input:focus-visible) {
   gap: 8px;
 }
 
+.credit-status {
+  display: grid;
+  gap: 1px;
+  min-width: 118px;
+  padding: 7px 11px;
+  border: 1px solid #ded9f0;
+  border-radius: 12px;
+  color: #5a557a;
+  background: rgba(255, 255, 255, 0.72);
+  font-size: 0.68rem;
+  line-height: 1.15;
+}
+
+.credit-status strong {
+  color: #39355e;
+  font-size: 0.78rem;
+}
+
 .language-switch {
   display: inline-flex;
   align-items: center;
@@ -442,6 +460,102 @@ main {
   width: 22px;
   flex: 0 0 auto;
   color: #5c50d4;
+}
+
+.local-source-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.local-source-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  margin-top: 19px;
+  padding: 20px;
+  border: 1px solid #d8d1e8;
+  border-radius: 20px;
+  background: linear-gradient(145deg, rgba(244, 240, 255, 0.96), rgba(255, 249, 243, 0.9));
+}
+
+.local-source-card > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.local-source-card strong {
+  color: #292c59;
+  font-size: 0.9rem;
+}
+
+.local-source-card > div span {
+  overflow: hidden;
+  color: #767390;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.local-only-badge {
+  padding: 5px 8px;
+  border: 1px solid #8a7fe1;
+  border-radius: 999px;
+  color: #5145c8;
+  background: #f7f4ff;
+  font-size: 0.63rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.local-scenario-fieldset {
+  min-width: 0;
+  margin: 22px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.local-scenario-fieldset legend {
+  margin-bottom: 10px;
+  color: #30325b;
+  font-size: 0.79rem;
+  font-weight: 760;
+}
+
+.local-scenario-options {
+  display: grid;
+  gap: 8px;
+}
+
+.local-scenario-options label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  border: 1px solid #d9d2e5;
+  border-radius: 11px;
+  color: #4b4c70;
+  background: rgba(255, 255, 255, 0.68);
+  cursor: pointer;
+  font-size: 0.76rem;
+  font-weight: 690;
+}
+
+.local-scenario-options label.is-selected {
+  border-color: #6a5cdb;
+  color: #4439b2;
+  background: #f3f0ff;
+}
+
+.local-scenario-options input {
+  accent-color: #5e51d4;
+}
+
+.local-scenario-fieldset:disabled label {
+  cursor: not-allowed;
+  opacity: 0.68;
 }
 
 .intro h1 {
@@ -1354,6 +1468,15 @@ main {
 
   .header-actions {
     gap: 4px;
+  }
+
+  .credit-status {
+    min-width: auto;
+    padding: 6px 8px;
+  }
+
+  .credit-status span {
+    display: none;
   }
 
   .logout-link {

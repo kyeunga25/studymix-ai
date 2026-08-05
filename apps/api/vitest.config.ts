@@ -7,6 +7,9 @@ export default defineConfig({
   plugins: [
     cloudflareTest(async () => {
       const migrations = await readD1Migrations(path.join(import.meta.dirname, "migrations"));
+      const localAiMigrations = await readD1Migrations(
+        path.join(import.meta.dirname, "test", "local-ai-migrations"),
+      );
       return {
         main: path.join(import.meta.dirname, "src/index.ts"),
         miniflare: {
@@ -18,6 +21,8 @@ export default defineConfig({
             LEGAL_CONTACT_EMAIL: "privacy@example.test",
             GENERATION_PROVIDER: "mock",
             REAL_GENERATION_ENABLED: "false",
+            CREDIT_ACCOUNTING_ENABLED: "true",
+            CREDITS_PER_JOB: "2",
             FAL_KEY: "CHANGE_ME_FAL_KEY_000000",
             FAL_WEBHOOK_URL: "https://studymix.example/api/webhooks/fal",
             FAL_WEBHOOK_USER_ID: "test-fal-user",
@@ -45,7 +50,7 @@ export default defineConfig({
             RETENTION_CLEANUP_BATCH_SIZE: "50",
             UPLOAD_URL_TTL_SECONDS: "60",
             DOWNLOAD_URL_TTL_SECONDS: "60",
-            TEST_MIGRATIONS: migrations,
+            TEST_MIGRATIONS: [...migrations, ...localAiMigrations],
           },
           compatibilityDate: "2026-07-21",
           compatibilityFlags: ["nodejs_compat"],

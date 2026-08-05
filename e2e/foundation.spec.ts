@@ -183,7 +183,7 @@ test("renders every versioned legal page and discloses the pre-release blockers"
     await page.goto(path);
     await page.getByRole("button", { name: "EN" }).click();
     await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
-    await expect(page.getByText("Document version: 2026-07-24")).toBeVisible();
+    await expect(page.getByText("Document version: 2026-08-05")).toBeVisible();
     await expect(
       page.getByText(/Audio upload and external AI generation are disabled/),
     ).toBeVisible();
@@ -259,6 +259,8 @@ test("uses the private real-provider API flow without browser-to-provider calls"
       body: JSON.stringify(
         successEnvelope({
           capabilities: {
+            creditAccounting: true,
+            localAiHarness: false,
             mockGeneration: false,
             privateAudioUpload: true,
             realGeneration: true,
@@ -266,6 +268,22 @@ test("uses the private real-provider API flow without browser-to-provider calls"
           },
           kind: "development",
           ownerId: "own_66666666666666666666666666666666",
+        }),
+      ),
+      contentType: "application/json",
+      status: 200,
+    });
+  });
+  await page.route("**/api/credits", async (route) => {
+    await route.fulfill({
+      body: JSON.stringify(
+        successEnvelope({
+          availableCredits: 20,
+          plan: "private-beta",
+          reservedCredits: 0,
+          settledCredits: 0,
+          status: "active",
+          updatedAt: "2026-08-02T00:00:00.000Z",
         }),
       ),
       contentType: "application/json",
@@ -341,6 +359,7 @@ test("uses the private real-provider API flow without browser-to-provider calls"
   }
 
   await prepareAuthorizedMix(page);
+  await expect(page.getByText("20 · 0")).toBeVisible();
   await page.getByRole("button", { name: "Securely upload audio" }).click();
   await expect(page.getByText("Private upload confirmed.", { exact: false })).toBeVisible();
   expect(directUploadSeen).toBe(true);

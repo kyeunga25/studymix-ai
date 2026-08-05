@@ -21,10 +21,10 @@ export const legalDocumentVersionSchema = z
   .regex(/^20\d{2}-\d{2}-\d{2}(?:\.\d+)?$/, "Use a dated legal document version.");
 
 export const currentLegalDocumentVersions = {
-  "acceptable-use": "2026-07-24",
-  "ai-output-notice": "2026-07-24",
-  "privacy-notice": "2026-07-24",
-  "terms-of-use": "2026-07-24",
+  "acceptable-use": "2026-08-05",
+  "ai-output-notice": "2026-08-05",
+  "privacy-notice": "2026-08-05",
+  "terms-of-use": "2026-08-05",
 } as const satisfies Record<LegalDocumentId, string>;
 
 export const currentLegalAcceptanceDocuments = [

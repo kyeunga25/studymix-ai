@@ -3,7 +3,12 @@ import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { app } from "./index";
-import { createJobIdempotently, createOutput, recordCurrentLegalAcceptances } from "./repositories";
+import {
+  createJobIdempotently,
+  createOutput,
+  grantPrivateBetaCredits,
+  recordCurrentLegalAcceptances,
+} from "./repositories";
 
 type CreatedUpload = {
   expiresAt: string;
@@ -24,6 +29,8 @@ const downloadEnvelopeSchema = z.object({ data: z.object({ downloadUrl: z.string
 
 async function resetDatabase(): Promise<void> {
   await env.DB.prepare("DELETE FROM legal_acceptances").run();
+  await env.DB.prepare("DELETE FROM credit_ledger").run();
+  await env.DB.prepare("DELETE FROM owner_entitlements").run();
   await env.DB.prepare("DELETE FROM usage_events").run();
   await env.DB.prepare("DELETE FROM rights_declarations").run();
   await env.DB.prepare("DELETE FROM outputs").run();
@@ -186,6 +193,13 @@ describe("private R2 transfer boundary", () => {
       throw new Error("Test owner was not created.");
     }
     await recordCurrentLegalAcceptances(env.DB, owner.id, new Date().toISOString());
+    await grantPrivateBetaCredits(env.DB, {
+      createdAt: new Date().toISOString(),
+      eventId: createSecureId("evt"),
+      ownerId: owner.id,
+      quantity: 10,
+      referenceKey: `test:download-grant:${owner.id}`,
+    });
     const job = await createJobIdempotently(env.DB, {
       createdAt: new Date().toISOString(),
       expiresAt: new Date(Date.now() + 86_400_000).toISOString(),

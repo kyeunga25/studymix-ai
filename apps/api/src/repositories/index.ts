@@ -1,4 +1,5 @@
 export * from "./errors";
+export * from "./credit-repository";
 export * from "./generation-repository";
 export * from "./job-repository";
 export * from "./legal-acceptance-repository";

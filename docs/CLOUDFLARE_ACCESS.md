@@ -1,5 +1,9 @@
 # Cloudflare private-beta deployment
 
+> Use only placeholders in this public document. Keep every account, hostname, identity, resource,
+> runtime value and secret in Cloudflare protected settings or ignored local files, and complete
+> [`PUBLICATION_SAFETY.md`](PUBLICATION_SAFETY.md) before any GitHub publication.
+
 The product overview and legal notices may be public during the closed beta. The application workspace
 and all private APIs must remain unavailable to anyone outside the tester allowlist. The Worker fails
 closed on protected paths when the Access configuration is absent or still contains repository
@@ -73,6 +77,12 @@ The server-side mock generation path requires both the private `AUDIO_BUCKET` bi
 unless the same isolated staging environment has passed the private R2 checks above. The mock provider
 creates two small synthetic WAV tones, makes no paid request, and does not transmit the uploaded source
 to an external service.
+
+The same preview must keep `CREDIT_ACCOUNTING_ENABLED=false` until an approved beta owner has an active
+entitlement and a bounded synthetic credit grant in D1. Set a positive `CREDITS_PER_JOB`, then enable the
+flag only for that preview. There is no browser credit-grant route. Verify that job creation and reserve
+commit together, idempotent replay creates no second reserve, Workflow success settles once, and terminal
+failure releases once before using the server-side mock or real provider mode.
 
 For Workers Builds, provide the actual Workflow name only through the protected
 `DEPLOY_WORKFLOW_NAME` build setting. Omitting it leaves the binding out of the generated deployment
@@ -250,7 +260,7 @@ Use Cloudflare Workers Builds for deployment and GitHub Actions for validation. 
 Cloudflare deployment token in the repository or GitHub Actions secrets.
 
 The connection procedure and branch behavior below were rechecked against Cloudflare's current Workers
-Builds documentation on 2026-07-26. An existing Worker is connected through **Settings → Builds →
+Builds documentation on 2026-08-05. An existing Worker is connected through **Settings → Builds →
 Connect**. The Worker selected in the dashboard must be `studymix-ai`, matching the fixed name in both
 the checked-in and generated Wrangler configuration.
 
@@ -260,7 +270,14 @@ the checked-in and generated Wrangler configuration.
 3. Use repository root `/`, build command `pnpm build:web`, deploy command
    `pnpm --filter @studymix/api deploy:cloudflare`, and preview command
    `pnpm --filter @studymix/api preview:cloudflare`.
-4. Add `DEPLOY_D1_NAME` and `DEPLOY_D1_ID` as protected build settings in Cloudflare. The Worker name is
+4. Review the **API token** selected for Workers Builds before the first build. Cloudflare's automatically
+   created token includes edit access for Workers Scripts, KV, R2, and Workers Routes on every zone in
+   the account. Prefer an operator-created user token whose permissions and resource scope are limited to
+   this Worker and its approved deployment resources. If the required permissions cannot be scoped
+   acceptably, isolate the Worker in a dedicated account or zone, or stop automatic deployment rather
+   than granting the build access to unrelated resources. Never copy the token into the repository,
+   GitHub Actions, build variables, documentation, or logs.
+5. Add `DEPLOY_D1_NAME` and `DEPLOY_D1_ID` as protected build settings in Cloudflare. The Worker name is
    fixed in code and must not be added as a configurable build setting. Add `DEPLOY_R2_BUCKET`, `DEPLOY_WORKFLOW_NAME`, and
    `DEPLOY_RATE_LIMIT_NAMESPACE_ID` only to an approved private staging build; omitting a setting leaves
    that binding out of the generated deployment config. Their values must never be committed or printed
@@ -270,9 +287,10 @@ the checked-in and generated Wrangler configuration.
    preview upload, migration checks, and deployment verification must all use that same file. Every file
    still targets `studymix-ai`; use staging resource files only with `preview:cloudflare`, never with the
    production deploy command.
-5. Keep `APP_ENV`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `LEGAL_CONTACT_EMAIL`, `R2_ACCOUNT_ID`,
+6. Keep `APP_ENV`, `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `LEGAL_CONTACT_EMAIL`, `R2_ACCOUNT_ID`,
    `R2_BUCKET_NAME`, the R2 limits/TTLs, `R2_TRANSFER_ENABLED=false`,
-   `JOB_WORKFLOW_ENABLED=false`, `RETENTION_CLEANUP_ENABLED=false`,
+   `JOB_WORKFLOW_ENABLED=false`, `CREDIT_ACCOUNTING_ENABLED=false`,
+   `CREDITS_PER_JOB`, `RETENTION_CLEANUP_ENABLED=false`,
    `MAX_ACTIVE_JOBS_PER_OWNER`, `MAX_DAILY_JOBS_PER_OWNER`,
    `ABANDONED_UPLOAD_RETENTION_HOURS`,
    `SOURCE_RETENTION_HOURS`, `FAILED_ARTIFACT_RETENTION_HOURS`, `OUTPUT_RETENTION_HOURS`,
@@ -280,7 +298,7 @@ the checked-in and generated Wrangler configuration.
    `GENERATION_PROVIDER=mock`, and `REAL_GENERATION_ENABLED=false` as Worker runtime variables. Store
    the two R2 S3 credentials only as Worker secrets. The
    generated deployment config uses `keep_vars` and does not redefine them.
-6. Require the GitHub `CI` check before merging to `main`. A merged production commit is then deployed
+7. Require the GitHub `CI` check before merging to `main`. A merged production commit is then deployed
    by Workers Builds; non-production branch uploads do not receive production traffic.
 
 Cloudflare Workers Builds references:

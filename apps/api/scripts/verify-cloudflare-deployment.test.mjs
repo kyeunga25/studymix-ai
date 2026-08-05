@@ -36,6 +36,8 @@ const configuredBindings = [
     text: ["privacy", "deployment-fixture.dev"].join("@"),
   },
   { type: "plain_text", name: "GENERATION_PROVIDER", text: "fal" },
+  { type: "plain_text", name: "CREDIT_ACCOUNTING_ENABLED", text: "true" },
+  { type: "plain_text", name: "CREDITS_PER_JOB", text: "2" },
   { type: "plain_text", name: "R2_TRANSFER_ENABLED", text: "true" },
   { type: "plain_text", name: "JOB_WORKFLOW_ENABLED", text: "true" },
   { type: "plain_text", name: "RETENTION_CLEANUP_ENABLED", text: "true" },
@@ -90,6 +92,8 @@ describe("privacy-safe Cloudflare deployment verification", () => {
       privateMock: true,
       realProvider: true,
     });
+    expect(report.runtime.creditAccountingEnabled).toBe(true);
+    expect(report.runtime.creditCostConfigured).toBe(true);
     const serialized = JSON.stringify(report);
     for (const sensitiveValue of [
       "private-version-id",

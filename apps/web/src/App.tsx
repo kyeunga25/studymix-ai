@@ -4,7 +4,9 @@ import {
   currentRightsDeclarationVersion,
   legalAcceptanceStatusSchema,
   legalDocumentsManifestSchema,
+  type CreditSummary,
   type LegalDocumentId,
+  type LocalAiScenario,
   type PublicJob,
   type PublicUpload,
 } from "@studymix/contracts";
@@ -21,9 +23,11 @@ import { LandingPage } from "./LandingPage";
 import { LoginPage } from "./LoginPage";
 import { PrivateAccessGate } from "./PrivateAccessGate";
 import { loadPrivateSession, type PrivateAccessStatus } from "./auth-session";
+import { getCreditSummary } from "./credit-api";
 import { legalPageContent, legalPathToDocumentId, type Language } from "./legal-content";
 import { JobExperience, isPendingJob } from "./job-experience";
 import {
+  cancelJob,
   createJob,
   deleteJob,
   getJob,
@@ -31,6 +35,7 @@ import {
   JobApiError,
   toJobApiError,
 } from "./job-api";
+import { createLocalSyntheticUpload } from "./local-ai-api";
 import { deleteUpload, uploadAndConfirmAudio } from "./upload-api";
 
 type PresetId = "soft-piano" | "music-box" | "lofi-study";
@@ -105,7 +110,28 @@ const copy = {
       "Audio stays in private R2. Test candidates are synthetic tones created without an external AI provider and remain private.",
     privacyDetailReal:
       "Audio stays in private R2. When you generate, a short-lived source URL is shared with the configured AI provider; validated outputs return to private R2.",
+    credits: "Beta credits",
+    creditsUnavailable: "Credits unavailable",
     logout: "Sign out",
+    localCancelFailed: "The local job could not be cancelled. It may already be complete.",
+    localCreate: "Run local Workflow",
+    localDisabled:
+      "Confirm your rights and accept the current legal documents to prepare the synthetic source.",
+    localPreparing: "Preparing the deterministic synthetic source in local R2…",
+    localPrivacy:
+      "This loopback-only harness uses a generated tone, local D1, local R2, and local Workflow simulation. It never uploads your audio or calls an external AI provider.",
+    localReady:
+      "Ready to prepare a deterministic synthetic source. External AI and real audio remain unused.",
+    localScenario: "Local test scenario",
+    localScenarioFailure: "Terminal failure",
+    localScenarioRecovery: "Timeout recovery",
+    localScenarioSuccess: "Successful result",
+    localSourceDetail: "Generated WAV fixture · no user audio · no external provider",
+    localSourceName: "Deterministic synthetic tone",
+    localSourceTitle: "Local synthetic source",
+    localUpload: "Prepare synthetic source",
+    localUploadSuccess:
+      "Synthetic source confirmed in local R2. You can now run the local Workflow.",
   },
   "zh-HK": {
     languageName: "EN",
@@ -161,7 +187,25 @@ const copy = {
       "音訊只存於私人 R2；測試候選版本是無需外部 AI 供應商的合成音調，並保持私密。",
     privacyDetailReal:
       "音訊只存於私人 R2；生成時會把短效來源連結交給已設定的 AI 供應商，經驗證的輸出會存回私人 R2。",
+    credits: "Beta 額度",
+    creditsUnavailable: "額度暫時不可用",
     logout: "登出",
+    localCancelFailed: "未能取消本機工作；工作可能已經完成。",
+    localCreate: "執行本機 Workflow",
+    localDisabled: "請確認音訊權利並接受現行法律文件，以準備合成來源。",
+    localPreparing: "正在本機 R2 準備固定的合成音訊來源……",
+    localPrivacy:
+      "此功能只限 loopback，使用程式生成音調、本機 D1、本機 R2 及本機 Workflow 模擬；不會上載你的音訊，亦不會呼叫外部 AI 供應商。",
+    localReady: "可準備固定的合成音訊來源；外部 AI 及真實音訊均不會使用。",
+    localScenario: "本機測試情境",
+    localScenarioFailure: "終止失敗",
+    localScenarioRecovery: "逾時後恢復",
+    localScenarioSuccess: "成功結果",
+    localSourceDetail: "程式生成 WAV 測試檔 · 不使用者音訊 · 不接駁外部供應商",
+    localSourceName: "固定合成音調",
+    localSourceTitle: "本機合成來源",
+    localUpload: "準備合成來源",
+    localUploadSuccess: "合成來源已在本機 R2 確認；現可執行本機 Workflow。",
   },
 } satisfies Record<Language, Record<string, string>>;
 
@@ -184,6 +228,12 @@ const legalAcceptanceEnvelopeSchema = apiEnvelopeSchema(legalAcceptanceStatusSch
 const legalManifestEnvelopeSchema = apiEnvelopeSchema(legalDocumentsManifestSchema);
 const mockApiEnabled = import.meta.env.DEV;
 const maxJobPollAttempts = 150;
+const localSyntheticFilename = "studymix-synthetic-tone.wav";
+const localAiScenarios: readonly LocalAiScenario[] = [
+  "success",
+  "terminal-failure",
+  "timeout-recovery",
+];
 
 const presets: Preset[] = [
   {
@@ -250,16 +300,22 @@ function PrivateApp() {
   const [notice, setNotice] = useState<string | null>(null);
   const [activeJob, setActiveJob] = useState<PublicJob | null>(null);
   const [jobError, setJobError] = useState<JobApiError | null>(null);
+  const [jobCancellationFailed, setJobCancellationFailed] = useState(false);
   const [jobDeletionFailed, setJobDeletionFailed] = useState(false);
   const [candidateSources, setCandidateSources] = useState<readonly [string, string] | null>(null);
   const [downloadRetryVersion, setDownloadRetryVersion] = useState(0);
   const [jobPollAttempt, setJobPollAttempt] = useState(0);
   const [mockGenerationEnabled, setMockGenerationEnabled] = useState(false);
+  const [localAiHarnessEnabled, setLocalAiHarnessEnabled] = useState(false);
+  const [localAiScenario, setLocalAiScenario] = useState<LocalAiScenario>("success");
+  const [creditAccountingEnabled, setCreditAccountingEnabled] = useState(false);
+  const [creditSummary, setCreditSummary] = useState<CreditSummary | null>(null);
   const [realGenerationEnabled, setRealGenerationEnabled] = useState(false);
   const [privateAudioUploadEnabled, setPrivateAudioUploadEnabled] = useState(false);
   const [retentionCleanupEnabled, setRetentionCleanupEnabled] = useState(false);
   const [confirmedUpload, setConfirmedUpload] = useState<PublicUpload | null>(null);
   const jobIdempotencyKey = useRef<string | null>(null);
+  const localSourceIdempotencyKey = useRef<string | null>(null);
   const strings = copy[language];
   const selectedPresetName =
     presets.find((item) => item.id === selectedPreset)?.name[language] ?? "Soft Piano";
@@ -270,9 +326,17 @@ function PrivateApp() {
         ? "real"
         : "mock";
   const canGenerate =
-    selectedFile !== null && rightsAccepted && legalAccepted && confirmedUpload === null;
+    (localAiHarnessEnabled || selectedFile !== null) &&
+    rightsAccepted &&
+    legalAccepted &&
+    confirmedUpload === null;
   const canStartPrivateGeneration =
     confirmedUpload !== null && privateGenerationMode !== null && rightsAccepted && legalAccepted;
+  const activeJobId = activeJob?.jobId;
+  const activeJobStatus = activeJob?.status;
+  const sourceFilename = localAiHarnessEnabled
+    ? localSyntheticFilename
+    : (selectedFile?.name ?? "—");
 
   useEffect(() => {
     document.documentElement.lang = language;
@@ -285,6 +349,8 @@ function PrivateApp() {
       try {
         const result = await loadPrivateSession(controller.signal);
         if (result.status === "verified") {
+          setCreditAccountingEnabled(result.session.capabilities.creditAccounting);
+          setLocalAiHarnessEnabled(result.session.capabilities.localAiHarness);
           setMockGenerationEnabled(result.session.capabilities.mockGeneration);
           setRealGenerationEnabled(result.session.capabilities.realGeneration);
           setPrivateAudioUploadEnabled(result.session.capabilities.privateAudioUpload);
@@ -302,8 +368,21 @@ function PrivateApp() {
     return () => controller.abort();
   }, [accessRetryVersion]);
 
-  const activeJobId = activeJob?.jobId;
-  const activeJobStatus = activeJob?.status;
+  useEffect(() => {
+    if (accessStatus !== "verified" || !creditAccountingEnabled) {
+      setCreditSummary(null);
+      return;
+    }
+    const controller = new AbortController();
+    void getCreditSummary(controller.signal)
+      .then((summary) => setCreditSummary(summary))
+      .catch((error: unknown) => {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setCreditSummary(null);
+        }
+      });
+    return () => controller.abort();
+  }, [accessStatus, activeJobStatus, creditAccountingEnabled]);
 
   useEffect(() => {
     if (
@@ -435,6 +514,17 @@ function PrivateApp() {
     setNotice(null);
   };
 
+  const prepareLocalSyntheticSource = async () => {
+    localSourceIdempotencyKey.current ??= `ui-local-source:${crypto.randomUUID()}`;
+    const upload = await createLocalSyntheticUpload({
+      fixture: "deterministic-tone-v1",
+      idempotencyKey: localSourceIdempotencyKey.current,
+      scenario: localAiScenario,
+    });
+    setConfirmedUpload(upload);
+    setNotice(strings.localUploadSuccess);
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canGenerate || isSavingAcceptance) {
@@ -458,6 +548,15 @@ function PrivateApp() {
         !parsed.data.data.current
       ) {
         setNotice(strings.legalSaveFailed);
+        return;
+      }
+      if (localAiHarnessEnabled) {
+        setNotice(strings.localPreparing);
+        try {
+          await prepareLocalSyntheticSource();
+        } catch {
+          setNotice(strings.uploadFailed);
+        }
         return;
       }
       if (privateAudioUploadEnabled && selectedFile !== null) {
@@ -521,6 +620,7 @@ function PrivateApp() {
       setRightsAccepted(false);
       setNotice(null);
       jobIdempotencyKey.current = null;
+      localSourceIdempotencyKey.current = null;
     } catch {
       setNotice(strings.deleteFailed);
     } finally {
@@ -568,9 +668,33 @@ function PrivateApp() {
     }
   };
 
+  const handleCancelJob = async () => {
+    if (
+      !localAiHarnessEnabled ||
+      activeJob === null ||
+      !isPendingJob(activeJob.status) ||
+      isSavingAcceptance
+    ) {
+      return;
+    }
+    setIsSavingAcceptance(true);
+    setJobCancellationFailed(false);
+    try {
+      const job = await cancelJob(activeJob.jobId);
+      setActiveJob(job);
+      setJobError(null);
+      setJobPollAttempt(0);
+    } catch {
+      setJobCancellationFailed(true);
+    } finally {
+      setIsSavingAcceptance(false);
+    }
+  };
+
   const handleStartOver = () => {
     setActiveJob(null);
     setJobError(null);
+    setJobCancellationFailed(false);
     setJobDeletionFailed(false);
     setCandidateSources(null);
     setSelectedFile(null);
@@ -581,6 +705,7 @@ function PrivateApp() {
     setDownloadRetryVersion(0);
     setJobPollAttempt(0);
     jobIdempotencyKey.current = null;
+    localSourceIdempotencyKey.current = null;
   };
 
   if (accessStatus !== "verified") {
@@ -606,6 +731,16 @@ function PrivateApp() {
           <span>StudyMix AI</span>
         </a>
         <div className="header-actions">
+          {creditAccountingEnabled ? (
+            <div className="credit-status" aria-live="polite">
+              <span>{strings.credits}</span>
+              <strong>
+                {creditSummary === null
+                  ? strings.creditsUnavailable
+                  : `${creditSummary.availableCredits.toString()} · ${creditSummary.reservedCredits.toString()}`}
+              </strong>
+            </div>
+          ) : null}
           <button
             className="language-switch"
             type="button"
@@ -628,13 +763,16 @@ function PrivateApp() {
         {accessStatus === "verified" ? (
           activeJob !== null || jobError !== null ? (
             <JobExperience
+              canCancel={localAiHarnessEnabled && isPendingJob(activeJob?.status ?? "cancelled")}
               candidateSources={candidateSources}
+              cancellationError={jobCancellationFailed ? strings.localCancelFailed : null}
               error={jobError}
               deletionError={jobDeletionFailed ? strings.deleteJobFailed : null}
-              filename={selectedFile?.name ?? "—"}
+              filename={sourceFilename}
               isRetrying={isSavingAcceptance}
               job={activeJob}
               language={language}
+              onCancel={() => void handleCancelJob()}
               onDelete={() => void handleDeleteJob()}
               presetName={selectedPresetName}
               onRetry={() => void handleRetry()}
@@ -643,14 +781,28 @@ function PrivateApp() {
           ) : (
             <>
               <form className="mix-workspace" onSubmit={(event) => void handleSubmit(event)}>
-                <UploadPanel
-                  language={language}
-                  privateAudioUploadEnabled={privateAudioUploadEnabled}
-                  retentionCleanupEnabled={retentionCleanupEnabled}
-                  selectedFile={selectedFile}
-                  onFileChange={handleFileChange}
-                  onDrop={handleDrop}
-                />
+                {localAiHarnessEnabled ? (
+                  <LocalSyntheticSourcePanel
+                    disabled={confirmedUpload !== null || isSavingAcceptance}
+                    language={language}
+                    onScenarioChange={(scenario) => {
+                      setLocalAiScenario(scenario);
+                      setNotice(null);
+                      jobIdempotencyKey.current = null;
+                      localSourceIdempotencyKey.current = null;
+                    }}
+                    scenario={localAiScenario}
+                  />
+                ) : (
+                  <UploadPanel
+                    language={language}
+                    privateAudioUploadEnabled={privateAudioUploadEnabled}
+                    retentionCleanupEnabled={retentionCleanupEnabled}
+                    selectedFile={selectedFile}
+                    onFileChange={handleFileChange}
+                    onDrop={handleDrop}
+                  />
+                )}
 
                 <section className="setup-panel" aria-labelledby="page-title">
                   <div className="intro">
@@ -674,6 +826,7 @@ function PrivateApp() {
                             onChange={() => {
                               setSelectedPreset(item.id);
                               setNotice(null);
+                              jobIdempotencyKey.current = null;
                             }}
                           />
                           <span className="preset-icon" aria-hidden="true">
@@ -732,7 +885,7 @@ function PrivateApp() {
                   <div className="selection-summary">
                     <strong className="summary-title">{strings.summary}</strong>
                     <SummaryRow icon={<FileIcon />} label={strings.file}>
-                      {selectedFile?.name ?? "—"}
+                      {sourceFilename}
                     </SummaryRow>
                     <SummaryRow icon={<SlidersIcon />} label={strings.preset}>
                       {selectedPresetName}
@@ -749,7 +902,13 @@ function PrivateApp() {
                       disabled={!canGenerate || isSavingAcceptance}
                     >
                       <SparkleIcon />
-                      <span>{privateAudioUploadEnabled ? strings.upload : strings.generate}</span>
+                      <span>
+                        {localAiHarnessEnabled
+                          ? strings.localUpload
+                          : privateAudioUploadEnabled
+                            ? strings.upload
+                            : strings.generate}
+                      </span>
                     </button>
                   ) : privateGenerationMode !== null ? (
                     <button
@@ -760,7 +919,11 @@ function PrivateApp() {
                     >
                       <SparkleIcon />
                       <span>
-                        {privateGenerationMode === "real" ? strings.createReal : strings.createMock}
+                        {localAiHarnessEnabled
+                          ? strings.localCreate
+                          : privateGenerationMode === "real"
+                            ? strings.createReal
+                            : strings.createMock}
                       </span>
                     </button>
                   ) : null}
@@ -769,19 +932,25 @@ function PrivateApp() {
                     aria-live="polite"
                   >
                     {notice ??
-                      (confirmedUpload !== null
-                        ? privateGenerationMode === "real"
-                          ? strings.uploadSuccessReal
-                          : privateGenerationMode === "mock"
-                            ? strings.uploadSuccessMock
-                            : strings.uploadSuccess
-                        : canGenerate
-                          ? privateAudioUploadEnabled
-                            ? privateGenerationMode === "real"
-                              ? strings.readyUploadReal
-                              : strings.readyUpload
-                            : strings.ready
-                          : strings.disabled)}
+                      (localAiHarnessEnabled
+                        ? confirmedUpload !== null
+                          ? strings.localUploadSuccess
+                          : canGenerate
+                            ? strings.localReady
+                            : strings.localDisabled
+                        : confirmedUpload !== null
+                          ? privateGenerationMode === "real"
+                            ? strings.uploadSuccessReal
+                            : privateGenerationMode === "mock"
+                              ? strings.uploadSuccessMock
+                              : strings.uploadSuccess
+                          : canGenerate
+                            ? privateAudioUploadEnabled
+                              ? privateGenerationMode === "real"
+                                ? strings.readyUploadReal
+                                : strings.readyUpload
+                              : strings.ready
+                            : strings.disabled)}
                   </p>
                   {confirmedUpload !== null ? (
                     <button
@@ -801,13 +970,15 @@ function PrivateApp() {
                 <div>
                   <strong>{strings.privacy}</strong>
                   <span>
-                    {privateAudioUploadEnabled
-                      ? privateGenerationMode === "real"
-                        ? strings.privacyDetailReal
-                        : privateGenerationMode === "mock"
-                          ? strings.privacyDetailMock
-                          : strings.privacyDetailActive
-                      : strings.privacyDetail}
+                    {localAiHarnessEnabled
+                      ? strings.localPrivacy
+                      : privateAudioUploadEnabled
+                        ? privateGenerationMode === "real"
+                          ? strings.privacyDetailReal
+                          : privateGenerationMode === "mock"
+                            ? strings.privacyDetailMock
+                            : strings.privacyDetailActive
+                        : strings.privacyDetail}
                   </span>
                 </div>
               </aside>
@@ -917,13 +1088,14 @@ function LegalDocumentPage({
           contactPending:
             "The production contact is not configured. Public launch and real generation are blocked.",
           draft:
-            "Pre-release legal draft · Audio upload and external AI generation are disabled · Hong Kong legal review is required before public launch",
+            "Pre-release legal draft · Audio upload and external AI generation are disabled · Target-market legal review is required before public launch",
           effective: "Document version",
         }
       : {
           contact: "私隱、權利、保安及法律要求聯絡方法",
           contactPending: "正式聯絡方法尚未設定；公開推出及真實生成會維持關閉。",
-          draft: "推出前法律草案 · 音訊上載及外部 AI 生成尚未啟用 · 公開推出前須完成香港法律審閱",
+          draft:
+            "推出前法律草案 · 音訊上載及外部 AI 生成尚未啟用 · 公開推出前須完成目標市場法律審閱",
           effective: "文件版本",
         };
 
@@ -1080,6 +1252,68 @@ function UploadPanel({
               : strings.retentionActive
             : strings.retention}
         </span>
+      </div>
+    </section>
+  );
+}
+
+function LocalSyntheticSourcePanel({
+  disabled,
+  language,
+  onScenarioChange,
+  scenario,
+}: {
+  disabled: boolean;
+  language: Language;
+  onScenarioChange: (scenario: LocalAiScenario) => void;
+  scenario: LocalAiScenario;
+}) {
+  const strings = copy[language];
+  const scenarioLabels: Record<LocalAiScenario, string> = {
+    success: strings.localScenarioSuccess,
+    "terminal-failure": strings.localScenarioFailure,
+    "timeout-recovery": strings.localScenarioRecovery,
+  };
+
+  return (
+    <section className="upload-panel local-source-panel" aria-labelledby="local-source-title">
+      <div className="panel-heading">
+        <h2 id="local-source-title">{strings.localSourceTitle}</h2>
+        <p>{strings.localSourceDetail}</p>
+      </div>
+
+      <div className="local-source-card" role="note">
+        <span className="upload-orbit" aria-hidden="true">
+          <WaveFileIcon />
+        </span>
+        <div>
+          <strong>{strings.localSourceName}</strong>
+          <span>{localSyntheticFilename}</span>
+        </div>
+        <span className="local-only-badge">LOCAL</span>
+      </div>
+
+      <fieldset className="local-scenario-fieldset" disabled={disabled}>
+        <legend>{strings.localScenario}</legend>
+        <div className="local-scenario-options">
+          {localAiScenarios.map((item) => (
+            <label key={item} className={scenario === item ? "is-selected" : ""}>
+              <input
+                checked={scenario === item}
+                name="local-ai-scenario"
+                type="radio"
+                value={item}
+                onChange={() => onScenarioChange(item)}
+              />
+              <span>{scenarioLabels[item]}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <div className="retention-note">
+        <ShieldIcon />
+        <span>{strings.localPrivacy}</span>
       </div>
     </section>
   );

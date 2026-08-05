@@ -34,7 +34,7 @@ export function resolveLegalDocumentsManifest(
 
   return legalDocumentsManifestSchema.parse({
     contactEmail: parsed.data.LEGAL_CONTACT_EMAIL.toLowerCase(),
-    effectiveAt: "2026-07-24T00:00:00.000+08:00",
+    effectiveAt: "2026-08-05T00:00:00.000Z",
     documents: [
       {
         documentId: "terms-of-use",
