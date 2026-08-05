@@ -1,5 +1,6 @@
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
 import { z } from "zod";
+import { isLoopbackRequest } from "../local-runtime";
 
 const ACCESS_TOKEN_HEADER = "cf-access-jwt-assertion";
 const DEVELOPMENT_ISSUER = "urn:studymix:development";
@@ -112,16 +113,16 @@ async function createOwnerContext(
   };
 }
 
-function isDevelopmentEnvironment(value: string): boolean {
-  return value === "development" || value === "local" || value === "test";
-}
-
 export async function resolveOwnerContext(
   request: Request,
   environment: AuthEnvironment,
   verifier: AccessJwtVerifier = verifyAccessJwt,
 ): Promise<OwnerContext> {
-  if (isDevelopmentEnvironment(environment.APP_ENV)) {
+  if (
+    environment.APP_ENV === "test" ||
+    ((environment.APP_ENV === "development" || environment.APP_ENV === "local") &&
+      isLoopbackRequest(request))
+  ) {
     const parsedSubject = developmentSubjectSchema.safeParse(environment.DEV_AUTH_SUBJECT);
     if (!parsedSubject.success) {
       throw new AuthenticationError("AUTH_CONFIGURATION_INVALID", 503);

@@ -1,5 +1,10 @@
 # Product Requirements Document
 
+> **Public-safe scope:** This document describes the repository-level product contract, not a live
+> deployment, customer dataset or account-specific architecture. Do not add production identifiers,
+> real records, database exports, private hostnames or operational evidence. See
+> [`PUBLICATION_SAFETY.md`](PUBLICATION_SAFETY.md).
+
 ## 1. Product summary
 
 StudyMix AI is a cloud-native audio restyling SaaS. It allows a user to upload an audio recording that they own or are authorized to process, then generate study-friendly instrumental reinterpretations in a consistent style.

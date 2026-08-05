@@ -2,6 +2,9 @@ import { audioContentTypeSchema } from "@studymix/contracts";
 import { createSecureId } from "@studymix/core";
 import { resolvePreset } from "@studymix/presets";
 import {
+  DeterministicSyntheticAudioAdapter,
+  audioOrchestrationContextSchema,
+  createPseudonymousCorrelationId,
   createMusicGenerationProvider,
   decodeMockAudioOutput,
   type GenerationProviderResult,
@@ -21,6 +24,14 @@ import {
   type GenerationWorkflowConfiguration,
   type GenerationWorkflowPayload,
 } from "../job-service";
+import {
+  failLocalAiAttempts,
+  getLocalAiJobPolicy,
+  isLocalAiHarnessEnvironment,
+  recordLocalAiAttemptSubmitted,
+  updateLocalAiAttempt,
+  type LocalAiJobPolicy,
+} from "../local-ai";
 import { ProviderOutputIngestionError, ingestProviderOutput } from "../provider-output-ingestion";
 import {
   createOutput,
@@ -73,6 +84,8 @@ type StoredCandidate = Readonly<{
   seed?: number;
   sizeBytes: number;
 }>;
+
+const localSyntheticAdapter = new DeterministicSyntheticAudioAdapter();
 
 export function ensureFirstProviderSubmissionAttempt(attempt: number): void {
   if (attempt !== 1) {
@@ -147,6 +160,75 @@ async function waitForProviderCompletion({
   throw new NonRetryableError("The provider request exceeded the polling limit.");
 }
 
+async function waitForLocalSyntheticCompletion({
+  candidateIndex,
+  ownerId,
+  policy,
+  providerRequestId,
+  step,
+  db,
+}: {
+  candidateIndex: 0 | 1;
+  db: D1Database;
+  ownerId: string;
+  policy: LocalAiJobPolicy;
+  providerRequestId: string;
+  step: WorkflowStep;
+}): Promise<"cancelled" | "completed"> {
+  for (
+    let pollAttempt = 1;
+    pollAttempt <= policy.policy.maxAttemptsPerCandidate;
+    pollAttempt += 1
+  ) {
+    const status = await step.do(
+      `poll synthetic candidate ${candidateIndex.toString()} attempt ${pollAttempt.toString()}`,
+      stepConfiguration,
+      async () => {
+        const job = await getOwnedJob(db, ownerId, policy.jobId);
+        if (job?.status === "cancelled") {
+          return { state: "cancelled" as const };
+        }
+        if (job?.status !== "generating") {
+          throw new NonRetryableError("The synthetic generation job is unavailable.");
+        }
+        const current = await localSyntheticAdapter.getStatus({
+          attemptId: providerRequestId,
+          pollAttempt,
+          scenario: policy.scenario,
+        });
+        const attempt = await updateLocalAiAttempt(db, {
+          actualCostUnits: current.status === "queued" ? null : current.actualCostUnits,
+          attemptId: providerRequestId,
+          lastPollAttempt: pollAttempt,
+          ownerId,
+          status: current.status === "failed" ? "failed" : "polling",
+          updatedAt: new Date().toISOString(),
+        });
+        if (attempt.status === "cancelled") {
+          return { state: "cancelled" as const };
+        }
+        return { current, state: "polled" as const };
+      },
+    );
+    if (status.state === "cancelled") {
+      return "cancelled";
+    }
+    if (status.current.status === "completed") {
+      return "completed";
+    }
+    if (status.current.status === "failed") {
+      throw new NonRetryableError("The synthetic attempt reached a terminal failure.");
+    }
+    if (pollAttempt < policy.policy.maxAttemptsPerCandidate) {
+      await step.sleep(
+        `wait synthetic candidate ${candidateIndex.toString()} attempt ${pollAttempt.toString()}`,
+        "1 second",
+      );
+    }
+  }
+  throw new NonRetryableError("The synthetic attempt exceeded its polling limit.");
+}
+
 async function storeMockOutput(
   bucket: R2Bucket,
   candidateIndex: 0 | 1,
@@ -176,6 +258,44 @@ async function storeMockOutput(
     contentType: audio.contentType,
     durationSeconds: audio.durationSeconds,
     providerRequestId: providerResult.providerRequestId,
+    sizeBytes: audio.body.byteLength,
+  };
+}
+
+async function storeLocalSyntheticOutput(
+  bucket: R2Bucket,
+  candidate: PreparedCandidate,
+  policy: LocalAiJobPolicy,
+): Promise<StoredCandidate> {
+  const audio = await localSyntheticAdapter.getOutput({
+    attemptId: candidate.providerRequestId,
+    candidateIndex: candidate.candidateIndex,
+    policy: policy.policy,
+  });
+  const created = await bucket.put(candidate.output.objectKey, audio.body, {
+    customMetadata: {
+      orchestrationAttempt: candidate.providerRequestId,
+      orchestrationVersion: "synthetic-v1",
+    },
+    httpMetadata: { contentType: audio.contentType },
+    onlyIf: { etagDoesNotMatch: "*" },
+  });
+  const object = created ?? (await bucket.head(candidate.output.objectKey));
+  if (
+    object === null ||
+    object.size !== audio.body.byteLength ||
+    object.size > policy.policy.maxOutputBytes ||
+    object.httpMetadata?.contentType !== audio.contentType ||
+    object.customMetadata?.orchestrationAttempt !== candidate.providerRequestId ||
+    object.customMetadata?.orchestrationVersion !== "synthetic-v1" ||
+    audio.durationSeconds > policy.policy.maxOutputDurationSeconds
+  ) {
+    throw new NonRetryableError("The synthetic output could not be verified.");
+  }
+  return {
+    contentType: audio.contentType,
+    durationSeconds: audio.durationSeconds,
+    providerRequestId: candidate.providerRequestId,
     sizeBytes: audio.body.byteLength,
   };
 }
@@ -220,8 +340,15 @@ async function storeCandidateOutput(
   bucket: R2Bucket,
   candidate: PreparedCandidate,
   configuration: GenerationWorkflowConfiguration,
-  provider: MusicGenerationProvider,
+  localPolicy: LocalAiJobPolicy | null,
+  provider: MusicGenerationProvider | null,
 ): Promise<StoredCandidate> {
+  if (localPolicy !== null) {
+    return await storeLocalSyntheticOutput(bucket, candidate, localPolicy);
+  }
+  if (provider === null) {
+    throw new NonRetryableError("The generation adapter is unavailable.");
+  }
   const providerResult = await provider.getResult(candidate.providerRequestId);
   if (configuration.provider === "mock") {
     return await storeMockOutput(
@@ -238,7 +365,7 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationWorkfl
   override async run(
     event: Readonly<WorkflowEvent<GenerationWorkflowPayload>>,
     step: WorkflowStep,
-  ): Promise<{ jobId: string; status: "completed" | "failed" }> {
+  ): Promise<{ jobId: string; status: "cancelled" | "completed" | "failed" }> {
     const parsedPayload = generationWorkflowPayloadSchema.safeParse(event.payload);
     if (!parsedPayload.success) {
       throw new NonRetryableError("Generation Workflow payload is invalid.");
@@ -268,7 +395,21 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationWorkfl
       if (configuration.provider !== validatingJob.provider) {
         throw new NonRetryableError("The pinned generation provider is unavailable.");
       }
-      const provider = createProvider(configuration);
+      const localPolicy =
+        configuration.provider === "mock" && isLocalAiHarnessEnvironment(this.env)
+          ? await step.do("load local orchestration policy", stepConfiguration, async () => {
+              const resolved = await getLocalAiJobPolicy(
+                this.env.DB,
+                payload.ownerId,
+                payload.jobId,
+              );
+              if (resolved === null && this.env.APP_ENV === "local") {
+                throw new NonRetryableError("The local orchestration policy is unavailable.");
+              }
+              return resolved;
+            })
+          : null;
+      const provider = localPolicy === null ? createProvider(configuration) : null;
       const preset = await step.do("resolve pinned preset", stepConfiguration, async () => {
         const resolved = resolvePreset(validatingJob.presetId, validatingJob.presetVersion);
         if (resolved === undefined) {
@@ -310,6 +451,35 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationWorkfl
             })
           : null;
 
+      if (localPolicy !== null) {
+        await step.do("verify local synthetic source", stepConfiguration, async () => {
+          const upload = await getOwnedUpload(this.env.DB, payload.ownerId, validatingJob.uploadId);
+          if (
+            upload === null ||
+            upload.status !== "confirmed" ||
+            upload.id !== localPolicy.source.uploadId ||
+            upload.sizeBytes !== localPolicy.source.sizeBytes ||
+            upload.declaredContentType !== localPolicy.source.contentType ||
+            localPolicy.source.durationSeconds > localPolicy.policy.maxInputDurationSeconds ||
+            new Date(upload.expiresAt).getTime() <= Date.now()
+          ) {
+            throw new NonRetryableError("The validated local source is unavailable.");
+          }
+          const object = await this.env.AUDIO_BUCKET.head(upload.objectKey);
+          if (
+            object === null ||
+            object.size !== localPolicy.source.sizeBytes ||
+            object.httpMetadata?.contentType !== localPolicy.source.contentType ||
+            object.customMetadata?.durationSeconds !==
+              localPolicy.source.durationSeconds.toString() ||
+            object.customMetadata?.localFixture !== "deterministic-tone-v1"
+          ) {
+            throw new NonRetryableError("The local source metadata could not be verified.");
+          }
+          return { verified: true };
+        });
+      }
+
       await step.do(
         "mark job queued",
         stepConfiguration,
@@ -347,6 +517,20 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationWorkfl
 
       const preparedCandidates: PreparedCandidate[] = [];
       for (const candidateIndex of [0, 1] as const) {
+        const activeStatus = await step.do(
+          `confirm active job for candidate ${candidateIndex.toString()}`,
+          stepConfiguration,
+          async () => {
+            const current = await getOwnedJob(this.env.DB, payload.ownerId, payload.jobId);
+            return current?.status ?? "missing";
+          },
+        );
+        if (activeStatus === "cancelled") {
+          return { jobId: payload.jobId, status: "cancelled" };
+        }
+        if (activeStatus !== "generating") {
+          throw new NonRetryableError("The generation job is no longer active.");
+        }
         const resources = await step.do(
           `prepare candidate ${candidateIndex.toString()}`,
           stepConfiguration,
@@ -376,7 +560,39 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationWorkfl
           `submit candidate ${candidateIndex.toString()}`,
           submissionStepConfiguration,
           async (context) => {
+            if (localPolicy !== null) {
+              const orchestrationContext = audioOrchestrationContextSchema.parse({
+                candidateIndex,
+                correlationId: await createPseudonymousCorrelationId(
+                  `${payload.jobId}:candidate:${candidateIndex.toString()}`,
+                ),
+                policy: localPolicy.policy,
+                preset: { id: preset.id, version: preset.version },
+                scenario: localPolicy.scenario,
+                source: {
+                  contentType: localPolicy.source.contentType,
+                  durationSeconds: localPolicy.source.durationSeconds,
+                  sizeBytes: localPolicy.source.sizeBytes,
+                },
+              });
+              const receipt = await localSyntheticAdapter.submit(orchestrationContext);
+              await recordLocalAiAttemptSubmitted(this.env.DB, {
+                attemptId: receipt.attemptId,
+                candidateIndex,
+                createdAt: new Date().toISOString(),
+                estimatedCostUnits: receipt.estimatedCostUnits,
+                jobId: payload.jobId,
+                ownerId: payload.ownerId,
+              });
+              return {
+                providerRequestId: receipt.attemptId,
+                status: receipt.status,
+              };
+            }
             ensureFirstProviderSubmissionAttempt(context.attempt);
+            if (provider === null) {
+              throw new NonRetryableError("The generation adapter is unavailable.");
+            }
             let sourceAudioUrl = "https://mock.invalid/private-source";
             if (configuration.provider === "fal") {
               if (privateSource === null) {
@@ -418,13 +634,30 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationWorkfl
             }),
         );
 
-        await waitForProviderCompletion({
-          candidateIndex,
-          configuration,
-          provider,
-          providerRequestId: submission.providerRequestId,
-          step,
-        });
+        if (localPolicy === null) {
+          if (provider === null) {
+            throw new NonRetryableError("The generation adapter is unavailable.");
+          }
+          await waitForProviderCompletion({
+            candidateIndex,
+            configuration,
+            provider,
+            providerRequestId: submission.providerRequestId,
+            step,
+          });
+        } else {
+          const completion = await waitForLocalSyntheticCompletion({
+            candidateIndex,
+            db: this.env.DB,
+            ownerId: payload.ownerId,
+            policy: localPolicy,
+            providerRequestId: submission.providerRequestId,
+            step,
+          });
+          if (completion === "cancelled") {
+            return { jobId: payload.jobId, status: "cancelled" };
+          }
+        }
         preparedCandidates.push({
           candidateIndex,
           output: resources.output,
@@ -455,20 +688,37 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationWorkfl
           `store candidate ${candidate.candidateIndex.toString()}`,
           outputStepConfiguration,
           async () =>
-            await storeCandidateOutput(this.env.AUDIO_BUCKET, candidate, configuration, provider),
+            await storeCandidateOutput(
+              this.env.AUDIO_BUCKET,
+              candidate,
+              configuration,
+              localPolicy,
+              provider,
+            ),
         );
         await step.do(
           `complete candidate ${candidate.candidateIndex.toString()} provider request`,
           stepConfiguration,
-          async () =>
-            await markOwnedProviderRequestCompleted(this.env.DB, {
+          async () => {
+            if (localPolicy !== null) {
+              await updateLocalAiAttempt(this.env.DB, {
+                actualCostUnits: 1,
+                attemptId: stored.providerRequestId,
+                lastPollAttempt: 0,
+                ownerId: payload.ownerId,
+                status: "completed",
+                updatedAt: new Date().toISOString(),
+              });
+            }
+            return await markOwnedProviderRequestCompleted(this.env.DB, {
               candidateIndex: candidate.candidateIndex,
               completedAt: new Date().toISOString(),
               jobId: payload.jobId,
               ownerId: payload.ownerId,
               providerRequestId: stored.providerRequestId,
               ...(stored.seed === undefined ? {} : { seed: stored.seed }),
-            }),
+            });
+          },
         );
         await step.do(
           `mark candidate ${candidate.candidateIndex.toString()} ready`,
@@ -490,9 +740,11 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationWorkfl
           createdAt: new Date().toISOString(),
           estimatedCostUsd: configuration.provider === "mock" ? 0 : null,
           eventType:
-            configuration.provider === "mock"
-              ? "mock_generation_candidates"
-              : "fal_generation_candidates",
+            localPolicy !== null
+              ? "synthetic_orchestration_candidates"
+              : configuration.provider === "mock"
+                ? "mock_generation_candidates"
+                : "fal_generation_candidates",
           id: `evt_${payload.jobId.slice(4)}`,
           jobId: payload.jobId,
           ownerId: payload.ownerId,
@@ -511,6 +763,13 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationWorkfl
       });
       return { jobId: payload.jobId, status: "completed" };
     } catch {
+      if (isLocalAiHarnessEnvironment(this.env)) {
+        await step.do("record local attempt failure", stepConfiguration, async () => {
+          const failedAt = new Date().toISOString();
+          await failLocalAiAttempts(this.env.DB, payload.ownerId, payload.jobId, failedAt);
+          return { recorded: true };
+        });
+      }
       await step.do("mark job failed", stepConfiguration, async () => {
         const current = await getOwnedJob(this.env.DB, payload.ownerId, payload.jobId);
         if (current === null) {
@@ -537,6 +796,10 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationWorkfl
             return current;
         }
       });
+      const current = await getOwnedJob(this.env.DB, payload.ownerId, payload.jobId);
+      if (current?.status === "cancelled") {
+        return { jobId: payload.jobId, status: "cancelled" };
+      }
       return { jobId: payload.jobId, status: "failed" };
     }
   }

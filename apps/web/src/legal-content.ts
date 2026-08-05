@@ -107,10 +107,10 @@ export const legalPageContent: Record<LegalDocumentId, LegalPageContent> = {
         },
         paragraphs: {
           en: [
-            "The beta is provided on an as-available basis. To the maximum extent permitted by law, no implied guarantee is given for uninterrupted availability, fitness for a particular purpose, output accuracy, or non-infringement. The operator is not responsible for indirect or consequential loss that was not reasonably foreseeable. Nothing excludes liability that applicable law does not permit to be excluded or limited. A Hong Kong lawyer must review these limits before public launch.",
+            "The beta is provided on an as-available basis. To the maximum extent permitted by law, no implied guarantee is given for uninterrupted availability, fitness for a particular purpose, output accuracy, or non-infringement. The operator is not responsible for indirect or consequential loss that was not reasonably foreseeable. Nothing excludes liability that applicable law does not permit to be excluded or limited. Qualified legal counsel familiar with the markets where the service will be offered must review these limits before public launch.",
           ],
           "zh-HK": [
-            "測試服務按可用情況提供。在法律允許的最大範圍內，不就不間斷可用性、特定用途適用性、輸出準確性或不侵權作出默示保證。營運者不對並非合理可預見的間接或後果性損失負責。本條款不排除或限制適用法律不容排除或限制的責任。公開推出前，必須由香港律師審閱這些限制。",
+            "測試服務按可用情況提供。在法律允許的最大範圍內，不就不間斷可用性、特定用途適用性、輸出準確性或不侵權作出默示保證。營運者不對並非合理可預見的間接或後果性損失負責。本條款不排除或限制適用法律不容排除或限制的責任。公開推出前，必須由熟悉服務目標市場的合資格法律專業人士審閱這些限制。",
           ],
         },
       },
@@ -118,10 +118,10 @@ export const legalPageContent: Record<LegalDocumentId, LegalPageContent> = {
         heading: { en: "8. Law, changes, and records", "zh-HK": "8. 法律、更新及紀錄" },
         paragraphs: {
           en: [
-            "These draft terms are governed by Hong Kong law, subject to mandatory rights that apply elsewhere. Material changes receive a new dated version and require fresh acceptance before generation. The service stores the authenticated owner identifier, accepted document versions, and server timestamp as evidence; it does not accept a browser-supplied owner identity or acceptance time.",
+            "These public pre-release draft terms do not yet designate a governing law or dispute forum. The operator must complete those provisions for the markets where the service will be offered before public launch, without limiting mandatory rights under applicable law. Material changes receive a new dated version and require fresh acceptance before generation. The service stores the authenticated owner identifier, accepted document versions, and server timestamp as evidence; it does not accept a browser-supplied owner identity or acceptance time.",
           ],
           "zh-HK": [
-            "本條款草案受香港法律管限，但不影響其他地區適用的強制性權利。重大更新會使用新的日期版本，並在再次生成前要求重新接受。服務會保存經驗證的擁有人識別碼、已接受文件版本及伺服器時間作為證據；不會接受瀏覽器自行提供的擁有人身份或接受時間。",
+            "這份公開推出前草案尚未指定管限法律或爭議處理地。營運者必須在公開推出前按服務目標市場完成相關條文，且不得限制適用法律下的強制性權利。重大更新會使用新的日期版本，並在再次生成前要求重新接受。服務會保存經驗證的擁有人識別碼、已接受文件版本及伺服器時間作為證據；不會接受瀏覽器自行提供的擁有人身份或接受時間。",
           ],
         },
       },
@@ -131,14 +131,14 @@ export const legalPageContent: Record<LegalDocumentId, LegalPageContent> = {
     documentId: "privacy-notice",
     title: { en: "Privacy Notice", "zh-HK": "私隱通知" },
     introduction: {
-      en: "This Personal Information Collection and Privacy Notice explains the authenticated private beta. It distinguishes the current interface from audio and AI processing that remains disabled until the stated safeguards are implemented and verified.",
+      en: "This Privacy Notice explains the authenticated private beta. It distinguishes the current interface from audio and AI processing that remains disabled until the stated safeguards are implemented and verified.",
       "zh-HK":
-        "本收集個人資料聲明及私隱通知說明須登入的私密測試，並清楚區分現有介面與尚未啟用的音訊及 AI 處理；後者只會在指定保障已實作及驗證後啟用。",
+        "本私隱通知說明須登入的私密測試，並清楚區分現有介面與尚未啟用的音訊及 AI 處理；後者只會在指定保障已實作及驗證後啟用。",
     },
     version: currentLegalDocumentVersions["privacy-notice"],
     sections: [
       {
-        heading: { en: "1. Controller and contact", "zh-HK": "1. 資料使用者及聯絡方法" },
+        heading: { en: "1. Controller and contact", "zh-HK": "1. 資料控制者及聯絡方法" },
         paragraphs: {
           en: [
             "The private-beta operator identified in your invitation controls application data. The configured contact address below handles access, correction, deletion, privacy, security, rights, and complaint requests. A formal legal identity and service address remain a public-launch requirement.",
@@ -201,12 +201,12 @@ export const legalPageContent: Record<LegalDocumentId, LegalPageContent> = {
         },
         paragraphs: {
           en: [
-            "Cloudflare processes identity, Worker traffic, D1 metadata, and planned R2 objects as a service provider. Its automatic data placement and location hints do not guarantee a Hong Kong storage location; traffic and data may be processed in other jurisdictions under configured platform and contractual controls.",
+            "Cloudflare processes identity, Worker traffic, D1 metadata, and planned R2 objects as a service provider. Its automatic data placement and location hints do not guarantee storage in any particular country or region; traffic and data may be processed across jurisdictions under configured platform and contractual controls.",
             "fal.ai is the planned initial AI provider, but real processing is disabled. Its published documentation currently describes default request input/output retention and media CDN behavior. StudyMix AI requires no-payload storage where supported, the shortest verified media expiry, restrictive access controls, and a suitable provider agreement before activation. The notice will be updated with the exact verified configuration before audio is sent.",
             "Data is not sold. It may be disclosed where required by law, to protect users and the service, or to vetted service providers under confidentiality, security, deletion, and subprocessor obligations.",
           ],
           "zh-HK": [
-            "Cloudflare 以服務供應商身份處理身份資料、Worker 流量、D1 元數據及計劃中的 R2 物件。其自動資料放置及位置提示不保證資料儲存於香港；在已設定的平台及合約控制下，流量及資料可能在其他司法管轄區處理。",
+            "Cloudflare 以服務供應商身份處理身份資料、Worker 流量、D1 元數據及計劃中的 R2 物件。其自動資料放置及位置提示不保證資料儲存於任何特定國家或地區；在已設定的平台及合約控制下，流量及資料可能跨司法管轄區處理。",
             "fal.ai 是計劃中的首個 AI 供應商，但真實處理仍未啟用。其現行公開文件說明預設要求輸入／輸出保留及媒體 CDN 行為。StudyMix AI 會在啟用前要求在支援時不儲存 payload、採用經驗證的最短媒體到期時間、限制存取，並簽訂合適供應商協議；在音訊傳送前，本通知會更新實際已驗證設定。",
             "資料不會被出售。只有在法律要求、保障用戶及服務，或向受保密、保安、刪除及次處理者義務約束的已審核服務供應商時，才會披露資料。",
           ],
@@ -238,10 +238,10 @@ export const legalPageContent: Record<LegalDocumentId, LegalPageContent> = {
         heading: { en: "8. Your choices and rights", "zh-HK": "8. 你的選擇及權利" },
         paragraphs: {
           en: [
-            "You may request access to and correction of personal data, ask how it was used, request deletion where applicable, withdraw from the beta, or complain through the configured contact. The operator may need to verify the request through the authenticated account and retain narrowly required evidence where law or a live dispute requires it. You may also complain to the Office of the Privacy Commissioner for Personal Data in Hong Kong.",
+            "You may request access to and correction of personal data, ask how it was used, request deletion where applicable, withdraw from the beta, or complain through the configured contact. The operator may need to verify the request through the authenticated account and retain narrowly required evidence where law or a live dispute requires it. You may also contact the competent data-protection authority available under the law that applies to you.",
           ],
           "zh-HK": [
-            "你可透過已設定聯絡方法要求查閱及更正個人資料、查詢使用方式、在適用情況要求刪除、退出測試或提出投訴。營運者可能需要透過已驗證帳戶核實要求，並在法律或現存爭議要求時保留極少量必要證據。你亦可向香港個人資料私隱專員公署投訴。",
+            "你可透過已設定聯絡方法要求查閱及更正個人資料、查詢使用方式、在適用情況要求刪除、退出測試或提出投訴。營運者可能需要透過已驗證帳戶核實要求，並在法律或現存爭議要求時保留極少量必要證據。你亦可按適用於你的法律，向有管轄權的資料保障機構提出投訴。",
           ],
         },
       },

@@ -7,6 +7,9 @@ export default defineConfig({
   plugins: [
     cloudflareTest(async () => {
       const migrations = await readD1Migrations(path.join(import.meta.dirname, "migrations"));
+      const localAiMigrations = await readD1Migrations(
+        path.join(import.meta.dirname, "test", "local-ai-migrations"),
+      );
       return {
         main: path.join(import.meta.dirname, "src/index.ts"),
         miniflare: {
@@ -47,7 +50,7 @@ export default defineConfig({
             RETENTION_CLEANUP_BATCH_SIZE: "50",
             UPLOAD_URL_TTL_SECONDS: "60",
             DOWNLOAD_URL_TTL_SECONDS: "60",
-            TEST_MIGRATIONS: migrations,
+            TEST_MIGRATIONS: [...migrations, ...localAiMigrations],
           },
           compatibilityDate: "2026-07-21",
           compatibilityFlags: ["nodejs_compat"],

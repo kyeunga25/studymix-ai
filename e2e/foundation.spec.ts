@@ -183,7 +183,7 @@ test("renders every versioned legal page and discloses the pre-release blockers"
     await page.goto(path);
     await page.getByRole("button", { name: "EN" }).click();
     await expect(page.getByRole("heading", { name: heading, level: 1 })).toBeVisible();
-    await expect(page.getByText("Document version: 2026-07-24")).toBeVisible();
+    await expect(page.getByText("Document version: 2026-08-05")).toBeVisible();
     await expect(
       page.getByText(/Audio upload and external AI generation are disabled/),
     ).toBeVisible();
@@ -260,6 +260,7 @@ test("uses the private real-provider API flow without browser-to-provider calls"
         successEnvelope({
           capabilities: {
             creditAccounting: true,
+            localAiHarness: false,
             mockGeneration: false,
             privateAudioUpload: true,
             realGeneration: true,

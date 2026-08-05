@@ -9,6 +9,9 @@ const copy = {
   en: {
     aiNotice: "AI output may not preserve every musical detail. Review both candidates carefully.",
     candidate: "Candidate",
+    cancel: "Cancel local job",
+    cancelledStatus: "The local job was cancelled and its customer credits were released.",
+    cancelling: "Cancelling local job…",
     completed: "Completed",
     deletePrivateData: "Delete this private mix",
     deletingPrivateData: "Deleting private audio…",
@@ -39,6 +42,9 @@ const copy = {
   "zh-HK": {
     aiNotice: "AI 輸出未必能保留每個音樂細節，請仔細比較兩個候選版本。",
     candidate: "候選版本",
+    cancel: "取消本機工作",
+    cancelledStatus: "本機工作已取消，相關使用者額度亦已釋放。",
+    cancelling: "正在取消本機工作……",
     completed: "已完成",
     deletePrivateData: "刪除這個私人 Mix",
     deletingPrivateData: "正在刪除私人音訊……",
@@ -102,7 +108,9 @@ export function isTerminalJob(status: JobStatus): boolean {
 }
 
 type JobExperienceProps = {
+  canCancel: boolean;
   candidateSources: readonly [string, string] | null;
+  cancellationError: string | null;
   deletionError: string | null;
   error: JobApiError | null;
   filename: string;
@@ -110,6 +118,7 @@ type JobExperienceProps = {
   job: PublicJob | null;
   language: Language;
   onRetry: () => void;
+  onCancel: () => void;
   onDelete: () => void;
   onStartOver: () => void;
   presetName: string;
@@ -135,7 +144,14 @@ export function JobExperience(props: JobExperienceProps) {
   return <PendingPage {...props} job={props.job} />;
 }
 
-function PendingPage({ job, language }: JobExperienceProps & { job: PublicJob }) {
+function PendingPage({
+  canCancel,
+  cancellationError,
+  isRetrying,
+  job,
+  language,
+  onCancel,
+}: JobExperienceProps & { job: PublicJob }) {
   const strings = copy[language];
   const steps = strings.steps as readonly string[];
   const currentStep = progressStep(job.status);
@@ -166,6 +182,23 @@ function PendingPage({ job, language }: JobExperienceProps & { job: PublicJob })
         ))}
       </ol>
       <JobSummary {...{ job, language }} />
+      {cancellationError === null ? null : (
+        <p className="form-status is-error" role="alert">
+          {cancellationError}
+        </p>
+      )}
+      {canCancel ? (
+        <div className="error-actions">
+          <button
+            className="secondary-action"
+            disabled={isRetrying}
+            type="button"
+            onClick={onCancel}
+          >
+            {isRetrying ? strings.cancelling : strings.cancel}
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -439,6 +472,9 @@ function safeErrorMessage(
       case "INTERNAL_ERROR":
         return messages.invalid;
     }
+  }
+  if (job?.status === "cancelled") {
+    return copy[language].cancelledStatus as string;
   }
   if (
     job?.errorCode === "PROVIDER_WORKFLOW_FAILED" ||

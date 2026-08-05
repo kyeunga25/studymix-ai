@@ -30,12 +30,12 @@ describe("legal document and acceptance boundary", () => {
           expect.objectContaining({
             documentId: "privacy-notice",
             requiresAcceptance: false,
-            version: "2026-07-24",
+            version: "2026-08-05",
           }),
           expect.objectContaining({
             documentId: "terms-of-use",
             requiresAcceptance: true,
-            version: "2026-07-24",
+            version: "2026-08-05",
           }),
         ]),
       },
