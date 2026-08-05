@@ -3,6 +3,7 @@ import {
   audioContentTypeSchema,
   audioContentTypes,
   createJobRequestSchema,
+  createLocalSyntheticUploadRequestSchema,
   createUploadRequestSchema,
   currentLegalAcceptanceDocuments,
   jobIdSchema,
@@ -29,6 +30,13 @@ import {
   isRealGenerationRequestWithinRateLimit,
   resolveGenerationWorkflowConfiguration,
 } from "./job-service";
+import {
+  buildLocalAiJobPolicy,
+  cancelLocalAiAttempts,
+  createLocalSyntheticSource,
+  getLocalAiJobPolicy,
+  isLocalAiHarnessRequest,
+} from "./local-ai";
 import { LegalConfigurationError, resolveLegalDocumentsManifest } from "./legal-documents";
 import {
   RepositoryConflictError,
@@ -39,6 +47,7 @@ import {
   RepositoryQuotaError,
   RepositoryStateError,
   attachOwnedJobWorkflow,
+  cancelOwnedJobWithCreditRelease,
   confirmOwnedUpload,
   createJobIdempotently,
   createUpload,
@@ -48,7 +57,6 @@ import {
   getOwnedOutput,
   getOwnedUpload,
   markOwnedUploadDeleted,
-  recordRightsDeclaration,
   recordCurrentLegalAcceptances,
   authorizeWorkspaceAccess,
   WorkspaceAccessError,
@@ -371,6 +379,7 @@ const sessionHandler = (context: Context<AppBindings>) => {
       },
       capabilities: {
         creditAccounting: isCreditAccountingAvailable(context.env),
+        localAiHarness: isLocalAiHarnessRequest(context.req.raw, context.env),
         mockGeneration: isMockGenerationAvailable(context.env),
         privateAudioUpload: isR2TransferAvailable(context.env),
         realGeneration:
@@ -525,6 +534,89 @@ app.post("/api/legal/acceptances", async (context) => {
     new Date().toISOString(),
   );
   return context.json({ data: status, error: null, requestId: createRequestId() });
+});
+
+app.post("/api/local/synthetic-upload", async (context) => {
+  if (!isLocalAiHarnessRequest(context.req.raw, context.env)) {
+    return errorResponse(context, 404, "NOT_FOUND", "The local test harness was not found.", false);
+  }
+  let body: unknown;
+  try {
+    body = await readBoundedJson(context.req.raw, 4_096);
+  } catch (error) {
+    if (error instanceof UnsupportedJsonMediaTypeError) {
+      return errorResponse(
+        context,
+        415,
+        "VALIDATION_ERROR",
+        "The request must use application/json.",
+        false,
+      );
+    }
+    if (error instanceof JsonBodyTooLargeError) {
+      return errorResponse(
+        context,
+        413,
+        "VALIDATION_ERROR",
+        "The local fixture request is too large.",
+        false,
+      );
+    }
+    if (error instanceof InvalidJsonBodyError) {
+      return errorResponse(
+        context,
+        400,
+        "VALIDATION_ERROR",
+        "The request body must be valid JSON.",
+        false,
+      );
+    }
+    throw error;
+  }
+  const parsed = createLocalSyntheticUploadRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return errorResponse(
+      context,
+      400,
+      "VALIDATION_ERROR",
+      "The local synthetic fixture request is invalid.",
+      false,
+    );
+  }
+  const owner = context.get("owner");
+  try {
+    const upload = await createLocalSyntheticSource(
+      context.env,
+      owner.ownerId,
+      parsed.data,
+      new Date(),
+    );
+    return context.json({
+      data: toPublicUpload(upload),
+      error: null,
+      requestId: createRequestId(),
+    });
+  } catch (error) {
+    if (error instanceof RepositoryQuotaError) {
+      return errorResponse(
+        context,
+        429,
+        "RATE_LIMITED",
+        "Delete or use an active synthetic source before creating another.",
+        true,
+      );
+    }
+    if (error instanceof TypeError) {
+      return errorResponse(
+        context,
+        400,
+        "VALIDATION_ERROR",
+        "The local synthetic source failed validation.",
+        false,
+      );
+    }
+    throw error;
+  }
 });
 
 app.post("/api/uploads", async (context) => {
@@ -803,6 +895,25 @@ app.post("/api/jobs", async (context) => {
   const requestedJobId = createSecureId("job");
   const idempotencyKey = parsed.data.idempotencyKey ?? `ui:${crypto.randomUUID()}`;
   const requestFingerprint = await createJobRequestFingerprint(parsed.data);
+  let localOrchestrationPolicy;
+  if (isLocalAiHarnessRequest(context.req.raw, context.env)) {
+    try {
+      localOrchestrationPolicy = await buildLocalAiJobPolicy(
+        context.env.DB,
+        owner.ownerId,
+        parsed.data.uploadId,
+        configuration.outputRetentionHours,
+      );
+    } catch {
+      return errorResponse(
+        context,
+        400,
+        "VALIDATION_ERROR",
+        "A validated local synthetic source is required.",
+        false,
+      );
+    }
+  }
   let jobResult;
   try {
     jobResult = await createJobIdempotently(context.env.DB, {
@@ -816,19 +927,13 @@ app.post("/api/jobs", async (context) => {
       idempotencyKey,
       maxActiveJobs: configuration.maxActiveJobs,
       maxDailyJobs: configuration.maxDailyJobs,
+      ...(localOrchestrationPolicy === undefined ? {} : { localOrchestrationPolicy }),
       ownerId: owner.ownerId,
       presetId: preset.id,
       presetVersion: preset.version,
       provider: configuration.provider,
       requestFingerprint,
-      uploadId: parsed.data.uploadId,
-    });
-    await recordRightsDeclaration(context.env.DB, {
-      acceptedAt: now.toISOString(),
-      declarationVersion: parsed.data.rightsDeclarationVersion,
-      id: createSecureId("rgt"),
-      jobId: jobResult.job.id,
-      ownerId: owner.ownerId,
+      rightsDeclarationVersion: parsed.data.rightsDeclarationVersion,
       uploadId: parsed.data.uploadId,
     });
     await attachOwnedJobWorkflow(context.env.DB, owner.ownerId, jobResult.job.id, jobResult.job.id);
@@ -917,6 +1022,43 @@ app.get("/api/jobs/:jobId", async (context) => {
     return errorResponse(context, 404, "NOT_FOUND", "The job was not found.", false);
   }
   return context.json({ data: job, error: null, requestId: createRequestId() });
+});
+
+app.post("/api/jobs/:jobId/cancel", async (context) => {
+  if (!isLocalAiHarnessRequest(context.req.raw, context.env)) {
+    return errorResponse(context, 404, "NOT_FOUND", "The job was not found.", false);
+  }
+  const parsedJobId = jobIdSchema.safeParse(context.req.param("jobId"));
+  if (!parsedJobId.success) {
+    return errorResponse(context, 404, "NOT_FOUND", "The job was not found.", false);
+  }
+  const owner = context.get("owner");
+  if ((await getLocalAiJobPolicy(context.env.DB, owner.ownerId, parsedJobId.data)) === null) {
+    return errorResponse(context, 404, "NOT_FOUND", "The job was not found.", false);
+  }
+  const cancelledAt = new Date().toISOString();
+  try {
+    await cancelOwnedJobWithCreditRelease(context.env.DB, {
+      eventId: createSecureId("evt"),
+      jobId: parsedJobId.data,
+      ownerId: owner.ownerId,
+      timestamp: cancelledAt,
+    });
+    await cancelLocalAiAttempts(context.env.DB, owner.ownerId, parsedJobId.data, cancelledAt);
+  } catch (error) {
+    if (error instanceof RepositoryNotFoundError) {
+      return errorResponse(context, 404, "NOT_FOUND", "The job was not found.", false);
+    }
+    if (error instanceof RepositoryStateError) {
+      return errorResponse(context, 409, "CONFLICT", "The job can no longer be cancelled.", false);
+    }
+    throw error;
+  }
+  const publicJob = await getOwnedPublicJob(context.env.DB, owner.ownerId, parsedJobId.data);
+  if (publicJob === null) {
+    throw new RepositoryNotFoundError("The cancelled job could not be read.");
+  }
+  return context.json({ data: publicJob, error: null, requestId: createRequestId() });
 });
 
 app.delete("/api/jobs/:jobId", async (context) => {
@@ -1013,6 +1155,19 @@ app.post("/api/outputs/:outputId/download", async (context) => {
     );
   }
 
+  if (isLocalAiHarnessRequest(context.req.raw, context.env)) {
+    return context.json({
+      data: {
+        downloadMethod: "GET" as const,
+        downloadUrl: `/api/local/outputs/${parsedOutputId.data}/content`,
+        expiresAt: output.expiresAt,
+        outputId: parsedOutputId.data,
+      },
+      error: null,
+      requestId: createRequestId(),
+    });
+  }
+
   const signedDownload = await createSignedR2ObjectUrl({
     configuration,
     method: "GET",
@@ -1028,6 +1183,50 @@ app.post("/api/outputs/:outputId/download", async (context) => {
     },
     error: null,
     requestId: createRequestId(),
+  });
+});
+
+app.get("/api/local/outputs/:outputId/content", async (context) => {
+  if (!isLocalAiHarnessRequest(context.req.raw, context.env)) {
+    return errorResponse(context, 404, "NOT_FOUND", "The output was not found.", false);
+  }
+  const parsedOutputId = outputIdSchema.safeParse(context.req.param("outputId"));
+  if (!parsedOutputId.success) {
+    return errorResponse(context, 404, "NOT_FOUND", "The output was not found.", false);
+  }
+  const owner = context.get("owner");
+  const output = await getOwnedOutput(context.env.DB, owner.ownerId, parsedOutputId.data);
+  if (
+    output === null ||
+    output.status !== "ready" ||
+    output.contentType !== "audio/wav" ||
+    output.sizeBytes === null ||
+    output.expiresAt === null ||
+    new Date(output.expiresAt).getTime() <= Date.now()
+  ) {
+    return errorResponse(context, 404, "NOT_FOUND", "The output was not found.", false);
+  }
+  const object = await context.env.AUDIO_BUCKET.get(output.objectKey);
+  if (
+    object === null ||
+    object.size !== output.sizeBytes ||
+    object.httpMetadata?.contentType !== output.contentType
+  ) {
+    return errorResponse(
+      context,
+      503,
+      "INTERNAL_ERROR",
+      "The private output is temporarily unavailable.",
+      true,
+    );
+  }
+  return new Response(object.body, {
+    headers: {
+      "Cache-Control": "private, no-store",
+      "Content-Disposition": `attachment; filename="studymix-${parsedOutputId.data}.wav"`,
+      "Content-Length": object.size.toString(),
+      "Content-Type": output.contentType,
+    },
   });
 });
 

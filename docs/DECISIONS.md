@@ -179,3 +179,23 @@ or workspace identifier and cannot select a different workspace.
 role, spend cap, approval state, and a stable scope for future private jobs. Keyed hashing avoids storing a
 guessable email digest, and server selection prevents cross-workspace client assertions from becoming an
 authorization source.
+
+## ADR-016: Loopback-only synthetic orchestration harness
+
+**Status:** Accepted for local development only
+
+Exercise the canonical owner, legal acceptance, rights declaration, job, credit, Workflow, and private
+object-storage paths with a deterministic provider-neutral audio adapter. The harness is available only
+when `APP_ENV=local`, the request host is loopback, the mock provider is selected, the real-generation
+kill switch is off, and every required local binding flag is explicitly on. It uses local-only additive
+test state for orchestration policy and attempt-cost metadata; production migrations and checked-in
+Wrangler defaults are unchanged.
+
+Provider-attempt cost units remain separate from customer credits. A valid private output settles the
+customer reservation, terminal failure or cancellation releases it, and provider work already attempted
+is retained as synthetic cost evidence. Duplicate or late wake-up signals never authorize a state
+transition by themselves; the Workflow re-reads server state.
+
+**Reason:** The application needs a reproducible browser-to-Workflow integration path before any real
+provider, remote binding, or paid request can be approved. A loopback and environment double gate keeps
+that capability unavailable to deployed environments while testing the same application lifecycle.

@@ -38,6 +38,7 @@ This document records only verifiable repository capabilities and public safety 
 - [x] 獨立 staging Worker 已撤下，Cloudflare 現只保留一個 `studymix-ai` Worker。原 staging D1、私人 R2 與 Workflow 資源目前未綁定且不處理流量；如要重用，只可連到經批准的同一 Worker preview version。
 - [x] Feature-gated 私人 R2 直接上載切片：server-controlled key、短效且綁定 content type／不可覆寫條件的 PUT URL、R2 metadata 確認、owner 隔離、明確刪除、短效輸出下載簽名及本機整合測試。
 - [x] Feature-gated server-side mock generation 切片：嚴格 job contracts、現行法律接受及逐工作權利聲明、active-job quota、owner-scoped job API、Cloudflare Workflow、兩個無付費服務的合成 WAV 候選版本、私人 R2 輸出、短效播放連結及 Workflow introspection 測試。
+- [x] Loopback-only 本機 AI harness：server-derived test principal、同一條 rights／owner／credit／Workflow／R2 流程、固定合成音訊、provider-neutral 每工作限制、獨立 attempt cost units、timeout recovery、terminal failure、cancel、owner-bound 播放及一鍵本機啟動／測試；production defaults、遠端 bindings 及真實生成均未改動。
 - [x] Feature-gated 保留期與刪除切片：owner-scoped terminal job 即時刪除、24 小時未附加上載／失敗 artifact 清理、完成後 72 小時來源清理、7 日輸出到期、每小時 Cron handler、可重試 metadata 狀態及另一 owner 拒絕測試。
 
 ## 目前未啟用 / Currently disabled

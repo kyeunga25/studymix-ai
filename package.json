@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "pnpm build:web && pnpm --filter @studymix/api d1:migrate:local && pnpm --parallel --filter @studymix/web --filter @studymix/api dev",
+    "dev:local-ai": "pnpm build:web && pnpm --filter @studymix/api dev:local-ai",
     "build": "pnpm build:web && pnpm build:worker",
     "build:web": "pnpm --filter @studymix/web build",
     "build:worker": "pnpm --filter @studymix/api build",
@@ -26,6 +27,7 @@
     "test": "pnpm test:unit && pnpm test:api",
     "test:unit": "vitest run --exclude 'apps/api/**/*.workers.test.ts'",
     "test:api": "vitest run --config apps/api/vitest.config.ts",
+    "test:local-ai": "vitest run packages/providers/src/audio-orchestration.test.ts apps/web/src/local-ai-api.test.ts apps/web/src/job-api.test.ts && vitest run --config apps/api/vitest.config.ts src/local-ai.workers.test.ts",
     "test:e2e": "playwright test",
     "cf-typegen": "pnpm --filter @studymix/api cf-typegen"
   },

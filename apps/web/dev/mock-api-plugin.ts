@@ -34,7 +34,7 @@ type MockPublicJob = {
   uploadId: string;
 };
 
-const mockLegalVersion = "2026-07-24";
+const mockLegalVersion = "2026-08-05";
 const currentLegalAcceptanceDocuments = [
   { documentId: "terms-of-use", version: mockLegalVersion },
   { documentId: "acceptable-use", version: mockLegalVersion },
@@ -267,6 +267,7 @@ async function handleMockRequest(
         },
         capabilities: {
           creditAccounting: false,
+          localAiHarness: false,
           mockGeneration: false,
           privateAudioUpload: false,
           realGeneration: false,
@@ -318,7 +319,7 @@ async function handleMockRequest(
             version: mockLegalVersion,
           },
         ],
-        effectiveAt: "2026-07-24T00:00:00.000Z",
+        effectiveAt: "2026-08-05T00:00:00.000Z",
       },
       error: null,
       requestId: requestId(),

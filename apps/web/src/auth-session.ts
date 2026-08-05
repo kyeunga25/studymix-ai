@@ -28,6 +28,7 @@ const privateSessionSchema = apiEnvelopeSchema(
       capabilities: z
         .object({
           creditAccounting: z.boolean(),
+          localAiHarness: z.boolean(),
           mockGeneration: z.boolean(),
           privateAudioUpload: z.boolean(),
           realGeneration: z.boolean(),

@@ -21,11 +21,11 @@ describe("legal document configuration", () => {
   it("accepts a real formatted production contact and emits all current versions", () => {
     const manifest = resolveLegalDocumentsManifest({
       APP_ENV: "production",
-      LEGAL_CONTACT_EMAIL: "privacy@not-a-real-domain.hk",
+      LEGAL_CONTACT_EMAIL: "privacy@not-a-real-domain.dev",
     });
 
-    expect(manifest.contactEmail).toBe("privacy@not-a-real-domain.hk");
+    expect(manifest.contactEmail).toBe("privacy@not-a-real-domain.dev");
     expect(manifest.documents).toHaveLength(4);
-    expect(manifest.documents.every((document) => document.version === "2026-07-24")).toBe(true);
+    expect(manifest.documents.every((document) => document.version === "2026-08-05")).toBe(true);
   });
 });

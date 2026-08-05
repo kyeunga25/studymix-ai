@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createJob, deleteJob, getJob, getOutputDownload } from "./job-api";
+import { cancelJob, createJob, deleteJob, getJob, getOutputDownload } from "./job-api";
 
 const now = "2026-07-25T10:00:00.000Z";
 const mockUploadId = "upl_00000000000000000000000000000001";
@@ -134,6 +134,26 @@ describe("job API client", () => {
     expect(fetchMock).toHaveBeenCalledWith(`/api/jobs/${validJob.jobId}`, {
       credentials: "same-origin",
       method: "DELETE",
+    });
+  });
+
+  it("requests local owner-scoped job cancellation", async () => {
+    const cancelledJob = { ...validJob, status: "cancelled" } as const;
+    const fetchMock = vi.fn(async () =>
+      Promise.resolve(
+        Response.json({
+          data: cancelledJob,
+          error: null,
+          requestId: "req_cancel",
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(cancelJob(validJob.jobId)).resolves.toEqual(cancelledJob);
+    expect(fetchMock).toHaveBeenCalledWith(`/api/jobs/${validJob.jobId}/cancel`, {
+      credentials: "same-origin",
+      method: "POST",
     });
   });
 

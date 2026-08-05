@@ -62,6 +62,7 @@ describe("Worker authentication boundary", () => {
         },
         capabilities: {
           creditAccounting: true,
+          localAiHarness: false,
           mockGeneration: true,
           privateAudioUpload: true,
           realGeneration: false,

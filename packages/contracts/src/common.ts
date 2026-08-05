@@ -4,9 +4,13 @@ const RESOURCE_ID_SUFFIX = "[0-9a-f]{32}";
 
 export const isoDateTimeSchema = z.string().datetime({ offset: true });
 
-export const httpsUrlSchema = z
-  .url()
-  .refine((value) => new URL(value).protocol === "https:", "URL must use HTTPS.");
+export const httpsUrlSchema = z.url().refine((value) => {
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}, "URL must use HTTPS.");
 
 export const requestIdSchema = z.string().trim().min(1).max(128);
 

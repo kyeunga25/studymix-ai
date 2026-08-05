@@ -1,7 +1,9 @@
 import {
+  currentRightsDeclarationVersion,
   idempotencyKeySchema,
   jobIdSchema,
   jobStatusSchema,
+  localAiScenarioSchema,
   ownerIdSchema,
   presetIdSchema,
   presetVersionSchema,
@@ -53,11 +55,33 @@ const createJobSchema = z.object({
   idempotencyKey: idempotencyKeySchema,
   maxActiveJobs: z.number().int().min(1).max(20),
   maxDailyJobs: z.number().int().min(1).max(100).default(100),
+  localOrchestrationPolicy: z
+    .object({
+      candidateCount: z.literal(2),
+      maxAttemptsPerCandidate: z.number().int().min(1).max(8),
+      maxConcurrentCandidates: z.number().int().min(1).max(2),
+      maxCostUnits: z.number().int().positive().max(100),
+      maxInputDurationSeconds: z.number().positive().finite(),
+      maxOutputBytes: z.number().int().positive().safe(),
+      maxOutputDurationSeconds: z.number().positive().finite(),
+      qualityTier: z.literal("synthetic-preview"),
+      retentionSeconds: z.number().int().positive().safe(),
+      scenario: localAiScenarioSchema,
+      sourceContentType: z.literal("audio/wav"),
+      sourceDurationSeconds: z.number().positive().finite(),
+      sourceSizeBytes: z.number().int().positive().safe(),
+      sourceUploadId: uploadIdSchema,
+    })
+    .strict()
+    .optional(),
   ownerId: ownerIdSchema,
   presetId: presetIdSchema,
   presetVersion: presetVersionSchema,
   provider: providerSchema,
   requestFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+  rightsDeclarationVersion: z
+    .literal(currentRightsDeclarationVersion)
+    .default(currentRightsDeclarationVersion),
   uploadId: uploadIdSchema,
 });
 
@@ -147,8 +171,15 @@ export async function createJobIdempotently(
       "Current legal documents must be accepted before creating a job.",
     );
   }
+  if (
+    parsed.localOrchestrationPolicy !== undefined &&
+    parsed.localOrchestrationPolicy.sourceUploadId !== parsed.uploadId
+  ) {
+    throw new RepositoryConflictError("The local orchestration source does not match the job.");
+  }
   const reserveEventId = createSecureId("evt");
-  const [jobInsertResult, reserveInsertResult] = await db.batch([
+  const rightsDeclarationId = createSecureId("rgt");
+  const statements: D1PreparedStatement[] = [
     db
       .prepare(
         `INSERT INTO jobs (
@@ -221,12 +252,86 @@ export async function createJobIdempotently(
         `job:${parsed.id}:reserve`,
         parsed.createdAt,
       ),
-  ]);
+    db
+      .prepare(
+        `INSERT INTO rights_declarations (
+          id, job_id, upload_id, owner_id, declaration_version, accepted_at
+        )
+        SELECT ?1, jobs.id, uploads.id, jobs.owner_id, ?4, ?5
+        FROM jobs
+        INNER JOIN uploads ON uploads.id = jobs.upload_id
+        WHERE jobs.id = ?2
+          AND jobs.owner_id = ?3
+          AND uploads.id = jobs.upload_id
+          AND uploads.owner_id = jobs.owner_id
+        ON CONFLICT (job_id) DO NOTHING`,
+      )
+      .bind(
+        rightsDeclarationId,
+        parsed.id,
+        parsed.ownerId,
+        parsed.rightsDeclarationVersion,
+        parsed.createdAt,
+      ),
+  ];
+  if (parsed.localOrchestrationPolicy !== undefined) {
+    const policy = parsed.localOrchestrationPolicy;
+    statements.push(
+      db
+        .prepare(
+          `INSERT INTO local_ai_job_policies (
+            job_id, owner_id, source_upload_id, scenario,
+            source_duration_seconds, source_content_type, source_size_bytes,
+            quality_tier, candidate_count, max_attempts_per_candidate,
+            max_concurrent_candidates, max_cost_units, max_input_duration_seconds,
+            max_output_duration_seconds, max_output_bytes, retention_seconds, created_at
+          )
+          SELECT jobs.id, jobs.owner_id, jobs.upload_id, ?4,
+                 ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17
+          FROM jobs
+          WHERE jobs.id = ?1
+            AND jobs.owner_id = ?2
+            AND jobs.upload_id = ?3
+          ON CONFLICT (job_id) DO NOTHING`,
+        )
+        .bind(
+          parsed.id,
+          parsed.ownerId,
+          policy.sourceUploadId,
+          policy.scenario,
+          policy.sourceDurationSeconds,
+          policy.sourceContentType,
+          policy.sourceSizeBytes,
+          policy.qualityTier,
+          policy.candidateCount,
+          policy.maxAttemptsPerCandidate,
+          policy.maxConcurrentCandidates,
+          policy.maxCostUnits,
+          policy.maxInputDurationSeconds,
+          policy.maxOutputDurationSeconds,
+          policy.maxOutputBytes,
+          policy.retentionSeconds,
+          parsed.createdAt,
+        ),
+    );
+  }
+  const batchResults = await db.batch(statements);
+  const jobInsertResult = batchResults[0];
+  const reserveInsertResult = batchResults[1];
+  const rightsInsertResult = batchResults[2];
+  const localPolicyInsertResult = batchResults[3];
   const inserted = jobInsertResult?.results[0] ?? null;
 
   if (inserted !== null) {
-    if ((reserveInsertResult?.meta.changes ?? 0) !== 1) {
-      throw new RepositoryStateError("The job credit reservation could not be recorded.");
+    if (
+      (reserveInsertResult?.meta.changes ?? 0) !== 1 ||
+      (rightsInsertResult?.meta.changes ?? 0) !== 1 ||
+      (parsed.localOrchestrationPolicy !== undefined &&
+        (localPolicyInsertResult?.meta.changes ?? 0) !== 1)
+    ) {
+      throw new RepositoryStateError(
+        "The job authorization and credit reservation could not be recorded.",
+      );
     }
     return { created: true, job: mapJobRow(inserted) };
   }
@@ -525,4 +630,73 @@ export async function failOwnedJobWithCreditRelease(
     throw new RepositoryStateError("Job failure and credit release did not commit.");
   }
   return failed;
+}
+
+export async function cancelOwnedJobWithCreditRelease(
+  db: D1Database,
+  input: z.input<typeof finalizeJobCreditsSchema>,
+): Promise<JobRecord> {
+  const parsed = finalizeJobCreditsSchema.parse(input);
+  const current = await getOwnedJob(db, parsed.ownerId, parsed.jobId);
+  if (current === null) {
+    throw new RepositoryNotFoundError("Job was not found for this owner.");
+  }
+  if (current.status === "cancelled") {
+    return current;
+  }
+  try {
+    transitionJobState(current.status, "cancelled");
+  } catch {
+    throw new RepositoryStateError("Job cannot be cancelled from its current state.");
+  }
+
+  await db.batch([
+    db
+      .prepare(
+        `INSERT INTO credit_ledger (
+          id, owner_id, job_id, event_type, quantity, reference_key, created_at
+        )
+        SELECT ?1, reserve.owner_id, reserve.job_id, 'release', reserve.quantity, ?2, ?3
+        FROM credit_ledger AS reserve
+        WHERE reserve.owner_id = ?4
+          AND reserve.job_id = ?5
+          AND reserve.event_type = 'reserve'
+          AND NOT EXISTS (
+            SELECT 1 FROM credit_ledger AS final
+            WHERE final.owner_id = reserve.owner_id
+              AND final.job_id = reserve.job_id
+              AND final.event_type IN ('settle', 'release')
+          )
+        ON CONFLICT (owner_id, reference_key) DO NOTHING`,
+      )
+      .bind(
+        parsed.eventId,
+        `job:${parsed.jobId}:release`,
+        parsed.timestamp,
+        parsed.ownerId,
+        parsed.jobId,
+      ),
+    db
+      .prepare(
+        `UPDATE jobs
+         SET status = 'cancelled', updated_at = ?1, completed_at = ?1,
+             error_code = 'CANCELLED_BY_OWNER'
+         WHERE id = ?2
+           AND owner_id = ?3
+           AND status = ?4
+           AND EXISTS (
+             SELECT 1 FROM credit_ledger
+             WHERE owner_id = ?3
+               AND job_id = ?2
+               AND event_type = 'release'
+           )`,
+      )
+      .bind(parsed.timestamp, parsed.jobId, parsed.ownerId, current.status),
+  ]);
+
+  const cancelled = await getOwnedJob(db, parsed.ownerId, parsed.jobId);
+  if (cancelled === null || cancelled.status !== "cancelled") {
+    throw new RepositoryStateError("Job cancellation and credit release did not commit.");
+  }
+  return cancelled;
 }

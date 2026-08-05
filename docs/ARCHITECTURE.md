@@ -1,5 +1,10 @@
 # Architecture
 
+> **Repository design only:** This specification explains reviewable source-code boundaries. It must
+> never contain live Cloudflare identifiers, private hostnames, real application data, database dumps,
+> secrets, account-specific topology or incident evidence. See
+> [`PUBLICATION_SAFETY.md`](PUBLICATION_SAFETY.md).
+
 ## 1. Architecture decision
 
 Use Cloudflare as the control plane and object-storage layer. Use a replaceable external AI provider as the generation plane.
@@ -562,7 +567,27 @@ only provider-neutral contracts plus disabled or synthetic adapters. Provider cr
 mapping, signing logic, hosted-checkout endpoints, and verified webhook ingestion are not part of this
 repository or the current MVP.
 
-## 14.2 Data lifecycle and disclosure status
+## 14.2 Local-only synthetic orchestration harness
+
+`pnpm dev:local-ai` builds the web app, prepares isolated Wrangler local state, and serves the canonical
+Worker at `http://127.0.0.1:8787`. The harness never accepts a browser-selected owner or a real audio
+file. It derives one development owner on the server, creates a bounded deterministic WAV source, and
+uses the normal legal, rights, idempotent job creation, credit reservation, Workflow, validation,
+private-local-R2, retrieval, settlement, failure, and cancellation paths.
+
+Each local job persists a strict provider-neutral policy for candidate count, quality tier, retry,
+concurrency, duration, size, cost-unit, and retention bounds. Synthetic provider attempts use
+pseudonymous correlation identifiers and a separate local-only cost ledger. Duplicate, late, or
+out-of-order wake-up signals are advisory; the Workflow re-reads D1 state before progressing. Local
+cancellation is owner-scoped, releases customer credits once, preserves attempted synthetic cost, and
+causes the Workflow to end normally as cancelled.
+
+The route is fail-closed unless the runtime is explicitly local, the request hostname is loopback, the
+mock provider is selected, real generation is disabled, and local D1, R2, Workflow, and credit flags are
+enabled. The checked-in deployment flags remain disabled, no remote resource is selected, and the local
+test schema is not a production migration.
+
+## 14.3 Data lifecycle and disclosure status
 
 The codebase contains a feature-gated direct-to-private-R2 upload slice, owner-scoped upload and
 terminal-job deletion, mock and fal Workflow modes, and an hourly retention handler. The default and
@@ -578,10 +603,10 @@ Legal acceptance records are metadata evidence, not audio. Their final retention
 documented before launch and limited to what is necessary for governing-version proof, security, and
 live disputes.
 
-## 14.3 Data recipients, sources, and location claims
+## 14.4 Data recipients, sources, and location claims
 
 - Cloudflare is the current identity, Worker, and D1 processor. Automatic placement and
-  location hints do not justify a Hong Kong-only residency claim.
+  location hints do not justify a country- or region-specific residency claim.
 - External generation is disabled in production. The fal adapter requests no JSON payload storage and a
   bounded media expiry, and the Workflow streams outputs into private R2. Real generation must remain
   disabled until provider terms, authorized-audio staging checks, abuse controls, output delivery, and

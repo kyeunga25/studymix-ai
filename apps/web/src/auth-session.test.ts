@@ -22,6 +22,7 @@ const validSession = {
     },
     capabilities: {
       creditAccounting: false,
+      localAiHarness: false,
       mockGeneration: true,
       privateAudioUpload: false,
       realGeneration: false,
