@@ -69,7 +69,6 @@ pnpm dev
 `pnpm dev` 使用本機 D1 狀態與 mock provider；不需要 Cloudflare 帳戶、fal key 或付費 API。
 
 正式 Worker 會先處理 `/app`、`/app/*`、`/api` 及使用者 `/api/*`，再提供 Static Assets；JWT 驗證後仍須通過 active owner、workspace 及 membership。公開首頁、`/login`、法律頁、`/health` 與公開法律 manifest 不建立 owner。真實供應商停用時不需要新增 Access 例外；既有精確 callback 仍由供應商簽章驗證。
-
 如要驗證完全本機、loopback-only 的 D1／R2／Workflow 合成流程：
 
 ```bash

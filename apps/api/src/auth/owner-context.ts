@@ -159,7 +159,6 @@ async function createInvitationIdentityHash(identity: string, pepper: string): P
   );
   return bytesToHex(new Uint8Array(signature));
 }
-
 export async function resolveOwnerContext(
   request: Request,
   environment: AuthEnvironment,
