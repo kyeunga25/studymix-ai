@@ -76,6 +76,9 @@ test("renders a public product overview without exposing the private app", async
       name: "使用條款",
     }),
   ).toHaveAttribute("href", "/legal/terms");
+  const publicStylePreview = page.locator(".landing-style-options");
+  await expect(publicStylePreview.getByText("木結他輕奏", { exact: true })).toBeVisible();
+  await expect(publicStylePreview.getByText("慢拍舒緩電音", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "上載你的音訊" })).toHaveCount(0);
 });
 
@@ -219,6 +222,30 @@ test("requires both rights and current legal documents before generation can be 
   await expect(page.getByRole("button", { name: "Generate 2 candidates" })).toBeDisabled();
   await checkboxes.nth(1).check();
   await expect(page.getByRole("button", { name: "Generate 2 candidates" })).toBeEnabled();
+});
+
+test("selects both expanded study styles and carries the choice into generation", async ({
+  page,
+}) => {
+  await prepareAuthorizedMix(page);
+
+  const styleChoices = page.getByRole("radio", {
+    name: /Soft Piano|Music Box|Lo-fi Study|Acoustic Ease|Slowwave/,
+  });
+  await expect(styleChoices).toHaveCount(5);
+
+  await page.getByRole("radio", { name: /Slowwave/ }).check();
+  await expect(page.getByRole("radio", { name: /Slowwave/ })).toBeChecked();
+  await expect(page.getByText("Slow electronic ambience with a gentle pulse")).toBeVisible();
+
+  await page.getByRole("radio", { name: /Acoustic Ease/ }).check();
+  await expect(page.getByRole("radio", { name: /Acoustic Ease/ })).toBeChecked();
+  await page.getByRole("button", { name: "Generate 2 candidates" }).click();
+
+  await expect(page.getByRole("heading", { name: "Your study mix is ready" })).toBeVisible({
+    timeout: 5_000,
+  });
+  await expect(page.getByText("Acoustic Ease", { exact: true })).toBeVisible();
 });
 
 test("renders every versioned legal page and discloses the pre-release blockers", async ({
@@ -494,7 +521,7 @@ test("supports keyboard operation from the selected file through job submission"
   await fileInput.focus();
 
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("radio", { name: "Soft Piano" })).toBeFocused();
+  await expect(page.getByRole("radio", { name: /^Soft Piano\b/ })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("checkbox").nth(0)).toBeFocused();
   await page.keyboard.press("Space");

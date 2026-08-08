@@ -1,3 +1,4 @@
+import type { PresetId } from "@studymix/contracts";
 import { resolvePreset, type ResolvedStylePreset } from "@studymix/presets";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -8,8 +9,8 @@ import {
 
 const jobId = "job_0123456789abcdef0123456789abcdef";
 
-function requireTestPreset(): ResolvedStylePreset {
-  const resolved = resolvePreset("soft-piano", 1);
+function requireTestPreset(id: PresetId = "soft-piano"): ResolvedStylePreset {
+  const resolved = resolvePreset(id, 1);
   if (resolved === undefined) {
     throw new Error("Test preset is unavailable.");
   }
@@ -91,6 +92,43 @@ describe("fal music generation provider", () => {
       webhookUrl: "https://api.example.test/api/webhooks/fal",
     });
   });
+
+  it.each([
+    ["acoustic-ease", "acoustic guitar", "soft piano"],
+    ["slowwave", "slow-paced ambient electronic", "gentle pulse"],
+  ] as const)(
+    "maps the %s style through the bounded provider adapter",
+    async (id, first, second) => {
+      let captured: FalQueueSubmitOptions | undefined;
+      const selectedPreset = requireTestPreset(id);
+      const provider = createProvider(
+        createQueue({
+          submit: vi.fn(async (options) => {
+            captured = options;
+            return { request_id: `fal-${id}`, status: "IN_QUEUE" };
+          }),
+        }),
+      );
+
+      await provider.submit({
+        candidateIndex: 0,
+        idempotencyKey: `${jobId}:${id}`,
+        jobId,
+        preset: selectedPreset,
+        sourceAudioUrl: "https://private.example.test/source?signature=redacted",
+      });
+
+      expect(captured?.input).toMatchObject({
+        edit_mode: "remix",
+        lyrics: "[inst]",
+        original_lyrics: "",
+        original_tags: selectedPreset.providerParameters.targetTags,
+        tags: selectedPreset.providerParameters.targetTags,
+      });
+      expect(captured?.input.tags).toContain(first);
+      expect(captured?.input.tags).toContain(second);
+    },
+  );
 
   it.each([
     ["IN_QUEUE", "queued"],

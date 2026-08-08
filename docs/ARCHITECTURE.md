@@ -187,7 +187,7 @@ A preset is versioned configuration:
 
 ```ts
 type StylePreset = {
-  id: "soft-piano" | "music-box" | "lofi-study";
+  id: "soft-piano" | "music-box" | "lofi-study" | "acoustic-ease" | "slowwave";
   version: 1;
   displayName: {
     en: string;
@@ -233,6 +233,22 @@ calm bedtime and study music, no vocals
 instrumental, relaxed lofi study music, warm electric piano,
 recognizable central melody, restrained soft drums,
 subtle tape texture, mellow dynamics, no vocals
+```
+
+### Acoustic Ease
+
+```text
+instrumental, simple acoustic guitar, optional soft piano accompaniment,
+recognizable central melody, light fingerpicked arrangement, gentle dynamics,
+warm natural room, calm study music, no vocals
+```
+
+### Slowwave
+
+```text
+instrumental, slow-paced ambient electronic music, recognizable central melody,
+soft synth pads, gentle pulse, restrained percussion, warm spacious texture,
+calm study music, no vocals
 ```
 
 These strings are hypotheses and must be benchmarked. Do not claim that they guarantee melody preservation.

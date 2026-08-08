@@ -16,7 +16,7 @@ recoverable asynchronous jobs, and replaceable generation providers.
 
 People often enjoy songs from different artists, games, animation projects, and personal music collections, but the originals may be distracting during study or work because of vocals, loud dynamics, or inconsistent styles.
 
-Manually commissioning or producing piano, music-box, and lo-fi arrangements is expensive and slow. Existing text-to-music tools generally create new music rather than a recognizable reinterpretation of a user-provided track.
+Manually commissioning or producing piano, music-box, lo-fi, light acoustic-guitar, and slow ambient-electronic arrangements is expensive and slow. Existing text-to-music tools generally create new music rather than a recognizable reinterpretation of a user-provided track.
 
 ## 3. Target users
 
@@ -46,7 +46,7 @@ Manually commissioning or producing piano, music-box, and lo-fi arrangements is 
 - Private direct-to-R2 upload.
 - File metadata validation.
 - Rights declaration checkbox.
-- Three style presets.
+- Five style presets.
 - One asynchronous generation job with two candidates.
 - Job status and retry-safe progress.
 - Candidate audio player.
@@ -149,6 +149,14 @@ Goal: delicate music-box reinterpretation with sparse accompaniment and no vocal
 #### Lo-fi Study
 
 Goal: relaxed instrumental lo-fi reinterpretation with soft drums, warm keys, limited high-frequency energy, and no vocals.
+
+#### Acoustic Ease
+
+Goal: a simple light acoustic-guitar reinterpretation, with optional soft-piano accompaniment, a recognizable central melody, gentle dynamics, and no vocals.
+
+#### Slowwave
+
+Goal: a relaxing slow-paced ambient-electronic reinterpretation with soft synth pads, a gentle pulse, restrained percussion, and no vocals.
 
 Presets are versioned data, not hardcoded UI copy.
 
@@ -598,3 +606,6 @@ The MVP is accepted when:
     repeated requests, Workflow retries, and terminal failures do not duplicate or strand credit events.
 17. An uninvited identity, disabled owner, disabled membership, disabled workspace, or cross-workspace
     assertion cannot receive the SPA shell or private API data.
+18. The public overview and private workspace present all five versioned presets in English and
+    Traditional Chinese, and a selected preset ID is preserved through mock and provider-adapter job
+    submission.

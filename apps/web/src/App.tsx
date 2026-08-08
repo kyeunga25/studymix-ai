@@ -7,6 +7,7 @@ import {
   type CreditSummary,
   type LegalDocumentId,
   type LocalAiScenario,
+  type PresetId,
   type PublicJob,
   type PublicUpload,
 } from "@studymix/contracts";
@@ -42,16 +43,8 @@ import {
   privateAccessFailureEventName,
   readPrivateAccessFailureEvent,
 } from "./private-api";
+import { presetOptions, PresetIcon } from "./preset-presentation";
 import { deleteUpload, uploadAndConfirmAudio } from "./upload-api";
-
-type PresetId = "soft-piano" | "music-box" | "lofi-study";
-
-type Preset = {
-  id: PresetId;
-  name: Record<Language, string>;
-  description: Record<Language, string>;
-  icon: ReactNode;
-};
 
 const copy = {
   en: {
@@ -241,36 +234,6 @@ const localAiScenarios: readonly LocalAiScenario[] = [
   "timeout-recovery",
 ];
 
-const presets: Preset[] = [
-  {
-    id: "soft-piano",
-    name: { en: "Soft Piano", "zh-HK": "柔和鋼琴" },
-    description: {
-      en: "Gentle melody and quiet dynamics",
-      "zh-HK": "柔和旋律與克制動態",
-    },
-    icon: <PianoIcon />,
-  },
-  {
-    id: "music-box",
-    name: { en: "Music Box", "zh-HK": "八音盒" },
-    description: {
-      en: "Delicate, sparse and dreamlike",
-      "zh-HK": "輕盈、留白、夢幻",
-    },
-    icon: <MusicBoxIcon />,
-  },
-  {
-    id: "lofi-study",
-    name: { en: "Lo-fi Study", "zh-HK": "Lo-fi 學習" },
-    description: {
-      en: "Warm keys and restrained soft drums",
-      "zh-HK": "溫暖琴鍵與柔和節拍",
-    },
-    icon: <HeadphonesIcon />,
-  },
-];
-
 const waveformHeights = [
   17, 24, 31, 20, 38, 26, 45, 22, 34, 48, 29, 41, 25, 35, 19, 30, 23, 39, 28, 18,
 ];
@@ -328,7 +291,7 @@ function PrivateApp() {
   const localSourceIdempotencyKey = useRef<string | null>(null);
   const strings = copy[language];
   const selectedPresetName =
-    presets.find((item) => item.id === selectedPreset)?.name[language] ?? "Soft Piano";
+    presetOptions.find((item) => item.id === selectedPreset)?.displayName[language] ?? "Soft Piano";
   const privateGenerationMode =
     realGenerationEnabled === mockGenerationEnabled
       ? null
@@ -834,9 +797,10 @@ function PrivateApp() {
                   <fieldset className="preset-fieldset">
                     <legend>{strings.presetTitle}</legend>
                     <div className="preset-grid">
-                      {presets.map((item) => (
+                      {presetOptions.map((item) => (
                         <label
                           className={`preset-option${selectedPreset === item.id ? " is-selected" : ""}`}
+                          data-preset={item.id}
                           key={item.id}
                         >
                           <input
@@ -851,9 +815,9 @@ function PrivateApp() {
                             }}
                           />
                           <span className="preset-icon" aria-hidden="true">
-                            {item.icon}
+                            <PresetIcon presetId={item.id} />
                           </span>
-                          <strong>{item.name[language]}</strong>
+                          <strong>{item.displayName[language]}</strong>
                           <small>{item.description[language]}</small>
                         </label>
                       ))}
@@ -1514,32 +1478,6 @@ function SparkleIcon() {
     <IconBase>
       <path d="M12 2c.6 4 2 5.4 6 6-4 .6-5.4 2-6 6-.6-4-2-5.4-6-6 4-.6 5.4-2 6-6Z" />
       <path d="M19 15c.3 2 1 2.7 3 3-2 .3-2.7 1-3 3-.3-2-1-2.7-3-3 2-.3 2.7-1 3-3Z" />
-    </IconBase>
-  );
-}
-
-function PianoIcon() {
-  return (
-    <IconBase>
-      <path d="M5 10c1-4 4-6 9-6h3v8H5v-2Z" />
-      <path d="M5 12h14v4H5zM7 16v4M17 16v4M9 12v4M12 12v4M15 12v4" />
-    </IconBase>
-  );
-}
-
-function MusicBoxIcon() {
-  return (
-    <IconBase>
-      <path d="M5 9h14v10H5zM8 6h8l2 3H6l2-3Z" />
-      <path d="M9 13h6M12 13v4M16 4c2-2 3-1 3 1v2" />
-    </IconBase>
-  );
-}
-
-function HeadphonesIcon() {
-  return (
-    <IconBase>
-      <path d="M4 13v-2a8 8 0 0 1 16 0v2M4 13h3v7H5a2 2 0 0 1-2-2v-3a2 2 0 0 1 1-2ZM20 13h-3v7h2a2 2 0 0 0 2-2v-3a2 2 0 0 0-1-2Z" />
     </IconBase>
   );
 }

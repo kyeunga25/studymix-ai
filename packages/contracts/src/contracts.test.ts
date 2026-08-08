@@ -10,8 +10,11 @@ import {
   createUploadResponseSchema,
   publicJobSchema,
   publicPresetSchema,
+  publicPresetsSchema,
   currentLegalAcceptanceDocuments,
   legalAcceptanceStatusSchema,
+  presetIds,
+  presetIdSchema,
 } from "./index";
 
 const uploadId = "upl_0123456789abcdef0123456789abcdef";
@@ -90,6 +93,27 @@ describe("upload contracts", () => {
 });
 
 describe("preset and job contracts", () => {
+  it("exposes the complete five-style MVP contract", () => {
+    expect(presetIds).toEqual([
+      "soft-piano",
+      "music-box",
+      "lofi-study",
+      "acoustic-ease",
+      "slowwave",
+    ]);
+    expect(presetIdSchema.parse("acoustic-ease")).toBe("acoustic-ease");
+    expect(presetIdSchema.parse("slowwave")).toBe("slowwave");
+
+    const publicPresets = presetIds.map((id) => ({
+      id,
+      version: 1,
+      displayName: { en: id, "zh-HK": id },
+      description: { en: `${id} description`, "zh-HK": `${id} description` },
+    }));
+    expect(publicPresetsSchema.parse(publicPresets)).toEqual(publicPresets);
+    expect(publicPresetsSchema.safeParse(publicPresets.slice(0, 4)).success).toBe(false);
+  });
+
   it("validates the minimal private job deletion response", () => {
     expect(deleteJobResponseSchema.parse({ jobId, status: "deleted" })).toEqual({
       jobId,
@@ -130,6 +154,10 @@ describe("preset and job contracts", () => {
     expect(
       createJobRequestSchema.safeParse({ ...validRequest, rightsDeclarationVersion: "v2" }).success,
     ).toBe(false);
+
+    for (const presetId of ["acoustic-ease", "slowwave"] as const) {
+      expect(createJobRequestSchema.safeParse({ ...validRequest, presetId }).success).toBe(true);
+    }
   });
 
   it("rejects vendor-specific fields from the public job contract", () => {

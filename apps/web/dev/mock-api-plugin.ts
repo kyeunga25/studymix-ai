@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Plugin } from "vite";
 
 type MockScenario = "failed" | "malformed" | "success";
-type MockPresetId = "lofi-study" | "music-box" | "soft-piano";
+type MockPresetId = "acoustic-ease" | "lofi-study" | "music-box" | "slowwave" | "soft-piano";
 type MockCreateJobRequest = {
   presetId: MockPresetId;
   presetVersion: number;
@@ -100,7 +100,11 @@ function parseCreateJobRequest(value: unknown): MockCreateJobRequest | null {
   const presetVersion = value.presetVersion;
   const uploadId = value.uploadId;
   if (
-    (presetId !== "soft-piano" && presetId !== "music-box" && presetId !== "lofi-study") ||
+    (presetId !== "soft-piano" &&
+      presetId !== "music-box" &&
+      presetId !== "lofi-study" &&
+      presetId !== "acoustic-ease" &&
+      presetId !== "slowwave") ||
     typeof presetVersion !== "number" ||
     !Number.isInteger(presetVersion) ||
     presetVersion < 1 ||

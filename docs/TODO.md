@@ -10,6 +10,7 @@ This document records only verifiable repository capabilities and public safety 
 
 - [x] pnpm monorepo、嚴格 TypeScript、ESLint、Prettier、Vitest、Playwright 與 GitHub Actions；CI 會執行 unit、Worker、build 及 Chromium E2E。
 - [x] React/Vite 雙語介面，支援鍵盤操作、狀態公告、錯誤提示及兩個候選結果比較。
+- [x] 五個版本化風格由單一公開雙語合約驅動：柔和鋼琴、八音盒、Lo-fi 學習、木結他輕奏及慢拍舒緩電音；首頁、私人工作區、mock job 與離線 fal adapter contract tests 保持相同 preset ID，供應商提示維持 server-only。
 - [x] 公開雙語產品主頁、獨立 `/login` 封閉測試登入介面、停用的日後註冊位置，以及獨立 `/app` 受邀測試工作區。
 - [x] 私人登入狀態流程：成功驗證返回工作區；session 過期、拒絕或無法安全驗證時回到雙語 `/login` 告知；所有私人 AJAX 使用明確 `401` contract，返回路徑限制在同源 `/app`。
 - [x] 僅限本機開發的 mock HTTP job API；正式 bundle 不包含 mock 路由或測試控制標記。
