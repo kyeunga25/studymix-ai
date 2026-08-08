@@ -18,6 +18,8 @@ export default defineConfig({
             ACCESS_TEAM_DOMAIN: "",
             APP_ENV: "test",
             DEV_AUTH_SUBJECT: "studymix-integration-tests",
+            OWNER_IDENTITY_PEPPER:
+              "pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp",
             LEGAL_CONTACT_EMAIL: "privacy@example.test",
             GENERATION_PROVIDER: "mock",
             REAL_GENERATION_ENABLED: "false",

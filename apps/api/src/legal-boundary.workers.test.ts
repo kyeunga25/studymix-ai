@@ -8,6 +8,10 @@ describe("legal document and acceptance boundary", () => {
     await env.DB.prepare("DELETE FROM legal_acceptances").run();
     await env.DB.prepare("DELETE FROM credit_ledger").run();
     await env.DB.prepare("DELETE FROM owner_entitlements").run();
+    await env.DB.prepare("DELETE FROM workspace_memberships").run();
+    await env.DB.prepare("DELETE FROM workspace_controls").run();
+    await env.DB.prepare("DELETE FROM owner_invitations").run();
+    await env.DB.prepare("DELETE FROM workspaces").run();
     await env.DB.prepare("DELETE FROM owners").run();
   });
 

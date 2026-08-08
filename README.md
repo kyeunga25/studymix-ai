@@ -68,6 +68,7 @@ pnpm dev
 
 `pnpm dev` 使用本機 D1 狀態與 mock provider；不需要 Cloudflare 帳戶、fal key 或付費 API。
 
+正式 Worker 會先處理 `/app`、`/app/*`、`/api` 及使用者 `/api/*`，再提供 Static Assets；JWT 驗證後仍須通過 active owner、workspace 及 membership。公開首頁、`/login`、法律頁、`/health` 與公開法律 manifest 不建立 owner。真實供應商停用時不需要新增 Access 例外；既有精確 callback 仍由供應商簽章驗證。
 如要驗證完全本機、loopback-only 的 D1／R2／Workflow 合成流程：
 
 ```bash
@@ -104,7 +105,7 @@ pnpm test:e2e
 3. 建立自己的 D1，將名稱及 ID 只放在受保護設定或被忽略的本機部署檔。
 4. 檢查並套用版本化 migration；不要上傳資料庫 dump 或真實資料。
 5. 先部署所有音訊傳輸、外部 AI 及清理能力均停用的 Worker 基線。
-6. 在 Cloudflare 設定自訂 hostname、Access allowlist、正式聯絡方法與非秘密 runtime 設定。
+6. 在 Cloudflare 設定自訂 hostname、精確 Access allowlist、正式聯絡方法與非秘密 runtime 設定，再以私密 onboarding 工具建立 owner workspace。
 7. 執行不輸出識別資料的部署驗證，再決定是否在隔離 staging 開啟進階能力。
 
 可直接跟隨的命令、Cloudflare Dashboard 設定、Workers Builds、自動部署、更新與故障排查，請閱讀 [`docs/SELF_HOSTING.md`](docs/SELF_HOSTING.md)。私人 beta 的 Access 安全檢查另見 [`docs/CLOUDFLARE_ACCESS.md`](docs/CLOUDFLARE_ACCESS.md)。

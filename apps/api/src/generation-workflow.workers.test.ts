@@ -40,6 +40,10 @@ async function resetDatabase(): Promise<void> {
   await env.DB.prepare("DELETE FROM provider_requests").run();
   await env.DB.prepare("DELETE FROM jobs").run();
   await env.DB.prepare("DELETE FROM uploads").run();
+  await env.DB.prepare("DELETE FROM workspace_memberships").run();
+  await env.DB.prepare("DELETE FROM workspace_controls").run();
+  await env.DB.prepare("DELETE FROM owner_invitations").run();
+  await env.DB.prepare("DELETE FROM workspaces").run();
   await env.DB.prepare("DELETE FROM owners").run();
 }
 
@@ -398,6 +402,7 @@ describe("feature-gated mock generation Workflow", () => {
 
   it("rejects real generation when the coarse limiter denies a request", async () => {
     const uploadId = await createConfirmedUpload(true);
+    await env.DB.prepare("UPDATE workspace_controls SET real_provider_status = 'approved'").run();
     const deniedEnvironment: Env = {
       ...env,
       DOWNLOAD_URL_TTL_SECONDS: "900",

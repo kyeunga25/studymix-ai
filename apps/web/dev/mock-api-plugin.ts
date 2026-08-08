@@ -245,9 +245,26 @@ async function handleMockRequest(
     return true;
   }
 
-  if (method === "GET" && url.pathname === "/api/auth/me") {
+  if (method === "GET" && url.pathname === "/api/session") {
     sendJson(response, 200, {
       data: {
+        authorization: {
+          accountStatus: "active",
+          aiJobApprovalMode: "manual",
+          membershipStatus: "active",
+          paymentStatus: "disabled",
+          permissions: [
+            "workspace:read",
+            "workspace:manage",
+            "jobs:create",
+            "jobs:read",
+            "credits:read",
+            "approvals:manage",
+          ],
+          realProviderStatus: "disabled",
+          role: "owner",
+          workspaceStatus: "active",
+        },
         capabilities: {
           creditAccounting: false,
           localAiHarness: false,
@@ -257,7 +274,6 @@ async function handleMockRequest(
           retentionCleanup: false,
         },
         kind: "development",
-        ownerId: "own_0123456789abcdef0123456789abcdef",
       },
       error: null,
       requestId: requestId(),

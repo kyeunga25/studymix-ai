@@ -26,12 +26,14 @@ export function resourceIdSchema(prefix: string) {
 }
 
 export const ownerIdSchema = resourceIdSchema("own");
+export const workspaceIdSchema = resourceIdSchema("wsp");
 export const uploadIdSchema = resourceIdSchema("upl");
 export const jobIdSchema = resourceIdSchema("job");
 export const outputIdSchema = resourceIdSchema("out");
 export const rightsDeclarationIdSchema = resourceIdSchema("rgt");
 
 export type OwnerId = z.infer<typeof ownerIdSchema>;
+export type WorkspaceId = z.infer<typeof workspaceIdSchema>;
 export type UploadId = z.infer<typeof uploadIdSchema>;
 export type JobId = z.infer<typeof jobIdSchema>;
 export type OutputId = z.infer<typeof outputIdSchema>;

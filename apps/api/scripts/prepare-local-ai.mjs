@@ -118,6 +118,10 @@ ensureMigrationGroup(
   ["owner_entitlements", "credit_ledger", "credit_balances"],
   "0004_beta_credit_ledger.sql",
 );
+ensureMigrationGroup(
+  ["workspaces", "workspace_memberships", "workspace_controls", "owner_invitations"],
+  "0005_owner_workspaces.sql",
+);
 runWrangler(["d1", "execute", "DB", "--local", "--file", localSchemaPath]);
 
 const seedSql = `

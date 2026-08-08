@@ -3,6 +3,23 @@ import { loadPrivateSession } from "./auth-session";
 
 const validSession = {
   data: {
+    authorization: {
+      accountStatus: "active",
+      aiJobApprovalMode: "manual",
+      membershipStatus: "active",
+      paymentStatus: "disabled",
+      permissions: [
+        "workspace:read",
+        "workspace:manage",
+        "jobs:create",
+        "jobs:read",
+        "credits:read",
+        "approvals:manage",
+      ],
+      realProviderStatus: "disabled",
+      role: "owner",
+      workspaceStatus: "active",
+    },
     capabilities: {
       creditAccounting: false,
       localAiHarness: false,
@@ -12,7 +29,6 @@ const validSession = {
       retentionCleanup: false,
     },
     kind: "authenticated",
-    ownerId: "own_0123456789abcdef0123456789abcdef",
   },
   error: null,
   requestId: "req_0123456789abcdef0123456789abcdef",
@@ -32,7 +48,7 @@ describe("private session loader", () => {
       session: validSession.data,
     });
     expect(request).toHaveBeenCalledWith(
-      "/api/auth/me",
+      "/api/session",
       expect.objectContaining({
         credentials: "same-origin",
         headers: {
