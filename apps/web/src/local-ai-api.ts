@@ -6,6 +6,7 @@ import {
   type CreateLocalSyntheticUploadRequest,
   type PublicUpload,
 } from "@studymix/contracts";
+import { fetchPrivateApi } from "./private-api";
 
 const localSyntheticUploadEnvelopeSchema = apiEnvelopeSchema(publicUploadSchema);
 
@@ -54,7 +55,7 @@ export async function createLocalSyntheticUpload(
   }
 
   try {
-    const response = await fetch("/api/local/synthetic-upload", {
+    const response = await fetchPrivateApi("/api/local/synthetic-upload", {
       body: JSON.stringify(parsedRequest.data),
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },

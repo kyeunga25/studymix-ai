@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { presetOptions, presetPresentation, PresetIcon } from "./preset-presentation";
 
 type LandingLanguage = "en" | "zh-HK";
 
@@ -14,7 +15,7 @@ const landingCopy = {
     mobileLogin: "Sign in",
     hero: {
       title: "Turn your recording into a better study mix",
-      body: "Upload audio you own or are authorized to process, choose a study-friendly style, and privately compare two candidates.",
+      body: "Upload audio you own or are authorized to process, choose a focus style from piano and acoustic guitar to slow electronic ambience, then privately compare two candidates.",
       primaryAction: "See how it works",
       status: "Closed beta only. Registration and real generation are not open.",
     },
@@ -38,7 +39,7 @@ const landingCopy = {
         },
         {
           title: "Choose a Study Mix style",
-          body: "Soft Piano, Music Box, or Lo-fi Study, without artist-name prompting.",
+          body: "Choose Soft Piano, Music Box, Lo-fi Study, Acoustic Ease, or Slowwave—without artist-name prompting.",
         },
         {
           title: "Compare privately",
@@ -72,7 +73,7 @@ const landingCopy = {
     mobileLogin: "登入",
     hero: {
       title: "把你的錄音，變成更適合專注的 Study Mix",
-      body: "上載你擁有或已獲授權的音訊，選擇喜歡的學習風格，私密比較兩個候選版本。",
+      body: "上載你擁有或已獲授權的音訊，從鋼琴、木結他到慢拍舒緩電音選擇專注風格，再私密比較兩個候選版本。",
       primaryAction: "了解如何運作",
       status: "目前為封閉測試，尚未開放註冊及真實生成。",
     },
@@ -95,7 +96,7 @@ const landingCopy = {
         },
         {
           title: "選擇 Study Mix 風格",
-          body: "柔和鋼琴、八音盒或 Lo-fi 學習，預設不使用歌手名稱。",
+          body: "可選柔和鋼琴、八音盒、Lo-fi 學習、木結他輕奏或慢拍舒緩電音，預設不使用歌手名稱。",
         },
         {
           title: "私密比較候選版本",
@@ -119,12 +120,6 @@ const landingCopy = {
     footer: "公開產品介紹 · 應用程式只限獲邀測試者",
   },
 } as const;
-
-const styleOptions = [
-  { en: "Soft Piano", "zh-HK": "柔和鋼琴", icon: <PianoIcon /> },
-  { en: "Music Box", "zh-HK": "八音盒", icon: <MusicBoxIcon /> },
-  { en: "Lo-fi Study", "zh-HK": "Lo-fi 學習", icon: <HeadphonesIcon /> },
-] as const;
 
 const waveform = [
   10, 18, 14, 26, 17, 31, 12, 22, 28, 15, 34, 20, 25, 11, 29, 19, 24, 14, 30, 17, 22, 12, 26, 16,
@@ -287,6 +282,8 @@ function PublicHeader({
 
 function ProductPreview({ language }: { language: LandingLanguage }) {
   const copy = landingCopy[language].preview;
+  const selectedPreviewPreset = "acoustic-ease" as const;
+  const selectedPreviewName = presetPresentation[selectedPreviewPreset].displayName[language];
   return (
     <section
       className="landing-product-preview"
@@ -303,21 +300,25 @@ function ProductPreview({ language }: { language: LandingLanguage }) {
 
       <strong className="landing-preview-label">{copy.styles}</strong>
       <div className="landing-style-options">
-        {styleOptions.map((style, index) => (
-          <div className={index === 0 ? "is-selected" : ""} key={style.en}>
+        {presetOptions.map((style) => (
+          <div
+            className={style.id === selectedPreviewPreset ? "is-selected" : ""}
+            data-preset={style.id}
+            key={style.id}
+          >
             <span className="landing-style-radio" aria-hidden="true" />
             <span className="landing-style-icon" aria-hidden="true">
-              {style.icon}
+              <PresetIcon presetId={style.id} />
             </span>
-            <strong>{style[language]}</strong>
+            <strong>{style.displayName[language]}</strong>
           </div>
         ))}
       </div>
 
       <strong className="landing-preview-label">{copy.candidates}</strong>
       <div className="landing-candidate-rows">
-        <CandidatePreview label={copy.candidateA} style={styleOptions[0][language]} />
-        <CandidatePreview label={copy.candidateB} style={styleOptions[1][language]} offset />
+        <CandidatePreview label={copy.candidateA} style={selectedPreviewName} />
+        <CandidatePreview label={copy.candidateB} style={selectedPreviewName} offset />
       </div>
       <p className="landing-preview-private">
         <LockIcon />
@@ -433,24 +434,6 @@ function PrivateAudioIcon() {
     <IconBase>
       <rect x="4" y="9" width="16" height="12" rx="2" />
       <path d="M8 9V7a4 4 0 0 1 8 0v2M8 15h2l1-3 2 6 1-3h2" />
-    </IconBase>
-  );
-}
-
-function PianoIcon() {
-  return (
-    <IconBase>
-      <path d="M5 10c1-4 4-6 9-6h3v8H5v-2Z" />
-      <path d="M5 12h14v4H5zM7 16v4M17 16v4M9 12v4M12 12v4M15 12v4" />
-    </IconBase>
-  );
-}
-
-function MusicBoxIcon() {
-  return (
-    <IconBase>
-      <path d="M5 9h14v10H5zM8 6h8l2 3H6l2-3Z" />
-      <path d="M9 13h6M12 13v4M16 4c2-2 3-1 3 1v2" />
     </IconBase>
   );
 }

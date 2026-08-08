@@ -44,9 +44,11 @@ Generate two candidates for each job.
 
 **Status:** Accepted for MVP
 
-Only Soft Piano, Music Box, and Lo-fi Study are exposed.
+Only Soft Piano, Music Box, Lo-fi Study, Acoustic Ease, and Slowwave are exposed.
 
-**Reason:** Controlled prompts reduce product complexity, abuse risk, and benchmark variance.
+**Reason:** Five controlled instrumental directions cover piano, music-box, lo-fi, light acoustic, and
+slow ambient-electronic study contexts while retaining bounded prompts, lower abuse risk, and practical
+benchmark variance.
 
 ## ADR-008: Rights-holder positioning
 
@@ -86,13 +88,17 @@ addresses. The invitation is consumed atomically into one active owner workspace
 approval, bounded job cost, and a bounded idempotent credit grant. A fixed development owner is allowed
 only when `APP_ENV` is explicitly `local`, `development`, or `test`.
 
-The bilingual `/login` page is a public entry surface, not an authentication provider. It sends the user
-to the protected `/app` path, then the private client verifies `/api/session` before rendering workspace
-data. The compatibility `/api/auth/me` route uses the same handler. Session responses expose only
+The bilingual `/login` page is a public entry and failure surface, not an authentication provider. It
+sends the user to a validated `/app` destination so Access can authenticate them and return successful
+sessions directly to the private workspace. The client verifies `/api/session` before rendering workspace
+data, and every private AJAX request asks Access for an explicit `401` response. The compatibility
+`/api/auth/me` route uses the same handler. Session responses expose only
 authorization states, role, permissions, approval states, and capabilities; they omit owner and workspace
-identifiers. Distinct signed-out, denied, and service-unavailable states fail closed. A disabled
-registration tab reserves the future interface location without exposing a registration API or weakening
-the beta allowlist.
+identifiers. Missing, expired, denied, or unverifiable sessions return to `/login` with one of three fixed
+public-safe reason codes; arbitrary return origins and unrecognized reasons are ignored. Access must
+separately redirect its identity and non-identity block pages to the public denial state because an edge
+rejection happens before React or the Worker can run. A disabled registration tab reserves the future
+interface location without exposing a registration API or weakening the beta allowlist.
 
 **Reason:** Visitors can understand the project without an account, while Access supplies a maintained
 identity-aware boundary for the private beta. Worker-side JWT verification and owner-scoped D1 queries

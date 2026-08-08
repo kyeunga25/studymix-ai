@@ -187,7 +187,7 @@ A preset is versioned configuration:
 
 ```ts
 type StylePreset = {
-  id: "soft-piano" | "music-box" | "lofi-study";
+  id: "soft-piano" | "music-box" | "lofi-study" | "acoustic-ease" | "slowwave";
   version: 1;
   displayName: {
     en: string;
@@ -233,6 +233,22 @@ calm bedtime and study music, no vocals
 instrumental, relaxed lofi study music, warm electric piano,
 recognizable central melody, restrained soft drums,
 subtle tape texture, mellow dynamics, no vocals
+```
+
+### Acoustic Ease
+
+```text
+instrumental, simple acoustic guitar, optional soft piano accompaniment,
+recognizable central melody, light fingerpicked arrangement, gentle dynamics,
+warm natural room, calm study music, no vocals
+```
+
+### Slowwave
+
+```text
+instrumental, slow-paced ambient electronic music, recognizable central melody,
+soft synth pads, gentle pulse, restrained percussion, warm spacious texture,
+calm study music, no vocals
 ```
 
 These strings are hypotheses and must be benchmarked. Do not claim that they guarantee melody preservation.
@@ -443,17 +459,24 @@ the exact `/app` and `/api` parents plus `/app/*` and user-facing `/api/*` deep 
 separately verifies the Access JWT signature, algorithm, issuer, audience, expiry, application-token type,
 user subject, and verified email claim. Service tokens are not accepted as interactive user identities.
 
-The public `/login` page does not collect a password. Its closed-beta action enters the protected `/app`
-path so Cloudflare Access can authenticate an invited identity. The client then requests `/api/session`
-with `X-Requested-With: XMLHttpRequest`, allowing an expired Access session to be handled as a `401`
-instead of an HTML redirect. `/api/session` is the canonical session endpoint; `/api/auth/me` remains a
-compatibility alias. The Worker verifies the JWT, derives a keyed one-way hash of the verified email, and
+The public `/login` page does not collect a password. Its closed-beta action enters a same-origin,
+`/app`-scoped destination so Cloudflare Access can authenticate an invited identity and return a successful
+session directly to the workspace. The client then requests the canonical `/api/session` endpoint before
+rendering workspace data; `/api/auth/me` remains a compatibility alias. Every private AJAX request sends
+`X-Requested-With: XMLHttpRequest`, allowing an expired Access session to be handled as a `401` instead of
+redirected HTML. The Worker verifies the JWT, derives a keyed one-way hash of the verified email, and
 requires a matching D1 invitation. The first valid login atomically consumes the invitation into an opaque
 owner, active workspace, active owner membership, manual approval controls, private-beta entitlement, and
 idempotent initial credit grant. Later requests require the owner, default membership, and workspace all to
-remain active before either an API handler or the Static Assets binding runs. A `401`, `403`, malformed
-response, or configuration failure keeps the workspace locked. The disabled registration tab is
-presentation-only; no public registration endpoint or anonymous owner path exists.
+remain active before either an API handler or the Static Assets binding runs.
+
+A `401`, `403`, malformed session response, or configuration failure keeps the workspace locked and sends
+the browser to the public `/login` interface. That interface maps only the fixed `session-expired`,
+`access-denied`, and `verification-failed` reasons to bilingual human-readable copy; it never reflects the
+API body, and it rejects external or non-`/app` return destinations. A first navigation rejected by Access
+at the edge cannot execute application code, so the Access application's identity and non-identity block
+pages must use a custom redirect to `/login?reason=access-denied&next=%2Fapp`. The disabled registration tab
+is presentation-only; no public registration endpoint or anonymous owner path exists.
 
 The session response contains only active status, role, derived permissions, approval state, and capability
 booleans. It does not expose the login identity, invitation hash, owner ID, or workspace ID. A client-supplied

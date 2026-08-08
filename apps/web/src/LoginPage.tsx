@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { readLoginNavigation } from "./auth-navigation";
 
 type LoginLanguage = "en" | "zh-HK";
 
@@ -16,10 +17,31 @@ const loginCopy = {
     registerTab: "Create account",
     registerLater: "Later",
     cardTitle: "Invited tester sign in",
-    cardBody: "Continue to Cloudflare Access, then return here automatically after verification.",
+    cardBody:
+      "Continue to Cloudflare Access. Successful verification returns you directly to the private workspace.",
+    flowLabel: "Secure sign-in flow",
+    flow: ["Verify identity", "Check beta access", "Open workspace"],
     closedTitle: "Closed beta",
     closedBody: "Only approved testers can enter. Public registration is not open yet.",
     action: "Continue to secure sign in",
+    retryCurrent: "Check the current identity again",
+    failure: {
+      "access-denied": {
+        title: "Private-beta access was not approved",
+        body: "Cloudflare Access or the StudyMix beta permission check did not approve this identity. The private workspace stayed locked and no workspace data was loaded.",
+        action: "Sign out and use another invited identity",
+      },
+      "session-expired": {
+        title: "Sign-in is required again",
+        body: "The Cloudflare Access session was missing or had expired. Verify an invited identity to continue; the private workspace stayed locked.",
+        action: "Sign in and return to the workspace",
+      },
+      "verification-failed": {
+        title: "Sign-in could not be verified",
+        body: "The safety check did not complete, so StudyMix kept the private workspace locked. Please try the secure sign-in flow again.",
+        action: "Try secure sign-in again",
+      },
+    },
     passwordNote:
       "Cloudflare Access handles sign-in. StudyMix does not create or store a password.",
     futureTitle: "Public registration is reserved for a later release",
@@ -41,10 +63,30 @@ const loginCopy = {
     registerTab: "建立帳戶",
     registerLater: "稍後開放",
     cardTitle: "受邀測試者登入",
-    cardBody: "前往 Cloudflare Access 完成驗證，成功後會自動返回私人工作區。",
+    cardBody: "前往 Cloudflare Access 完成驗證；成功後會直接返回私人工作區。",
+    flowLabel: "安全登入流程",
+    flow: ["驗證身份", "核對 Beta 權限", "進入工作區"],
     closedTitle: "目前為封閉測試",
     closedBody: "只有已獲批准的測試者可以進入，公開註冊尚未開放。",
     action: "繼續安全登入",
+    retryCurrent: "重新檢查目前身份",
+    failure: {
+      "access-denied": {
+        title: "未獲批准進入私密 Beta",
+        body: "Cloudflare Access 或 StudyMix Beta 權限檢查未批准目前身份。私人工作區維持鎖定，亦沒有載入工作區資料。",
+        action: "登出並改用另一個受邀身份",
+      },
+      "session-expired": {
+        title: "需要重新登入",
+        body: "Cloudflare Access 工作階段不存在或已經過期。請重新驗證受邀身份；私人工作區仍然鎖定。",
+        action: "重新登入並返回工作區",
+      },
+      "verification-failed": {
+        title: "未能完成登入驗證",
+        body: "安全檢查沒有完成，因此 StudyMix 繼續鎖定私人工作區。請重新嘗試安全登入流程。",
+        action: "重新嘗試安全登入",
+      },
+    },
     passwordNote: "登入由 Cloudflare Access 處理；StudyMix 不會建立或儲存密碼。",
     futureTitle: "已為日後公開註冊預留位置",
     futureBody: "公開註冊開放後，新用戶可由此頁建立 StudyMix 帳戶。",
@@ -71,11 +113,18 @@ const legalLinks = {
 export function LoginPage() {
   const [language, setLanguage] = useState<LoginLanguage>("zh-HK");
   const copy = loginCopy[language];
+  const navigation = readLoginNavigation(window.location.search);
+  const failure = navigation.reason === null ? null : copy.failure[navigation.reason];
+  const primaryDestination =
+    navigation.reason === "access-denied" ? "/cdn-cgi/access/logout" : navigation.destination;
 
   useEffect(() => {
     document.documentElement.lang = language;
-    document.title = language === "en" ? "Sign in | StudyMix AI" : "登入｜StudyMix AI";
-  }, [language]);
+    document.title =
+      language === "en"
+        ? `${failure === null ? "Sign in" : "Sign-in status"} | StudyMix AI`
+        : `${failure === null ? "登入" : "登入狀態"}｜StudyMix AI`;
+  }, [failure, language]);
 
   return (
     <div className="login-page">
@@ -128,10 +177,31 @@ export function LoginPage() {
           </div>
 
           <div className="login-card-body">
+            {failure === null ? null : (
+              <div className={`login-feedback is-${navigation.reason}`} role="alert">
+                <span aria-hidden="true">
+                  {navigation.reason === "access-denied" ? <LockIcon /> : <ShieldIcon />}
+                </span>
+                <div>
+                  <strong>{failure.title}</strong>
+                  <p>{failure.body}</p>
+                </div>
+              </div>
+            )}
+
             <header>
               <h2 id="login-card-title">{copy.cardTitle}</h2>
               <p>{copy.cardBody}</p>
             </header>
+
+            <ol className="login-flow" aria-label={copy.flowLabel}>
+              {copy.flow.map((step, index) => (
+                <li key={step}>
+                  <span>{index + 1}</span>
+                  {step}
+                </li>
+              ))}
+            </ol>
 
             <div className="login-beta-note" role="note">
               <LockIcon />
@@ -141,11 +211,16 @@ export function LoginPage() {
               </span>
             </div>
 
-            <a className="login-submit" href="/app">
+            <a className="login-submit" href={primaryDestination}>
               <AccessIcon />
-              <span>{copy.action}</span>
+              <span>{failure?.action ?? copy.action}</span>
               <ArrowIcon />
             </a>
+            {navigation.reason === "access-denied" ? (
+              <a className="login-secondary-action" href={navigation.destination}>
+                {copy.retryCurrent}
+              </a>
+            ) : null}
             <p className="login-password-note">{copy.passwordNote}</p>
 
             <div className="login-future-registration">

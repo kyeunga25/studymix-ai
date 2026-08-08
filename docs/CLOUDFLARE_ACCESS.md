@@ -169,7 +169,21 @@ In Cloudflare Zero Trust:
    the exact parents `/app` and `/api`, plus the deep-route patterns `/app/*` and `/api/*`. A wildcard
    path does not cover its parent. The sign-in page links to `/app`, which starts Access authentication
    when no valid application session exists.
-3. Before enabling fal callbacks, add a separate, more-specific application for the exact
+3. In the same application's custom block-page settings, set both identity and non-identity failures to
+   a **Custom Redirect URL** using the public login surface:
+
+   ```text
+   https://<PUBLIC_HOSTNAME>/login?reason=access-denied&next=%2Fapp
+   ```
+
+   This covers failures that Access rejects before the Worker or React application runs. Keep the
+   destination on the same public hostname, include no identity details, and do not protect `/login`
+   with Access. Without this setting, an initial Access policy denial continues to show Cloudflare's
+   block page even though in-app `401` and `403` responses use the StudyMix login interface. Recheck the
+   current
+   [Access custom block-page guidance](https://developers.cloudflare.com/cloudflare-one/reusable-components/custom-pages/access-block-page/)
+   before changing the application.
+4. Before enabling fal callbacks, add a separate, more-specific application for the exact
    `/api/webhooks/fal` path with a narrowly scoped **Bypass / Everyone** policy. Do not add a wildcard or
    change the parent private-path policy. The Worker independently rejects callbacks unless the Ed25519
    signature, configured fal user, fresh timestamp, raw body, origin/path, and known request ID all match.
@@ -181,16 +195,16 @@ and [Access policy](https://developers.cloudflare.com/cloudflare-one/access-cont
 before applying this narrow exception.
    Do not add the bare hostname or `/`, because the product overview and legal notices are intentionally
    public. The checked-in deployment setting disables the default `workers.dev` hostname.
-3. Add one **Allow** policy whose Include selector contains only the exact approved owner email. Do not
+5. Add one **Allow** policy whose Include selector contains only the exact approved owner email. Do not
    use an email domain, identity-provider group, `Everyone`, or permanent `Bypass` rule for this
    single-owner beta.
-4. Select only the login method needed by the approved testers. Cloudflare account members may use
+6. Select only the login method needed by the approved testers. Cloudflare account members may use
    the Cloudflare identity provider. For an invited tester outside the account, explicitly enable
    One-time PIN and keep the exact-email **Allow** selector. A `Login Methods: One-time PIN` include
    rule by itself is not an email allowlist and must not be used to grant access.
-5. Do not add a Service Auth rule to the interactive web application. The application rejects
+7. Do not add a Service Auth rule to the interactive web application. The application rejects
    service-token JWTs because they are not user identities.
-6. Choose an appropriately short application and policy session duration for the private beta.
+8. Choose an appropriately short application and policy session duration for the private beta.
 
 Cloudflare supports path destinations and evaluates more-specific application paths first:
 <https://developers.cloudflare.com/cloudflare-one/access-controls/policies/app-paths/>
@@ -247,15 +261,19 @@ Before production traffic is enabled:
    `/legal/documents.json` load without login and create no owner row. Confirm `/login` has no password
    field or active public-registration control.
 3. Follow the `/login` action and confirm `/app`, a deep `/app/*` route, `/api`, and `/api/session` show
-   Access login or denial before the Worker is reached.
+   Access login or denial before the Worker is reached. Confirm successful authentication returns directly
+   to `/app`, and `/api/session` is verified before any private workspace control or data appears.
 4. Confirm the approved identity can load `/api/session` and receives only active account, workspace,
    owner-role, permission, and approval-state fields. The response deliberately omits the login identity,
    keyed hash, owner ID, and workspace ID.
-5. Confirm an unapproved email is denied by Access.
+5. Confirm an unapproved email is denied by Access and the configured block-page redirect returns to
+   `/login?reason=access-denied&next=%2Fapp`, where the bilingual denial notice is visible without any
+   identity, policy, token, or JSON details.
    After Access authentication, confirm an uninvited identity, a D1 owner whose status is `disabled`,
    a disabled workspace, a disabled membership, and a cross-workspace assertion each receive `403` and
-   no workspace interface. Browser session checks must send `X-Requested-With: XMLHttpRequest` so expiry is
-   handled as `401` without treating redirected HTML as a valid session. This follows Cloudflare's current
+   no workspace interface, then return to the same public login notice. Every private browser API request
+   must send `X-Requested-With: XMLHttpRequest` so expiry is handled as `401` without treating redirected
+   HTML as a valid session. This follows Cloudflare's current
    [Access session-management guidance](https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/session-management/#ajax).
 6. Send a request without `Cf-Access-Jwt-Assertion` directly to each protected parent and deep Worker
    path and confirm a `401` response with no owner row created.

@@ -12,6 +12,7 @@ import {
   type DeleteJobResponse,
   type PublicJob,
 } from "@studymix/contracts";
+import { fetchPrivateApi } from "./private-api";
 
 const jobEnvelopeSchema = apiEnvelopeSchema(publicJobSchema);
 const downloadEnvelopeSchema = apiEnvelopeSchema(downloadOutputResponseSchema);
@@ -150,7 +151,7 @@ export async function createJob(request: CreateJobRequest): Promise<PublicJob> {
   }
 
   try {
-    const response = await fetch("/api/jobs", {
+    const response = await fetchPrivateApi("/api/jobs", {
       body: JSON.stringify(parsedRequest.data),
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
@@ -164,8 +165,7 @@ export async function createJob(request: CreateJobRequest): Promise<PublicJob> {
 
 export async function getJob(jobId: string, signal: AbortSignal): Promise<PublicJob> {
   try {
-    const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
-      credentials: "same-origin",
+    const response = await fetchPrivateApi(`/api/jobs/${encodeURIComponent(jobId)}`, {
       signal,
     });
     return await parseJobResponse(response);
@@ -184,10 +184,12 @@ export async function cancelJob(jobId: string): Promise<PublicJob> {
     });
   }
   try {
-    const response = await fetch(`/api/jobs/${encodeURIComponent(parsedJobId.data)}/cancel`, {
-      credentials: "same-origin",
-      method: "POST",
-    });
+    const response = await fetchPrivateApi(
+      `/api/jobs/${encodeURIComponent(parsedJobId.data)}/cancel`,
+      {
+        method: "POST",
+      },
+    );
     return await parseJobResponse(response);
   } catch (error) {
     normalizeFetchError(error);
@@ -204,8 +206,7 @@ export async function deleteJob(jobId: string): Promise<DeleteJobResponse> {
     });
   }
   try {
-    const response = await fetch(`/api/jobs/${encodeURIComponent(parsedJobId.data)}`, {
-      credentials: "same-origin",
+    const response = await fetchPrivateApi(`/api/jobs/${encodeURIComponent(parsedJobId.data)}`, {
       method: "DELETE",
     });
     return await parseDeleteJobResponse(response);
@@ -227,10 +228,9 @@ export async function getOutputDownload(
     });
   }
   try {
-    const response = await fetch(
+    const response = await fetchPrivateApi(
       `/api/outputs/${encodeURIComponent(parsedOutputId.data)}/download`,
       {
-        credentials: "same-origin",
         method: "POST",
         ...(signal === undefined ? {} : { signal }),
       },

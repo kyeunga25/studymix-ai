@@ -127,10 +127,10 @@
   position: relative;
   z-index: 2;
   display: grid;
-  width: min(1190px, calc(100% - 48px));
-  grid-template-columns: minmax(0, 0.92fr) minmax(520px, 1.08fr);
+  width: min(1384px, calc(100% - 48px));
+  grid-template-columns: minmax(480px, 0.9fr) minmax(620px, 1.1fr);
   align-items: center;
-  gap: clamp(50px, 7vw, 104px);
+  gap: clamp(36px, 3.5vw, 52px);
   margin: 92px auto 0;
 }
 
@@ -153,7 +153,7 @@
   max-width: 640px;
   margin: 0;
   color: #11163f;
-  font-size: clamp(3.5rem, 5.3vw, 5.15rem);
+  font-size: clamp(3.5rem, 4.6vw, 4.6rem);
   line-height: 1.04;
   text-wrap: balance;
 }
@@ -237,7 +237,7 @@
 }
 
 .landing-product-preview {
-  padding: 28px;
+  padding: 25px;
   border: 1px solid rgba(255, 255, 255, 0.8);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.95);
@@ -333,19 +333,19 @@
 
 .landing-style-options {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .landing-style-options > div {
   position: relative;
   display: flex;
-  min-height: 105px;
+  min-height: 104px;
   align-items: center;
   justify-content: center;
   flex-direction: column;
   gap: 8px;
-  padding: 15px 8px;
+  padding: 15px 6px 11px;
   border: 1px solid #dcd7e9;
   border-radius: 12px;
   color: #4b4b68;
@@ -379,7 +379,8 @@
 }
 
 .landing-style-options strong {
-  font-size: 0.77rem;
+  font-size: 0.7rem;
+  line-height: 1.25;
 }
 
 .landing-candidate-rows {
@@ -689,7 +690,7 @@
   text-underline-offset: 3px;
 }
 
-@media (max-width: 1060px) {
+@media (max-width: 1200px) {
   .landing-header {
     grid-template-columns: auto 1fr auto;
   }
@@ -814,22 +815,29 @@
   }
 
   .landing-style-options {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .landing-style-options > div {
-    min-height: 64px;
+    min-height: 104px;
     align-items: center;
-    justify-content: flex-start;
+    justify-content: center;
+    flex-direction: column;
+    gap: 7px;
+    padding: 14px 8px 10px;
+    text-align: center;
+  }
+
+  .landing-style-options > div[data-preset="slowwave"] {
+    min-height: 76px;
+    grid-column: 1 / -1;
     flex-direction: row;
     gap: 12px;
-    padding: 10px 14px 10px 43px;
-    text-align: left;
   }
 
   .landing-style-radio {
-    top: 23px;
-    left: 15px;
+    top: 11px;
+    left: 11px;
   }
 
   .landing-style-icon {

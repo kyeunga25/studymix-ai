@@ -76,6 +76,9 @@ test("renders a public product overview without exposing the private app", async
       name: "使用條款",
     }),
   ).toHaveAttribute("href", "/legal/terms");
+  const publicStylePreview = page.locator(".landing-style-options");
+  await expect(publicStylePreview.getByText("木結他輕奏", { exact: true })).toBeVisible();
+  await expect(publicStylePreview.getByText("慢拍舒緩電音", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "上載你的音訊" })).toHaveCount(0);
 });
 
@@ -93,6 +96,26 @@ test("provides a dedicated beta sign-in page with future registration space", as
     }),
   ).toHaveAttribute("href", "/legal/ai-output-notice");
   await expect(page.locator('input[type="email"], input[type="password"]')).toHaveCount(0);
+
+  await page.getByRole("link", { name: "繼續安全登入" }).click();
+  await expect(page).toHaveURL(/\/app$/);
+  await expect(page.getByRole("heading", { name: "把你的音樂變成專注讀書 Mix" })).toBeVisible();
+});
+
+test("shows an Access denial on the login interface without accepting an external redirect", async ({
+  page,
+}) => {
+  await page.goto("/login?reason=access-denied&next=https%3A%2F%2Foutside.example%2Fprivate");
+
+  await expect(page.getByRole("alert")).toContainText("未獲批准進入私密 Beta");
+  await expect(page.getByRole("link", { name: "登出並改用另一個受邀身份" })).toHaveAttribute(
+    "href",
+    "/cdn-cgi/access/logout",
+  );
+  await expect(page.getByRole("link", { name: "重新檢查目前身份" })).toHaveAttribute(
+    "href",
+    "/app",
+  );
 });
 
 test("verifies the invited test session before showing the private app", async ({ page }) => {
@@ -113,19 +136,20 @@ test("does not expose the private workspace when session verification fails", as
   await page.route("**/api/session", async (route) => {
     expect(route.request().headers()["x-requested-with"]).toBe("XMLHttpRequest");
     await route.fulfill({
-      body: JSON.stringify({
-        data: null,
-        error: { code: "UNAUTHORIZED", message: "Sign-in is required.", retryable: false },
-        requestId: "req_0123456789abcdef0123456789abcdef",
-      }),
-      contentType: "application/json",
+      body: "<!doctype html><title>Access session expired</title>",
+      contentType: "text/html",
       status: 401,
     });
   });
   await page.goto("/app");
 
-  await expect(page.getByRole("heading", { name: "登入工作階段已結束" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "返回登入" })).toHaveAttribute("href", "/login");
+  await expect(page).toHaveURL(/\/login\?/);
+  expect(new URL(page.url()).searchParams.get("reason")).toBe("session-expired");
+  await expect(page.getByRole("alert")).toContainText("需要重新登入");
+  await expect(page.getByRole("link", { name: "重新登入並返回工作區" })).toHaveAttribute(
+    "href",
+    "/app",
+  );
   await expect(page.getByRole("heading", { name: "把你的音樂變成專注讀書 Mix" })).toHaveCount(0);
   await expect(page.locator('input[type="file"]')).toHaveCount(0);
 });
@@ -146,11 +170,39 @@ test("keeps the workspace locked when an authenticated account lacks beta permis
   });
   await page.goto("/app");
 
-  await expect(page.getByRole("heading", { name: "此帳戶未獲 Beta 測試權限" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "驗證另一個身份" })).toHaveAttribute(
+  await expect(page).toHaveURL(/\/login\?/);
+  expect(new URL(page.url()).searchParams.get("reason")).toBe("access-denied");
+  await expect(page.getByRole("alert")).toContainText("未獲批准進入私密 Beta");
+  await expect(page.getByRole("link", { name: "登出並改用另一個受邀身份" })).toHaveAttribute(
     "href",
     "/cdn-cgi/access/logout",
   );
+  await expect(page.locator('input[type="file"]')).toHaveCount(0);
+});
+
+test("returns an expired in-workspace API session to the login interface", async ({ page }) => {
+  await page.route("**/api/legal/acceptances", async (route) => {
+    expect(route.request().headers()["x-requested-with"]).toBe("XMLHttpRequest");
+    await route.fulfill({
+      body: "<!doctype html><title>Access session expired</title>",
+      contentType: "text/html",
+      status: 401,
+    });
+  });
+  await page.goto("/app");
+  await page.locator('input[type="file"]').setInputFiles({
+    buffer: Buffer.from("test-audio-placeholder"),
+    mimeType: "audio/mpeg",
+    name: "authorized-recording.mp3",
+  });
+  const checkboxes = page.getByRole("checkbox");
+  await checkboxes.nth(0).check();
+  await checkboxes.nth(1).check();
+  await page.getByRole("button", { name: "生成 2 個候選版本" }).click();
+
+  await expect(page).toHaveURL(/\/login\?/);
+  expect(new URL(page.url()).searchParams.get("reason")).toBe("session-expired");
+  await expect(page.getByRole("alert")).toContainText("需要重新登入");
   await expect(page.locator('input[type="file"]')).toHaveCount(0);
 });
 
@@ -170,6 +222,30 @@ test("requires both rights and current legal documents before generation can be 
   await expect(page.getByRole("button", { name: "Generate 2 candidates" })).toBeDisabled();
   await checkboxes.nth(1).check();
   await expect(page.getByRole("button", { name: "Generate 2 candidates" })).toBeEnabled();
+});
+
+test("selects both expanded study styles and carries the choice into generation", async ({
+  page,
+}) => {
+  await prepareAuthorizedMix(page);
+
+  const styleChoices = page.getByRole("radio", {
+    name: /Soft Piano|Music Box|Lo-fi Study|Acoustic Ease|Slowwave/,
+  });
+  await expect(styleChoices).toHaveCount(5);
+
+  await page.getByRole("radio", { name: /Slowwave/ }).check();
+  await expect(page.getByRole("radio", { name: /Slowwave/ })).toBeChecked();
+  await expect(page.getByText("Slow electronic ambience with a gentle pulse")).toBeVisible();
+
+  await page.getByRole("radio", { name: /Acoustic Ease/ }).check();
+  await expect(page.getByRole("radio", { name: /Acoustic Ease/ })).toBeChecked();
+  await page.getByRole("button", { name: "Generate 2 candidates" }).click();
+
+  await expect(page.getByRole("heading", { name: "Your study mix is ready" })).toBeVisible({
+    timeout: 5_000,
+  });
+  await expect(page.getByText("Acoustic Ease", { exact: true })).toBeVisible();
 });
 
 test("renders every versioned legal page and discloses the pre-release blockers", async ({
@@ -445,7 +521,7 @@ test("supports keyboard operation from the selected file through job submission"
   await fileInput.focus();
 
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("radio", { name: "Soft Piano" })).toBeFocused();
+  await expect(page.getByRole("radio", { name: /^Soft Piano\b/ })).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("checkbox").nth(0)).toBeFocused();
   await page.keyboard.press("Space");
