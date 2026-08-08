@@ -23,7 +23,7 @@ import { LandingPage } from "./LandingPage";
 import { LoginPage } from "./LoginPage";
 import { PrivateAccessGate } from "./PrivateAccessGate";
 import { buildLoginRedirect, type PrivateAccessFailureStatus } from "./auth-navigation";
-import { loadPrivateSession } from "./auth-session";
+import { loadPrivateSession, type PrivateSession } from "./auth-session";
 import { getCreditSummary } from "./credit-api";
 import { legalPageContent, legalPathToDocumentId, type Language } from "./legal-content";
 import { JobExperience, isPendingJob } from "./job-experience";
@@ -305,7 +305,7 @@ function PrivateApp() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [rightsAccepted, setRightsAccepted] = useState(false);
   const [legalAccepted, setLegalAccepted] = useState(false);
-  const [sessionVerified, setSessionVerified] = useState(false);
+  const [privateSession, setPrivateSession] = useState<PrivateSession | null>(null);
   const [isSavingAcceptance, setIsSavingAcceptance] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [activeJob, setActiveJob] = useState<PublicJob | null>(null);
@@ -371,18 +371,20 @@ function PrivateApp() {
       try {
         const result = await loadPrivateSession(controller.signal);
         if (result.status === "verified") {
+          setPrivateSession(result.session);
           setCreditAccountingEnabled(result.session.capabilities.creditAccounting);
           setLocalAiHarnessEnabled(result.session.capabilities.localAiHarness);
           setMockGenerationEnabled(result.session.capabilities.mockGeneration);
           setRealGenerationEnabled(result.session.capabilities.realGeneration);
           setPrivateAudioUploadEnabled(result.session.capabilities.privateAudioUpload);
           setRetentionCleanupEnabled(result.session.capabilities.retentionCleanup);
-          setSessionVerified(true);
           return;
         }
+        setPrivateSession(null);
         window.location.replace(buildPrivateLoginRedirect(result.status));
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setPrivateSession(null);
           window.location.replace(buildPrivateLoginRedirect("unavailable"));
         }
       }
@@ -393,7 +395,7 @@ function PrivateApp() {
   }, []);
 
   useEffect(() => {
-    if (!sessionVerified || !creditAccountingEnabled) {
+    if (privateSession === null || !creditAccountingEnabled) {
       setCreditSummary(null);
       return;
     }
@@ -406,7 +408,7 @@ function PrivateApp() {
         }
       });
     return () => controller.abort();
-  }, [sessionVerified, activeJobStatus, creditAccountingEnabled]);
+  }, [privateSession, activeJobStatus, creditAccountingEnabled]);
 
   useEffect(() => {
     if (
@@ -732,7 +734,7 @@ function PrivateApp() {
     localSourceIdempotencyKey.current = null;
   };
 
-  if (!sessionVerified) {
+  if (privateSession === null) {
     return (
       <PrivateAccessGate
         language={language}
@@ -778,8 +780,8 @@ function PrivateApp() {
       </header>
 
       <main>
-        <AccessVerificationStatus language={language} />
-        {sessionVerified ? (
+        <AccessVerificationStatus language={language} session={privateSession} />
+        {privateSession !== null ? (
           activeJob !== null || jobError !== null ? (
             <JobExperience
               canCancel={localAiHarnessEnabled && isPendingJob(activeJob?.status ?? "cancelled")}
@@ -1076,16 +1078,60 @@ function PublicLegalExperience({ documentId }: { documentId: LegalDocumentId }) 
   );
 }
 
-function AccessVerificationStatus({ language }: { language: Language }) {
-  const statusCopy = {
-    en: "Private-beta access verified. This session is approved for testing.",
-    "zh-HK": "私密測試存取權已驗證；此工作階段可進行測試。",
-  } satisfies Record<Language, string>;
+function AccessVerificationStatus({
+  language,
+  session,
+}: {
+  language: Language;
+  session: PrivateSession;
+}) {
+  const unavailable = language === "en" ? "Unavailable" : "不可用";
+  const available = language === "en" ? "Available" : "可用";
+  const localOnly = language === "en" ? "Local synthetic only" : "只限本機合成";
+  const reviewRequired = language === "en" ? "Review required; unavailable" : "待審批；不可用";
+  const flagDisabled =
+    language === "en" ? "Approved control; feature disabled" : "控制已核准；功能旗標關閉";
+  const realAiStatus = session.capabilities.realGeneration
+    ? available
+    : session.authorization.realProviderStatus === "review_required"
+      ? reviewRequired
+      : session.authorization.realProviderStatus === "approved"
+        ? flagDisabled
+        : unavailable;
+  const paymentStatus =
+    session.authorization.paymentStatus === "review_required"
+      ? reviewRequired
+      : session.authorization.paymentStatus === "approved"
+        ? flagDisabled
+        : unavailable;
+  const uploadStatus = session.capabilities.localAiHarness
+    ? localOnly
+    : session.capabilities.privateAudioUpload
+      ? available
+      : unavailable;
+  const syntheticStatus = session.capabilities.localAiHarness
+    ? localOnly
+    : session.capabilities.mockGeneration
+      ? language === "en"
+        ? "Synthetic test available"
+        : "合成測試可用"
+      : unavailable;
+  const heading =
+    language === "en"
+      ? "Private-beta access verified · Owner workspace active · Manual AI approval"
+      : "私密測試存取權已驗證 · 擁有者工作區：啟用 · AI 審批：人工";
+  const detail =
+    language === "en"
+      ? `Private upload: ${uploadStatus} · Synthetic test: ${syntheticStatus} · Real AI: ${realAiStatus} · Payments: ${paymentStatus} · Automatic retention: ${session.capabilities.retentionCleanup ? available : unavailable}`
+      : `私人上載：${uploadStatus} · 合成測試：${syntheticStatus} · 真實 AI：${realAiStatus} · 付款：${paymentStatus} · 自動保留期：${session.capabilities.retentionCleanup ? available : unavailable}`;
 
   return (
     <section className="access-verification is-verified" role="status">
       <ShieldIcon />
-      <span>{statusCopy[language]}</span>
+      <div className="access-verification-copy">
+        <strong>{heading}</strong>
+        <span>{detail}</span>
+      </div>
     </section>
   );
 }

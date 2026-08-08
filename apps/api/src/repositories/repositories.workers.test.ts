@@ -43,6 +43,7 @@ function ownerContext(seed: "1" | "2"): OwnerContext {
   return {
     authIssuer: "https://example-team.cloudflareaccess.com",
     authSubjectHash: seed.repeat(64),
+    invitationIdentityHash: seed.repeat(64),
     kind: "authenticated",
     ownerId: `own_${seed.repeat(32)}`,
   };
@@ -100,6 +101,10 @@ describe("D1 repositories", () => {
     await env.DB.prepare("DELETE FROM provider_requests").run();
     await env.DB.prepare("DELETE FROM jobs").run();
     await env.DB.prepare("DELETE FROM uploads").run();
+    await env.DB.prepare("DELETE FROM workspace_memberships").run();
+    await env.DB.prepare("DELETE FROM workspace_controls").run();
+    await env.DB.prepare("DELETE FROM owner_invitations").run();
+    await env.DB.prepare("DELETE FROM workspaces").run();
     await env.DB.prepare("DELETE FROM owners").run();
   });
 

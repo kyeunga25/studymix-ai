@@ -292,6 +292,19 @@ The API must:
 There is no public grant, checkout, payment, or subscription route in the MVP. Beta entitlements and
 credit grants are provisioned through an approved operational process outside the browser application.
 
+### FR-14: Invited owner workspace
+
+Production and staging access requires both a valid interactive Cloudflare Access application token and
+an approved D1 invitation. The invitation stores only a keyed one-way login-identity hash. Its first valid
+login creates exactly one active owner, active default workspace, active owner membership, manual AI
+approval controls, active private-beta entitlement, and idempotent bounded credit grant.
+
+Every private API and `/app` Static Assets request must recheck active owner, membership, and workspace
+state. The server selects the default workspace; malformed or different client workspace assertions are
+denied. The session API returns status, role, permissions, approval state, and capability booleans without
+returning login identity, owner ID, workspace ID, or resource mappings. There is no public registration,
+browser onboarding, browser credit grant, or browser approval endpoint.
+
 ## 7. Non-functional requirements
 
 ### Security
@@ -310,6 +323,8 @@ credit grants are provisioned through an approved operational process outside th
 - No anonymous production or staging access.
 - Worker verifies Access JWT signature, issuer, audience, time claims, and interactive-user claims.
 - Owner IDs are server-derived from verified identity and never accepted from client input.
+- The exact `/app` and `/api` parents and their deep routes require Access plus active D1 workspace
+  membership before API or Static Assets handling.
 - Job creation checks the current server-controlled legal versions; client-only checkboxes are not an
   authorization or legal control.
 - Production fails closed if the legal contact or current-document manifest is invalid.
@@ -369,6 +384,40 @@ credit grants are provisioned through an approved operational process outside th
 - `created_at`
 - `last_seen_at`
 - `status`
+
+### owner_invitations
+
+- `id`
+- `login_identity_hash`
+- `workspace_id`
+- `role`
+- `status`
+- bounded initial credit and job-cost controls
+- claimed owner and timestamps
+
+### workspaces
+
+- `id`
+- `status`
+- timestamps
+
+### workspace_memberships
+
+- `workspace_id`
+- `owner_id`
+- `role`
+- `status`
+- default-workspace marker
+- timestamps
+
+### workspace_controls
+
+- `workspace_id`
+- manual AI-job approval mode
+- maximum job credit cost
+- real-provider approval status
+- payment approval status
+- timestamps
 
 ### uploads
 
@@ -475,6 +524,8 @@ credit grants are provisioned through an approved operational process outside th
 GET    /health
 GET    /legal/documents.json
 
+GET    /api/session
+GET    /api/auth/me (compatibility alias)
 GET    /api/legal/documents
 GET    /api/legal/acceptances
 POST   /api/legal/acceptances
@@ -538,9 +589,12 @@ The MVP is accepted when:
 12. The user must accept the rights declaration before any real provider request.
 13. The UI clearly states that output may not preserve every musical detail.
 14. The repository documents how to run locally, deploy staging, and configure production.
-15. Production and staging require a valid interactive Access JWT for `/app*` and user-facing
-    `/api/*`. The exact `/api/webhooks/fal` callback is the only provider-authenticated exception and
+15. Production and staging require a valid interactive Access JWT plus active D1 owner/workspace
+    membership for `/app`, `/app/*`, `/api`, and user-facing `/api/*`. The exact `/api/webhooks/fal`
+    callback is the only provider-authenticated exception and
     requires the strongest current fal signature verification. Public routes expose no owner state,
     audio, signed URLs, or private application data.
 16. A generation job cannot be created without an active owner entitlement and sufficient credits;
     repeated requests, Workflow retries, and terminal failures do not duplicate or strand credit events.
+17. An uninvited identity, disabled owner, disabled membership, disabled workspace, or cross-workspace
+    assertion cannot receive the SPA shell or private API data.

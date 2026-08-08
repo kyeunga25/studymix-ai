@@ -7,6 +7,7 @@ const productionEnvironment = {
   ACCESS_TEAM_DOMAIN: "https://example-team.cloudflareaccess.com",
   APP_ENV: "production",
   DEV_AUTH_SUBJECT: "must-not-be-used-in-production",
+  OWNER_IDENTITY_PEPPER: "p".repeat(64),
 };
 
 describe("StudyMix authentication boundary", () => {
@@ -53,6 +54,8 @@ describe("StudyMix authentication boundary", () => {
   });
 
   it("derives the owner only from verified identity claims", async () => {
+    const now = Math.floor(Date.now() / 1_000);
+    const accessSubject = "7335d417-61da-459d-899c-0a01c76a2f94";
     const request = new Request("https://studymix.example", {
       headers: {
         "Cf-Access-Jwt-Assertion": "verified-token",
@@ -60,11 +63,11 @@ describe("StudyMix authentication boundary", () => {
       },
     });
     const verifier = vi.fn(async () => ({
-      email: "authorized@example.com",
-      exp: 1_800_000_000,
-      iat: 1_700_000_000,
-      nbf: 1_700_000_000,
-      sub: "7335d417-61da-459d-899c-0a01c76a2f94",
+      email: "owner@example.test",
+      exp: now + 60,
+      iat: now - 60,
+      nbf: now - 60,
+      sub: accessSubject,
       type: "app",
     }));
 
@@ -73,8 +76,45 @@ describe("StudyMix authentication boundary", () => {
 
     expect(first).toEqual(second);
     expect(first.kind).toBe("authenticated");
+    expect(first.invitationIdentityHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(first.invitationIdentityHash).not.toContain("owner@example.test");
     expect(first.ownerId).toMatch(/^own_[0-9a-f]{32}$/);
     expect(first.ownerId).not.toBe("own_ffffffffffffffffffffffffffffffff");
+    expect(JSON.stringify(first)).not.toContain("owner@example.test");
+    expect(JSON.stringify(first)).not.toContain(accessSubject);
+    expect(verifier).toHaveBeenCalledWith(
+      "verified-token",
+      "https://example-team.cloudflareaccess.com",
+      validAudience,
+    );
+  });
+
+  it("rejects expired or not-yet-valid Access identity claims", async () => {
+    const now = Math.floor(Date.now() / 1_000);
+    const request = new Request("https://studymix.example", {
+      headers: { "Cf-Access-Jwt-Assertion": "verified-but-stale-token" },
+    });
+    const baseClaims = {
+      email: "owner@example.test",
+      iat: now - 60,
+      sub: "7335d417-61da-459d-899c-0a01c76a2f94",
+      type: "app" as const,
+    };
+
+    await expect(
+      resolveOwnerContext(request, productionEnvironment, async () => ({
+        ...baseClaims,
+        exp: now - 10,
+        nbf: now - 120,
+      })),
+    ).rejects.toMatchObject({ reason: "AUTH_TOKEN_INVALID", status: 401 });
+    await expect(
+      resolveOwnerContext(request, productionEnvironment, async () => ({
+        ...baseClaims,
+        exp: now + 120,
+        nbf: now + 10,
+      })),
+    ).rejects.toMatchObject({ reason: "AUTH_TOKEN_INVALID", status: 401 });
   });
 
   it("rejects service-token claims as interactive user identities", async () => {
@@ -98,6 +138,7 @@ describe("StudyMix authentication boundary", () => {
       ACCESS_TEAM_DOMAIN: "",
       APP_ENV: "development",
       DEV_AUTH_SUBJECT: "local-developer",
+      OWNER_IDENTITY_PEPPER: "",
     });
 
     expect(owner.kind).toBe("development");

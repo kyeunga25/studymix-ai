@@ -12,6 +12,7 @@
     "deploy:cloudflare": "node scripts/create-cloudflare-config.mjs && node scripts/run-protected-wrangler.mjs deploy",
     "preview:cloudflare": "node scripts/create-cloudflare-config.mjs && node scripts/run-protected-wrangler.mjs preview",
     "deploy:verify": "node scripts/verify-cloudflare-deployment.mjs",
+    "owner:onboard": "node scripts/onboard-owner.mjs",
     "r2:cors:prepare": "node scripts/create-r2-cors.mjs",
     "d1:migrate:local": "WRANGLER_WRITE_LOGS=false WRANGLER_LOG_SANITIZE=true wrangler d1 migrations apply DB --local",
     "typecheck": "tsc -p tsconfig.json --noEmit",

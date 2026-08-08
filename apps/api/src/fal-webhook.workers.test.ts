@@ -141,6 +141,10 @@ describe("fal webhook boundary", () => {
     await env.DB.prepare("DELETE FROM provider_requests").run();
     await env.DB.prepare("DELETE FROM jobs").run();
     await env.DB.prepare("DELETE FROM uploads").run();
+    await env.DB.prepare("DELETE FROM workspace_memberships").run();
+    await env.DB.prepare("DELETE FROM workspace_controls").run();
+    await env.DB.prepare("DELETE FROM owner_invitations").run();
+    await env.DB.prepare("DELETE FROM workspaces").run();
     await env.DB.prepare("DELETE FROM owners").run();
   });
 

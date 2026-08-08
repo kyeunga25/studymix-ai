@@ -208,6 +208,20 @@ main {
   color: #3f8a5f;
 }
 
+.access-verification-copy {
+  display: grid;
+  gap: 2px;
+}
+
+.access-verification-copy strong {
+  font-size: 0.78rem;
+}
+
+.access-verification-copy span {
+  color: #557262;
+  font-size: 0.69rem;
+}
+
 .access-verification.is-unavailable {
   border-color: rgba(213, 159, 159, 0.66);
   color: #793f4a;

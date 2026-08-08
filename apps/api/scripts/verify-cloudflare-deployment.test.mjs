@@ -45,6 +45,7 @@ const configuredBindings = [
 ];
 
 const configuredSecrets = [
+  { name: "OWNER_IDENTITY_PEPPER" },
   { name: "R2_S3_ACCESS_KEY_ID" },
   { name: "R2_S3_SECRET_ACCESS_KEY" },
   { name: "FAL_KEY" },
@@ -58,8 +59,10 @@ const passingLiveStatus = {
   publicOverview: true,
   health: true,
   legalManifest: true,
-  privateAppProtected: true,
-  privateApiProtected: true,
+  privateAppParentProtected: true,
+  privateAppDeepProtected: true,
+  privateApiParentProtected: true,
+  privateApiSessionProtected: true,
 };
 
 describe("privacy-safe Cloudflare deployment verification", () => {
@@ -88,6 +91,7 @@ describe("privacy-safe Cloudflare deployment verification", () => {
     });
 
     expect(report.readiness).toEqual({
+      ownerAccess: true,
       publicSurface: true,
       privateMock: true,
       realProvider: true,
@@ -144,6 +148,7 @@ describe("privacy-safe Cloudflare deployment verification", () => {
     expect(report.runtime.accessConfigured).toBe(false);
     expect(report.runtime.legalContactConfigured).toBe(false);
     expect(report.readiness).toEqual({
+      ownerAccess: false,
       publicSurface: false,
       privateMock: false,
       realProvider: false,
