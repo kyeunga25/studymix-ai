@@ -31,16 +31,19 @@ describe("local synthetic source client", () => {
         scenario: "timeout-recovery",
       }),
     ).resolves.toEqual(upload);
-    expect(fetchMock).toHaveBeenCalledWith("/api/local/synthetic-upload", {
-      body: JSON.stringify({
-        fixture: "deterministic-tone-v1",
-        idempotencyKey: "ui-local-source-001",
-        scenario: "timeout-recovery",
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/local/synthetic-upload",
+      expect.objectContaining({
+        body: JSON.stringify({
+          fixture: "deterministic-tone-v1",
+          idempotencyKey: "ui-local-source-001",
+          scenario: "timeout-recovery",
+        }),
+        credentials: "same-origin",
+        headers: expect.any(Headers),
+        method: "POST",
       }),
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      method: "POST",
-    });
+    );
   });
 
   it("rejects an invalid scenario before making a request", async () => {

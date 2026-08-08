@@ -443,13 +443,21 @@ Production and staging have no anonymous owner mode. The product overview, `/log
 audience, expiry, application-token type, user subject, and verified email claim. Service tokens are not
 accepted as interactive user identities.
 
-The public `/login` page does not collect a password. Its closed-beta action enters the protected `/app`
-path so Cloudflare Access can authenticate an invited identity. The client then requests `/api/auth/me`
-with `X-Requested-With: XMLHttpRequest`, allowing an expired Access session to be handled as a `401`
-instead of an HTML redirect. The Worker verifies the JWT, upserts only the opaque owner identity, checks
-that the D1 owner remains active, and returns capabilities before the workspace is rendered. A `401`,
-`403`, malformed response, or configuration failure keeps the workspace locked. The disabled registration
-tab is presentation-only; no public registration endpoint or anonymous owner path exists.
+The public `/login` page does not collect a password. Its closed-beta action enters a same-origin,
+`/app`-scoped destination so Cloudflare Access can authenticate an invited identity and return a successful
+session directly to the workspace. The client then requests `/api/auth/me` before rendering workspace
+data. Every private AJAX request sends `X-Requested-With: XMLHttpRequest`, allowing an expired Access
+session to be handled as a `401` instead of redirected HTML. The Worker verifies the JWT, upserts only the
+opaque owner identity, checks that the D1 owner remains active, and returns capabilities before the
+workspace is rendered.
+
+A `401`, `403`, malformed session response, or configuration failure keeps the workspace locked and sends
+the browser to the public `/login` interface. That interface maps only the fixed `session-expired`,
+`access-denied`, and `verification-failed` reasons to bilingual human-readable copy; it never reflects the
+API body, and it rejects external or non-`/app` return destinations. A first navigation rejected by Access
+at the edge cannot execute application code, so the Access application's identity and non-identity block
+pages must use a custom redirect to `/login?reason=access-denied&next=%2Fapp`. The disabled registration tab
+is presentation-only; no public registration endpoint or anonymous owner path exists.
 
 The exact `/api/webhooks/fal` path is the only provider callback exception to user authentication. A
 more-specific Access application may bypass interactive login for that path only; the Worker then requires

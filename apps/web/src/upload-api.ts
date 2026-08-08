@@ -12,6 +12,7 @@ import {
   type PublicUpload,
 } from "@studymix/contracts";
 import type { ZodType } from "zod";
+import { fetchPrivateApi } from "./private-api";
 
 const createUploadEnvelopeSchema = apiEnvelopeSchema(createUploadResponseSchema);
 const publicUploadEnvelopeSchema = apiEnvelopeSchema(publicUploadSchema);
@@ -132,7 +133,7 @@ export async function createDirectUpload(
   }
 
   try {
-    const response = await fetch("/api/uploads", {
+    const response = await fetchPrivateApi("/api/uploads", {
       body: JSON.stringify(request.data),
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
@@ -151,8 +152,7 @@ export async function createDirectUpload(
 
 export async function deleteUpload(uploadId: string, signal?: AbortSignal): Promise<void> {
   try {
-    const response = await fetch(`/api/uploads/${encodeURIComponent(uploadId)}`, {
-      credentials: "same-origin",
+    const response = await fetchPrivateApi(`/api/uploads/${encodeURIComponent(uploadId)}`, {
       method: "DELETE",
       ...signalOption(signal),
     });
@@ -182,10 +182,9 @@ export async function uploadAndConfirmAudio(
       });
     }
 
-    const confirmResponse = await fetch(
+    const confirmResponse = await fetchPrivateApi(
       `/api/uploads/${encodeURIComponent(upload.uploadId)}/confirm`,
       {
-        credentials: "same-origin",
         method: "POST",
         ...signalOption(signal),
       },

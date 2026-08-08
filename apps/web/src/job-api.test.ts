@@ -109,10 +109,14 @@ describe("job API client", () => {
       downloadMethod: "GET",
       outputId,
     });
-    expect(fetchMock).toHaveBeenCalledWith(`/api/outputs/${outputId}/download`, {
-      credentials: "same-origin",
-      method: "POST",
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/outputs/${outputId}/download`,
+      expect.objectContaining({
+        credentials: "same-origin",
+        headers: expect.any(Headers),
+        method: "POST",
+      }),
+    );
   });
 
   it("requests owner-scoped private job deletion", async () => {
@@ -131,10 +135,14 @@ describe("job API client", () => {
       jobId: validJob.jobId,
       status: "deleted",
     });
-    expect(fetchMock).toHaveBeenCalledWith(`/api/jobs/${validJob.jobId}`, {
-      credentials: "same-origin",
-      method: "DELETE",
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/jobs/${validJob.jobId}`,
+      expect.objectContaining({
+        credentials: "same-origin",
+        headers: expect.any(Headers),
+        method: "DELETE",
+      }),
+    );
   });
 
   it("requests local owner-scoped job cancellation", async () => {
@@ -151,10 +159,14 @@ describe("job API client", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(cancelJob(validJob.jobId)).resolves.toEqual(cancelledJob);
-    expect(fetchMock).toHaveBeenCalledWith(`/api/jobs/${validJob.jobId}/cancel`, {
-      credentials: "same-origin",
-      method: "POST",
-    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/jobs/${validJob.jobId}/cancel`,
+      expect.objectContaining({
+        credentials: "same-origin",
+        headers: expect.any(Headers),
+        method: "POST",
+      }),
+    );
   });
 
   it("preserves safe retry guidance when private deletion is unavailable", async () => {

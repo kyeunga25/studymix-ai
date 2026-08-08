@@ -1,6 +1,6 @@
 # 實作狀態 / Implementation Status
 
-更新日期：2026-08-04
+更新日期：2026-08-07
 
 本文件只記錄目前程式庫可驗證的能力與公開安全限制；未落實的工作不在此列出。
 
@@ -11,6 +11,7 @@ This document records only verifiable repository capabilities and public safety 
 - [x] pnpm monorepo、嚴格 TypeScript、ESLint、Prettier、Vitest、Playwright 與 GitHub Actions；CI 會執行 unit、Worker、build 及 Chromium E2E。
 - [x] React/Vite 雙語介面，支援鍵盤操作、狀態公告、錯誤提示及兩個候選結果比較。
 - [x] 公開雙語產品主頁、獨立 `/login` 封閉測試登入介面、停用的日後註冊位置，以及獨立 `/app` 受邀測試工作區。
+- [x] 私人登入狀態流程：成功驗證返回工作區；session 過期、拒絕或無法安全驗證時回到雙語 `/login` 告知；所有私人 AJAX 使用明確 `401` contract，返回路徑限制在同源 `/app`。
 - [x] 僅限本機開發的 mock HTTP job API；正式 bundle 不包含 mock 路由或測試控制標記。
 - [x] Zod API contracts、加密安全 ID、job state machine 及 provider abstraction。
 - [x] D1 additive migrations 與 owner-scoped repositories。

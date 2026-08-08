@@ -81,10 +81,15 @@ Cloudflare Access owns the login session. D1 stores only a one-way subject hash 
 ID, not passwords, Access JWTs, session cookies, or user email addresses. A fixed development owner is
 allowed only when `APP_ENV` is explicitly `local`, `development`, or `test`.
 
-The bilingual `/login` page is a public entry surface, not an authentication provider. It sends the user
-to the protected `/app` path, then the private client verifies `/api/auth/me` before rendering workspace
-data. Distinct signed-out, denied, and service-unavailable states fail closed. A disabled registration tab
-reserves the future interface location without exposing a registration API or weakening the beta allowlist.
+The bilingual `/login` page is a public entry and failure surface, not an authentication provider. It
+sends the user to a validated `/app` destination so Access can authenticate them and return successful
+sessions directly to the private workspace. The client verifies `/api/auth/me` before rendering workspace
+data, and every private AJAX request asks Access for an explicit `401` response. Missing, expired, denied,
+or unverifiable sessions return to `/login` with one of three fixed public-safe reason codes; arbitrary
+return origins and unrecognized reasons are ignored. Access must separately redirect its identity and
+non-identity block pages to the public denial state because an edge rejection happens before React or the
+Worker can run. A disabled registration tab reserves the future interface location without exposing a
+registration API or weakening the beta allowlist.
 
 **Reason:** Visitors can understand the project without an account, while Access supplies a maintained
 identity-aware boundary for the private beta. Worker-side JWT verification and owner-scoped D1 queries

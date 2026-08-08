@@ -22,7 +22,8 @@ import {
 import { LandingPage } from "./LandingPage";
 import { LoginPage } from "./LoginPage";
 import { PrivateAccessGate } from "./PrivateAccessGate";
-import { loadPrivateSession, type PrivateAccessStatus } from "./auth-session";
+import { buildLoginRedirect, type PrivateAccessFailureStatus } from "./auth-navigation";
+import { loadPrivateSession } from "./auth-session";
 import { getCreditSummary } from "./credit-api";
 import { legalPageContent, legalPathToDocumentId, type Language } from "./legal-content";
 import { JobExperience, isPendingJob } from "./job-experience";
@@ -36,6 +37,11 @@ import {
   toJobApiError,
 } from "./job-api";
 import { createLocalSyntheticUpload } from "./local-ai-api";
+import {
+  fetchPrivateApi,
+  privateAccessFailureEventName,
+  readPrivateAccessFailureEvent,
+} from "./private-api";
 import { deleteUpload, uploadAndConfirmAudio } from "./upload-api";
 
 type PresetId = "soft-piano" | "music-box" | "lofi-study";
@@ -269,6 +275,11 @@ const waveformHeights = [
   17, 24, 31, 20, 38, 26, 45, 22, 34, 48, 29, 41, 25, 35, 19, 30, 23, 39, 28, 18,
 ];
 
+function buildPrivateLoginRedirect(status: PrivateAccessFailureStatus): string {
+  const destination = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  return buildLoginRedirect(status, destination);
+}
+
 export function App() {
   const path = window.location.pathname;
   const legalDocumentId = legalPathToDocumentId[path];
@@ -294,8 +305,7 @@ function PrivateApp() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [rightsAccepted, setRightsAccepted] = useState(false);
   const [legalAccepted, setLegalAccepted] = useState(false);
-  const [accessStatus, setAccessStatus] = useState<PrivateAccessStatus>("checking");
-  const [accessRetryVersion, setAccessRetryVersion] = useState(0);
+  const [sessionVerified, setSessionVerified] = useState(false);
   const [isSavingAcceptance, setIsSavingAcceptance] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [activeJob, setActiveJob] = useState<PublicJob | null>(null);
@@ -344,6 +354,18 @@ function PrivateApp() {
   }, [language]);
 
   useEffect(() => {
+    const redirectToLogin = (event: Event) => {
+      const status = readPrivateAccessFailureEvent(event);
+      if (status !== null) {
+        window.location.replace(buildPrivateLoginRedirect(status));
+      }
+    };
+
+    window.addEventListener(privateAccessFailureEventName, redirectToLogin);
+    return () => window.removeEventListener(privateAccessFailureEventName, redirectToLogin);
+  }, []);
+
+  useEffect(() => {
     const controller = new AbortController();
     const verifyAccess = async () => {
       try {
@@ -355,21 +377,23 @@ function PrivateApp() {
           setRealGenerationEnabled(result.session.capabilities.realGeneration);
           setPrivateAudioUploadEnabled(result.session.capabilities.privateAudioUpload);
           setRetentionCleanupEnabled(result.session.capabilities.retentionCleanup);
+          setSessionVerified(true);
+          return;
         }
-        setAccessStatus(result.status);
+        window.location.replace(buildPrivateLoginRedirect(result.status));
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
-          setAccessStatus("unavailable");
+          window.location.replace(buildPrivateLoginRedirect("unavailable"));
         }
       }
     };
 
     void verifyAccess();
     return () => controller.abort();
-  }, [accessRetryVersion]);
+  }, []);
 
   useEffect(() => {
-    if (accessStatus !== "verified" || !creditAccountingEnabled) {
+    if (!sessionVerified || !creditAccountingEnabled) {
       setCreditSummary(null);
       return;
     }
@@ -382,7 +406,7 @@ function PrivateApp() {
         }
       });
     return () => controller.abort();
-  }, [accessStatus, activeJobStatus, creditAccountingEnabled]);
+  }, [sessionVerified, activeJobStatus, creditAccountingEnabled]);
 
   useEffect(() => {
     if (
@@ -533,7 +557,7 @@ function PrivateApp() {
     setIsSavingAcceptance(true);
     setNotice(strings.saving);
     try {
-      const response = await fetch("/api/legal/acceptances", {
+      const response = await fetchPrivateApi("/api/legal/acceptances", {
         body: JSON.stringify({ documents: currentLegalAcceptanceDocuments }),
         credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
@@ -708,16 +732,11 @@ function PrivateApp() {
     localSourceIdempotencyKey.current = null;
   };
 
-  if (accessStatus !== "verified") {
+  if (!sessionVerified) {
     return (
       <PrivateAccessGate
         language={language}
         onLanguageChange={() => setLanguage(language === "en" ? "zh-HK" : "en")}
-        onRetry={() => {
-          setAccessStatus("checking");
-          setAccessRetryVersion((version) => version + 1);
-        }}
-        status={accessStatus}
       />
     );
   }
@@ -760,7 +779,7 @@ function PrivateApp() {
 
       <main>
         <AccessVerificationStatus language={language} />
-        {accessStatus === "verified" ? (
+        {sessionVerified ? (
           activeJob !== null || jobError !== null ? (
             <JobExperience
               canCancel={localAiHarnessEnabled && isPendingJob(activeJob?.status ?? "cancelled")}

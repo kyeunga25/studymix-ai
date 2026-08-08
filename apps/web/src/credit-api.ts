@@ -1,4 +1,5 @@
 import { apiEnvelopeSchema, creditSummarySchema, type CreditSummary } from "@studymix/contracts";
+import { fetchPrivateApi } from "./private-api";
 
 const creditSummaryEnvelopeSchema = apiEnvelopeSchema(creditSummarySchema);
 
@@ -10,11 +11,14 @@ export async function getCreditSummary(
   signal: AbortSignal,
   request: typeof fetch = fetch,
 ): Promise<CreditSummary> {
-  const response = await request("/api/credits", {
-    credentials: "same-origin",
-    headers: { Accept: "application/json" },
-    signal,
-  });
+  const response = await fetchPrivateApi(
+    "/api/credits",
+    {
+      headers: { Accept: "application/json" },
+      signal,
+    },
+    request,
+  );
   const body: unknown = await response.json();
   const parsed = creditSummaryEnvelopeSchema.safeParse(body);
   if (!parsed.success) {
