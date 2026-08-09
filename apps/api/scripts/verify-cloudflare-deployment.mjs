@@ -275,8 +275,9 @@ export function buildDeploymentReport({
   const runtimeStatus = {
     expectedEnvironment: plainText(bindings, "APP_ENV") === parsedEnvironment,
     accessConfigured:
-      validAccessDomain(plainText(bindings, "ACCESS_TEAM_DOMAIN")) &&
-      validAudience(plainText(bindings, "ACCESS_AUD")),
+      (validAccessDomain(plainText(bindings, "ACCESS_TEAM_DOMAIN")) ||
+        secretNames.has("ACCESS_TEAM_DOMAIN")) &&
+      (validAudience(plainText(bindings, "ACCESS_AUD")) || secretNames.has("ACCESS_AUD")),
     legalContactConfigured: validLegalContact(plainText(bindings, "LEGAL_CONTACT_EMAIL")),
     generationProviderConfigured: ["mock", "fal"].includes(
       plainText(bindings, "GENERATION_PROVIDER") ?? "",

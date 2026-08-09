@@ -60,6 +60,45 @@ async function prepareAuthorizedMix(page: Page, path = "/app") {
   await checkboxes.nth(1).check();
 }
 
+async function expectReadableText(page: Page) {
+  const undersizedText = await page.locator("body *").evaluateAll((elements) =>
+    elements.flatMap((element) => {
+      const style = getComputedStyle(element);
+      const hasDirectText = Array.from(element.childNodes).some(
+        (node) => node.nodeType === Node.TEXT_NODE && (node.textContent ?? "").trim().length > 0,
+      );
+      const visible =
+        style.display !== "none" &&
+        style.visibility !== "hidden" &&
+        Number(style.opacity) > 0 &&
+        element.getBoundingClientRect().width > 0 &&
+        element.getBoundingClientRect().height > 0;
+      const fontSize = Number(style.fontSize.replace("px", ""));
+      if (!visible || !hasDirectText || !Number.isFinite(fontSize) || fontSize >= 13) {
+        return [];
+      }
+
+      return [
+        {
+          fontSize,
+          tag: element.tagName,
+          text: (element.textContent ?? "").trim().slice(0, 80),
+        },
+      ];
+    }),
+  );
+
+  expect(undersizedText).toEqual([]);
+}
+
+async function expectNoHorizontalOverflow(page: Page) {
+  const overflow = await page.locator("html").evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }));
+  expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1);
+}
+
 test("renders a public product overview without exposing the private app", async ({ page }) => {
   await page.goto("/");
 
@@ -89,7 +128,13 @@ test("provides a dedicated beta sign-in page with future registration space", as
   await expect(page.getByRole("tab", { name: "登入", selected: true })).toBeVisible();
   await expect(page.getByRole("tab", { name: /建立帳戶/ })).toBeDisabled();
   await expect(page.getByText("公開註冊尚未開放", { exact: false })).toBeVisible();
-  await expect(page.getByRole("link", { name: "繼續安全登入" })).toHaveAttribute("href", "/app");
+  await expect(page.getByRole("link", { name: "使用 Cloudflare 帳戶登入" })).toHaveAttribute(
+    "href",
+    "/app",
+  );
+  await expect(
+    page.getByText("StudyMix 不會要求 API key 或 StudyMix 密碼。", { exact: false }),
+  ).toBeVisible();
   await expect(
     page.getByRole("navigation", { name: "法律文件" }).getByRole("link", {
       name: "AI 及輸出聲明",
@@ -97,9 +142,27 @@ test("provides a dedicated beta sign-in page with future registration space", as
   ).toHaveAttribute("href", "/legal/ai-output-notice");
   await expect(page.locator('input[type="email"], input[type="password"]')).toHaveCount(0);
 
-  await page.getByRole("link", { name: "繼續安全登入" }).click();
+  await page.getByRole("link", { name: "使用 Cloudflare 帳戶登入" }).click();
   await expect(page).toHaveURL(/\/app$/);
   await expect(page.getByRole("heading", { name: "把你的音樂變成專注讀書 Mix" })).toBeVisible();
+});
+
+test("keeps public, login, workspace, and legal text readable on desktop", async ({ page }) => {
+  for (const path of ["/", "/login", "/app", "/legal/privacy"] as const) {
+    await page.goto(path);
+    await expectReadableText(page);
+    await expectNoHorizontalOverflow(page);
+  }
+});
+
+test("keeps core pages readable and aligned on a phone viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  for (const path of ["/", "/login", "/app", "/legal/privacy"] as const) {
+    await page.goto(path);
+    await expectReadableText(page);
+    await expectNoHorizontalOverflow(page);
+  }
 });
 
 test("shows an Access denial on the login interface without accepting an external redirect", async ({

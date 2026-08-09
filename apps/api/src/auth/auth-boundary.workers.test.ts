@@ -148,8 +148,12 @@ describe("Worker authentication boundary", () => {
       productionEnv,
     );
 
-    expect(application.status).toBe(401);
-    expect(deepApplication.status).toBe(401);
+    expect(application.status).toBe(303);
+    expect(application.headers.get("location")).toBe("/login?next=%2Fapp&reason=session-expired");
+    expect(deepApplication.status).toBe(303);
+    expect(deepApplication.headers.get("location")).toBe(
+      "/login?next=%2Fapp%2Fsettings&reason=session-expired",
+    );
     expect(apiParent.status).toBe(401);
     expect(application.headers.get("content-security-policy")).not.toContain(env.R2_ACCOUNT_ID);
     expect(health.status).toBe(200);
@@ -170,8 +174,43 @@ describe("Worker authentication boundary", () => {
     await env.DB.prepare("UPDATE workspace_memberships SET status = 'disabled'").run();
 
     const denied = await app.request("https://studymix.example/app/settings", undefined, env);
-    expect(denied.status).toBe(403);
+    expect(denied.status).toBe(303);
+    expect(denied.headers.get("location")).toBe(
+      "/login?next=%2Fapp%2Fsettings&reason=access-denied",
+    );
     expect(await denied.text()).not.toBe("test asset");
+  });
+
+  it("keeps API failures as JSON while converting application configuration failures to login UI", async () => {
+    const invalidProductionEnv: Env = {
+      ...env,
+      ACCESS_AUD: "CHANGE_ME",
+      ACCESS_TEAM_DOMAIN: "https://CHANGE-ME.cloudflareaccess.com",
+      APP_ENV: "production",
+      OWNER_IDENTITY_PEPPER: "",
+    };
+    const application = await app.request(
+      "https://studymix.example/app/review?panel=access",
+      undefined,
+      invalidProductionEnv,
+    );
+    const api = await app.request(
+      "https://studymix.example/api/session",
+      undefined,
+      invalidProductionEnv,
+    );
+
+    expect(application.status).toBe(303);
+    expect(application.headers.get("location")).toBe(
+      "/login?next=%2Fapp%2Freview%3Fpanel%3Daccess&reason=verification-failed",
+    );
+    expect(application.headers.get("cache-control")).toBe("private, no-store");
+    expect(api.status).toBe(503);
+    expect(api.headers.get("content-type")).toContain("application/json");
+    expect(await api.json()).toMatchObject({
+      data: null,
+      error: { code: "INTERNAL_ERROR", retryable: true },
+    });
   });
 
   it("rejects a cross-workspace assertion before an API handler runs", async () => {
