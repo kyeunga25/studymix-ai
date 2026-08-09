@@ -13,9 +13,12 @@ This document records only verifiable repository capabilities and public safety 
 - [x] 五個版本化風格由單一公開雙語合約驅動：柔和鋼琴、八音盒、Lo-fi 學習、木結他輕奏及慢拍舒緩電音；首頁、私人工作區、mock job 與離線 fal adapter contract tests 保持相同 preset ID，供應商提示維持 server-only。
 - [x] 公開雙語產品主頁、獨立 `/login` 封閉測試登入介面、停用的日後註冊位置，以及獨立 `/app` 受邀測試工作區。
 - [x] 私人登入狀態流程：成功驗證返回工作區；session 過期、拒絕或無法安全驗證時回到雙語 `/login` 告知；所有私人 AJAX 使用明確 `401` contract，返回路徑限制在同源 `/app`。
+- [x] 正式 owner Access 流程已在 active deployment 完成端到端驗證：Access 驗證值及邀請雜湊 pepper 使用加密 Worker bindings，受邀身份可原子領取一次性邀請並載入 `/app` 與 deep route，登出會離開工作區；失敗路徑維持人類可讀雙語登入介面而非裸露 JSON。
+- [x] 正式首頁、登入、四個法律頁及私人工作區已完成瀏覽器排版核對：繁中／英文、木結他輕奏、慢拍舒緩電音與選擇摘要一致，可見文字不小於 13px，沒有水平溢出；小螢幕斷點另由 390×844 Chromium E2E 覆蓋。
 - [x] 僅限本機開發的 mock HTTP job API；正式 bundle 不包含 mock 路由或測試控制標記。
 - [x] Zod API contracts、加密安全 ID、job state machine 及 provider abstraction。
 - [x] D1 additive migrations 與 owner-scoped repositories。
+- [x] D1 migration ledger 與實際 table／index／view 必須同時核對；正式 onboarding 前已以不輸出 row、identity 或資源識別資料的 aggregate schema 檢查確認一致。
 - [x] Cloudflare Access JWT 的簽章、issuer、audience、時效及 identity claims 驗證；server-derived owner ID、active／disabled Beta 權限檢查及跨 owner 拒絕測試。
 - [x] 版本化中英文法律文件、D1 接受紀錄與 fail-closed 正式環境設定。
 - [x] Worker Static Assets 與 API 使用同一 Worker；`/app`、`/app/*`、`/api` 及使用者 `/api/*` 先經 Access JWT 與 active D1 owner／workspace／membership 驗證。
