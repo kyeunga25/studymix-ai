@@ -18,12 +18,14 @@ const loginCopy = {
     registerLater: "Later",
     cardTitle: "Invited tester sign in",
     cardBody:
-      "Continue to Cloudflare Access. Successful verification returns you directly to the private workspace.",
+      "Continue with your Cloudflare account. If an account selector appears, choose the identity approved for this private beta.",
     flowLabel: "Secure sign-in flow",
-    flow: ["Verify identity", "Check beta access", "Open workspace"],
+    flow: ["Open secure sign in", "Choose approved account", "Open workspace"],
+    accountHint:
+      "Use the approved Cloudflare account. StudyMix never asks for an API key or a StudyMix password.",
     closedTitle: "Closed beta",
     closedBody: "Only approved testers can enter. Public registration is not open yet.",
-    action: "Continue to secure sign in",
+    action: "Sign in with Cloudflare account",
     retryCurrent: "Check the current identity again",
     failure: {
       "access-denied": {
@@ -38,12 +40,12 @@ const loginCopy = {
       },
       "verification-failed": {
         title: "Sign-in could not be verified",
-        body: "The safety check did not complete, so StudyMix kept the private workspace locked. Please try the secure sign-in flow again.",
+        body: "The safety check or private workspace setup did not complete. StudyMix kept the workspace locked and returned you here instead of showing a technical response.",
         action: "Try secure sign-in again",
       },
     },
     passwordNote:
-      "Cloudflare Access handles sign-in. StudyMix does not create or store a password.",
+      "Cloudflare Access handles sign-in. StudyMix does not create or store a password, account token, or API key.",
     futureTitle: "Public registration is reserved for a later release",
     futureBody:
       "When registration opens, new users will be able to create a StudyMix account from this page.",
@@ -63,12 +65,14 @@ const loginCopy = {
     registerTab: "建立帳戶",
     registerLater: "稍後開放",
     cardTitle: "受邀測試者登入",
-    cardBody: "前往 Cloudflare Access 完成驗證；成功後會直接返回私人工作區。",
+    cardBody:
+      "使用你的 Cloudflare 帳戶完成驗證；如出現帳戶選擇器，請選取已獲批准參與私密 Beta 的身份。",
     flowLabel: "安全登入流程",
-    flow: ["驗證身份", "核對 Beta 權限", "進入工作區"],
+    flow: ["開啟安全登入", "選擇獲批帳戶", "進入工作區"],
+    accountHint: "請使用已獲批准的 Cloudflare 帳戶。StudyMix 不會要求 API key 或 StudyMix 密碼。",
     closedTitle: "目前為封閉測試",
     closedBody: "只有已獲批准的測試者可以進入，公開註冊尚未開放。",
-    action: "繼續安全登入",
+    action: "使用 Cloudflare 帳戶登入",
     retryCurrent: "重新檢查目前身份",
     failure: {
       "access-denied": {
@@ -83,11 +87,12 @@ const loginCopy = {
       },
       "verification-failed": {
         title: "未能完成登入驗證",
-        body: "安全檢查沒有完成，因此 StudyMix 繼續鎖定私人工作區。請重新嘗試安全登入流程。",
+        body: "安全檢查或私人工作區設定未能完成。StudyMix 已保持工作區鎖定，並返回此頁顯示說明，而不會只顯示技術回應。",
         action: "重新嘗試安全登入",
       },
     },
-    passwordNote: "登入由 Cloudflare Access 處理；StudyMix 不會建立或儲存密碼。",
+    passwordNote:
+      "登入由 Cloudflare Access 處理；StudyMix 不會建立或儲存密碼、帳戶 token 或 API key。",
     futureTitle: "已為日後公開註冊預留位置",
     futureBody: "公開註冊開放後，新用戶可由此頁建立 StudyMix 帳戶。",
     home: "返回產品介紹",
@@ -202,6 +207,11 @@ export function LoginPage() {
                 </li>
               ))}
             </ol>
+
+            <div className="login-account-guidance" role="note">
+              <ShieldIcon />
+              <span>{copy.accountHint}</span>
+            </div>
 
             <div className="login-beta-note" role="note">
               <LockIcon />

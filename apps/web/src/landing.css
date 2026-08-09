@@ -110,7 +110,7 @@
   color: #fff;
   background: #5749d6;
   box-shadow: 0 10px 24px rgba(57, 43, 170, 0.2);
-  font-size: 0.9rem;
+  font-size: 0.96rem;
   font-weight: 760;
   text-decoration: none;
 }
@@ -227,7 +227,7 @@
   gap: 9px;
   margin: 22px 0 0;
   color: #363854;
-  font-size: 0.84rem;
+  font-size: 0.95rem;
   line-height: 1.5;
 }
 
@@ -251,7 +251,7 @@
   justify-content: space-between;
   gap: 20px;
   color: #77748b;
-  font-size: 0.74rem;
+  font-size: 0.875rem;
 }
 
 .landing-preview-source > div {
@@ -328,7 +328,7 @@
   display: block;
   margin: 21px 0 11px;
   color: #26294f;
-  font-size: 0.8rem;
+  font-size: 0.9rem;
 }
 
 .landing-style-options {
@@ -340,7 +340,7 @@
 .landing-style-options > div {
   position: relative;
   display: flex;
-  min-height: 104px;
+  min-height: 116px;
   align-items: center;
   justify-content: center;
   flex-direction: column;
@@ -379,7 +379,7 @@
 }
 
 .landing-style-options strong {
-  font-size: 0.7rem;
+  font-size: 0.85rem;
   line-height: 1.25;
 }
 
@@ -412,12 +412,12 @@
 
 .landing-candidate-rows strong {
   color: #2f3156;
-  font-size: 0.74rem;
+  font-size: 0.875rem;
 }
 
 .landing-candidate-rows small {
   color: #78748a;
-  font-size: 0.66rem;
+  font-size: 0.8125rem;
 }
 
 .landing-preview-private {
@@ -426,7 +426,7 @@
   gap: 8px;
   margin: 16px 0 0;
   color: #77748b;
-  font-size: 0.67rem;
+  font-size: 0.8125rem;
   line-height: 1.45;
 }
 
@@ -532,7 +532,7 @@
   max-width: 330px;
   margin: 12px 0 0;
   color: #65667b;
-  font-size: 0.87rem;
+  font-size: 0.95rem;
   line-height: 1.68;
 }
 
@@ -664,7 +664,7 @@
   padding: 26px 12px 38px;
   border-top: 1px solid #dfddea;
   color: #6b6c80;
-  font-size: 0.76rem;
+  font-size: 0.875rem;
 }
 
 .landing-footer > span {
@@ -752,13 +752,13 @@
 
   .landing-header-actions button {
     padding: 0 5px;
-    font-size: 0.8rem;
+    font-size: 0.9rem;
   }
 
   .landing-header-actions > a {
     min-height: 44px;
     padding: 0 16px;
-    font-size: 0.8rem;
+    font-size: 0.9rem;
   }
 
   .landing-login-wide {
@@ -806,7 +806,7 @@
   .landing-release-note {
     align-items: flex-start;
     margin-top: 18px;
-    font-size: 0.78rem;
+    font-size: 0.875rem;
   }
 
   .landing-product-preview {
@@ -819,7 +819,7 @@
   }
 
   .landing-style-options > div {
-    min-height: 104px;
+    min-height: 112px;
     align-items: center;
     justify-content: center;
     flex-direction: column;
@@ -933,7 +933,7 @@
 
   .landing-privacy li {
     grid-template-columns: 40px minmax(0, 1fr);
-    font-size: 0.88rem;
+    font-size: 0.95rem;
   }
 
   .landing-beta-status {
@@ -948,7 +948,7 @@
   }
 
   .landing-beta-copy > p {
-    font-size: 0.93rem;
+    font-size: 1rem;
   }
 
   .landing-footer {

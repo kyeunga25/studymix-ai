@@ -155,6 +155,23 @@ describe("privacy-safe Cloudflare deployment verification", () => {
     });
   });
 
+  it("accepts Access verification values stored as encrypted Worker bindings", () => {
+    const bindingsWithoutPlainAccess = configuredBindings.filter(
+      ({ name }) => name !== "ACCESS_TEAM_DOMAIN" && name !== "ACCESS_AUD",
+    );
+    const report = buildDeploymentReport({
+      deployments: deploymentFixture,
+      version: { resources: { bindings: bindingsWithoutPlainAccess } },
+      secrets: [...configuredSecrets, { name: "ACCESS_TEAM_DOMAIN" }, { name: "ACCESS_AUD" }],
+      migrations: { checked: true, current: true, pendingCount: 0 },
+      expectedEnvironment: "production",
+      live: passingLiveStatus,
+    });
+
+    expect(report.runtime.accessConfigured).toBe(true);
+    expect(report.readiness.ownerAccess).toBe(true);
+  });
+
   it("counts unique pending migrations without returning their names", () => {
     const migrations = summarizeMigrations(
       "0003_jobs_owner_created_index.sql\n0003_jobs_owner_created_index.sql\n0004_safe.sql\n",

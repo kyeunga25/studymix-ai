@@ -60,7 +60,7 @@
 
 .login-language {
   display: inline-flex;
-  min-height: 42px;
+  min-height: 46px;
   align-items: center;
   gap: 8px;
   padding: 0 13px;
@@ -70,7 +70,7 @@
   background: rgba(255, 255, 255, 0.82);
   box-shadow: 0 9px 24px rgba(51, 41, 104, 0.1);
   cursor: pointer;
-  font-size: 0.83rem;
+  font-size: 0.95rem;
   font-weight: 730;
   backdrop-filter: blur(15px);
 }
@@ -86,11 +86,11 @@
 
 .login-main {
   display: grid;
-  width: min(1180px, calc(100% - 64px));
+  width: min(1280px, calc(100% - 64px));
   min-height: calc(100vh - 190px);
-  grid-template-columns: minmax(0, 1fr) minmax(390px, 500px);
+  grid-template-columns: minmax(0, 1fr) minmax(440px, 540px);
   align-items: center;
-  gap: clamp(54px, 8vw, 120px);
+  gap: clamp(48px, 7vw, 100px);
   margin: 0 auto;
   padding: 60px 0 72px;
 }
@@ -141,7 +141,7 @@
   border-radius: 14px;
   color: #34365c;
   background: rgba(255, 255, 255, 0.65);
-  font-size: 0.88rem;
+  font-size: 0.96rem;
   font-weight: 680;
   backdrop-filter: blur(13px);
 }
@@ -178,14 +178,14 @@
 
 .login-tabs button {
   display: flex;
-  min-height: 58px;
+  min-height: 62px;
   align-items: center;
   justify-content: center;
   gap: 7px;
   border: 0;
   color: #7c7b96;
   background: #f8f7fc;
-  font-size: 0.81rem;
+  font-size: 0.94rem;
   font-weight: 750;
 }
 
@@ -205,14 +205,14 @@
   border-radius: 5px;
   color: #76728f;
   background: #ece9f4;
-  font-size: 0.61rem;
+  font-size: 0.8125rem;
   font-weight: 760;
 }
 
 .login-card-body {
   display: grid;
   gap: 18px;
-  padding: 34px;
+  padding: 38px;
 }
 
 .login-card-body header h2 {
@@ -221,7 +221,7 @@
   font-family:
     ui-rounded, "SF Pro Rounded", "Avenir Next", "Hiragino Sans", "PingFang HK", system-ui,
     sans-serif;
-  font-size: 1.62rem;
+  font-size: 1.75rem;
   letter-spacing: -0.035em;
   line-height: 1.18;
 }
@@ -229,7 +229,7 @@
 .login-card-body header p {
   margin: 9px 0 0;
   color: #6c6b88;
-  font-size: 0.82rem;
+  font-size: 0.96rem;
   line-height: 1.65;
 }
 
@@ -272,13 +272,13 @@
 
 .login-feedback strong {
   display: block;
-  font-size: 0.8rem;
+  font-size: 0.96rem;
   line-height: 1.4;
 }
 
 .login-feedback p {
   margin: 4px 0 0;
-  font-size: 0.7rem;
+  font-size: 0.875rem;
   line-height: 1.55;
 }
 
@@ -296,7 +296,7 @@
   justify-items: center;
   gap: 6px;
   color: #77748d;
-  font-size: 0.64rem;
+  font-size: 0.8125rem;
   font-weight: 700;
   text-align: center;
 }
@@ -321,7 +321,23 @@
   border-radius: 50%;
   color: #5549ca;
   background: #f3f0ff;
-  font-size: 0.66rem;
+  font-size: 0.8125rem;
+}
+
+.login-account-guidance {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: #4f4e70;
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+.login-account-guidance svg {
+  width: 20px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: #574bd0;
 }
 
 .login-beta-note {
@@ -348,18 +364,18 @@
 }
 
 .login-beta-note strong {
-  font-size: 0.76rem;
+  font-size: 0.92rem;
 }
 
 .login-beta-note small {
   color: #6c6887;
-  font-size: 0.7rem;
+  font-size: 0.875rem;
   line-height: 1.5;
 }
 
 .login-submit {
   display: grid;
-  min-height: 56px;
+  min-height: 60px;
   grid-template-columns: 22px 1fr 20px;
   align-items: center;
   gap: 11px;
@@ -368,7 +384,7 @@
   color: #fff;
   background: #5548d0;
   box-shadow: 0 14px 28px rgba(57, 43, 170, 0.22);
-  font-size: 0.88rem;
+  font-size: 1rem;
   font-weight: 770;
   text-decoration: none;
   transition:
@@ -391,7 +407,7 @@
   width: fit-content;
   justify-self: center;
   color: #5a4fc1;
-  font-size: 0.71rem;
+  font-size: 0.9rem;
   font-weight: 730;
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -400,7 +416,7 @@
 .login-password-note {
   margin: -7px 0 0;
   color: #7b7992;
-  font-size: 0.68rem;
+  font-size: 0.85rem;
   line-height: 1.55;
   text-align: center;
 }
@@ -414,12 +430,12 @@
 
 .login-future-registration strong {
   color: #4c4b69;
-  font-size: 0.74rem;
+  font-size: 0.9rem;
 }
 
 .login-future-registration span {
   color: #85839a;
-  font-size: 0.69rem;
+  font-size: 0.85rem;
   line-height: 1.55;
 }
 
@@ -429,7 +445,7 @@
   align-items: center;
   gap: 7px;
   color: #5a4fc1;
-  font-size: 0.73rem;
+  font-size: 0.9rem;
   font-weight: 730;
   text-decoration: none;
 }
@@ -451,7 +467,7 @@
   border-radius: 13px;
   color: #37395f;
   background: rgba(255, 255, 255, 0.62);
-  font-size: 0.72rem;
+  font-size: 0.85rem;
   backdrop-filter: blur(14px);
 }
 
@@ -514,7 +530,7 @@
 .private-gate-label {
   margin: 20px 0 7px;
   color: #5b4fc8;
-  font-size: 0.66rem;
+  font-size: 0.8125rem;
   font-weight: 800;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -532,7 +548,7 @@
   max-width: 420px;
   margin: 13px 0 0;
   color: #6d6c88;
-  font-size: 0.82rem;
+  font-size: 0.96rem;
   line-height: 1.7;
 }
 
@@ -571,7 +587,7 @@
 .private-gate-home {
   margin-top: 6px;
   color: #5a4fc1;
-  font-size: 0.73rem;
+  font-size: 0.9rem;
   font-weight: 730;
   text-decoration: none;
 }
@@ -651,9 +667,9 @@
   }
 
   .login-language {
-    min-height: 38px;
+    min-height: 44px;
     padding: 0 10px;
-    font-size: 0.76rem;
+    font-size: 0.9rem;
   }
 
   .login-main {
@@ -683,9 +699,9 @@
   }
 
   .login-tabs button {
-    min-height: 54px;
+    min-height: 58px;
     gap: 5px;
-    font-size: 0.75rem;
+    font-size: 0.9rem;
   }
 
   .login-card-body,
@@ -694,7 +710,7 @@
   }
 
   .login-flow li {
-    font-size: 0.6rem;
+    font-size: 0.8125rem;
   }
 
   .login-footer {

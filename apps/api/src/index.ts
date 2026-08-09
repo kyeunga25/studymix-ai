@@ -134,6 +134,24 @@ function errorResponse(
   );
 }
 
+type LoginRedirectReason = "access-denied" | "session-expired" | "verification-failed";
+
+function isPrivateAppPath(path: string): boolean {
+  return path === "/app" || path.startsWith("/app/");
+}
+
+function privateAppLoginRedirect(
+  context: Context<AppBindings>,
+  reason: LoginRedirectReason,
+): Response {
+  const requestUrl = new URL(context.req.url);
+  const query = new URLSearchParams({
+    next: `${requestUrl.pathname}${requestUrl.search}`,
+    reason,
+  });
+  return context.redirect(`/login?${query.toString()}`, 303);
+}
+
 function toPublicUpload(record: UploadRecord): PublicUpload {
   if (record.sizeBytes === null) {
     throw new TypeError("Upload size is unavailable.");
@@ -241,7 +259,9 @@ app.use("*", async (context, next) => {
   await next();
   const path = context.req.path;
   const isSuccessfulPrivateAppResponse =
-    (path === "/app" || path.startsWith("/app/")) && context.res.status < 400;
+    (path === "/app" || path.startsWith("/app/")) &&
+    context.res.status >= 200 &&
+    context.res.status < 300;
   context.header(
     "Content-Security-Policy",
     contentSecurityPolicy(context.env, isSuccessfulPrivateAppResponse),
@@ -265,6 +285,12 @@ const requireAuthentication = async (
   } catch (error) {
     if (error instanceof AuthenticationError) {
       const configurationFailure = error.reason === "AUTH_CONFIGURATION_INVALID";
+      if (isPrivateAppPath(context.req.path)) {
+        return privateAppLoginRedirect(
+          context,
+          configurationFailure ? "verification-failed" : "session-expired",
+        );
+      }
       return errorResponse(
         context,
         error.status,
@@ -340,6 +366,12 @@ const requireWorkspaceAccess = async (
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {
       const configurationFailure = error.reason === "WORKSPACE_ACCESS_CONFIGURATION_INVALID";
+      if (isPrivateAppPath(context.req.path)) {
+        return privateAppLoginRedirect(
+          context,
+          configurationFailure ? "verification-failed" : "access-denied",
+        );
+      }
       return errorResponse(
         context,
         error.status,
@@ -1245,6 +1277,9 @@ app.onError((error, context) => {
       requestSurface,
     }),
   );
+  if (isPrivateAppPath(context.req.path)) {
+    return privateAppLoginRedirect(context, "verification-failed");
+  }
   return errorResponse(context, 500, "INTERNAL_ERROR", "The request could not be completed.", true);
 });
 

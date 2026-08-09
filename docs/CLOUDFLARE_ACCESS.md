@@ -179,8 +179,11 @@ In Cloudflare Zero Trust:
    This covers failures that Access rejects before the Worker or React application runs. Keep the
    destination on the same public hostname, include no identity details, and do not protect `/login`
    with Access. Without this setting, an initial Access policy denial continues to show Cloudflare's
-   block page even though in-app `401` and `403` responses use the StudyMix login interface. Recheck the
-   current
+   block page even though in-app `401` and `403` responses use the StudyMix login interface. As a second
+   fail-closed layer, direct `/app` and `/app/*` Worker navigation converts missing, invalid, denied, or
+   misconfigured authorization into a same-origin `303` login redirect with a fixed reason and a
+   server-derived `/app` destination. Private `/api` responses remain structured JSON for the verified
+   browser client and never redirect to an external destination. Recheck the current
    [Access custom block-page guidance](https://developers.cloudflare.com/cloudflare-one/reusable-components/custom-pages/access-block-page/)
    before changing the application.
 4. Before enabling fal callbacks, add a separate, more-specific application for the exact
@@ -198,8 +201,10 @@ before applying this narrow exception.
 5. Add one **Allow** policy whose Include selector contains only the exact approved owner email. Do not
    use an email domain, identity-provider group, `Everyone`, or permanent `Bypass` rule for this
    single-owner beta.
-6. Select only the login method needed by the approved testers. Cloudflare account members may use
-   the Cloudflare identity provider. For an invited tester outside the account, explicitly enable
+6. Select only the login method needed by the approved testers. For a single owner who is a Cloudflare
+   account member, explicitly select the Cloudflare identity provider and enable instant authentication
+   so the login action proceeds directly to the Cloudflare account check. Do not leave unrelated identity
+   providers enabled. For an invited tester outside the account, explicitly enable
    One-time PIN and keep the exact-email **Allow** selector. A `Login Methods: One-time PIN` include
    rule by itself is not an email allowlist and must not be used to grant access.
 7. Do not add a Service Auth rule to the interactive web application. The application rejects
@@ -224,6 +229,11 @@ Set `ACCESS_TEAM_DOMAIN` and `ACCESS_AUD` only in the private deployment environ
 JWT signature against Access's rotating remote JWKS and also checks
 the RS256 algorithm, issuer, audience, time claims, application-token type, user ID, and verified
 email claim.
+
+If the Dashboard reports that non-secret runtime variables are managed by Wrangler, the two Access
+verification values may instead be stored as encrypted Worker bindings. The privacy-safe deployment
+check accepts either validated plain-text bindings or the presence of encrypted bindings; a successful
+live owner login remains required because encrypted values cannot be inspected by the verifier.
 
 Cloudflare requires origins behind Access to validate the `Cf-Access-Jwt-Assertion` header rather
 than merely trusting that it exists:
@@ -276,7 +286,10 @@ Before production traffic is enabled:
    HTML as a valid session. This follows Cloudflare's current
    [Access session-management guidance](https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/session-management/#ajax).
 6. Send a request without `Cf-Access-Jwt-Assertion` directly to each protected parent and deep Worker
-   path and confirm a `401` response with no owner row created.
+   path. Confirm `/app` and `/app/*` return a `303` to the public login interface with only a fixed safe
+   reason and server-derived private destination; confirm `/api` and `/api/*` retain a `401` JSON response.
+   Neither path may create an owner row or expose an identifier, token, stack trace, or raw configuration
+   error.
 7. Send a malformed or expired JWT and confirm it is rejected without token details in the response
    or logs.
 8. Confirm `/cdn-cgi/access/logout` clears the application session.
