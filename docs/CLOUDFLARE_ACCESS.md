@@ -27,7 +27,10 @@ pnpm --filter @studymix/api exec wrangler d1 migrations apply DB --remote --conf
 ```
 
 Do not use ad-hoc schema commands in production. Confirm the migration list before and after the
-apply operation.
+apply operation. A current migration ledger is necessary but is not sufficient evidence that every
+statement completed: compare the required table, index, and view names from the reviewed migration
+files with `sqlite_master`, and report only aggregate counts or booleans. Stop onboarding if the
+ledger and physical schema differ; repair the additive schema before retrying any owner request.
 
 ## 1.1 Prepare private R2 transfer in staging only
 
@@ -264,9 +267,10 @@ Before production traffic is enabled:
    ```
 
    Its JSON contains only binding/runtime/secret presence, migration counts, live-route booleans, and
-   readiness booleans. It deliberately omits resource names, identifiers, hostnames, contact values,
-   deployment timestamps, and secret values. Keep its non-zero result until the public surface is fully
-   configured and reachable.
+   readiness booleans. Separately confirm that the physical D1 schema matches every reviewed migration;
+   do not treat an empty pending-migration list as proof on its own. The checks deliberately omit resource
+   names, identifiers, hostnames, contact values, deployment timestamps, row contents, and secret values.
+   Keep a non-zero or mismatched result until the public surface and required schema are fully configured.
 2. In a private browser window, confirm that `/`, `/login`, `/legal/privacy`, `/health`, and
    `/legal/documents.json` load without login and create no owner row. Confirm `/login` has no password
    field or active public-registration control.
