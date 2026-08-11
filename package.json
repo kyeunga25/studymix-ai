@@ -29,6 +29,7 @@
     "test:api": "vitest run --config apps/api/vitest.config.ts",
     "test:local-ai": "vitest run packages/providers/src/audio-orchestration.test.ts apps/web/src/local-ai-api.test.ts apps/web/src/job-api.test.ts && vitest run --config apps/api/vitest.config.ts src/local-ai.workers.test.ts",
     "test:e2e": "playwright test",
+    "public-config:check": "pnpm --filter @studymix/api public-config:check",
     "cf-typegen": "pnpm --filter @studymix/api cf-typegen"
   },
   "devDependencies": {

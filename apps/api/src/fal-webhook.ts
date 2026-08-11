@@ -5,7 +5,7 @@ import {
   GenerationWorkflowDisabledError,
   resolveGenerationWorkflowConfiguration,
 } from "./job-service";
-import { getFalWebhookTarget } from "./repositories";
+import { claimFalWebhookSignal } from "./repositories";
 import {
   InvalidJsonBodyError,
   JsonBodyTooLargeError,
@@ -18,7 +18,11 @@ const falJwksUrl = "https://rest.fal.ai/.well-known/jwks.json";
 const maximumWebhookBytes = 131_072;
 const maximumJwksBytes = 32_768;
 const maximumTimestampSkewSeconds = 300;
-export const falWebhookEventType = "fal-completion";
+const providerRequestRecordIdSchema = z.string().regex(/^req_[0-9a-f]{32}$/);
+
+export function falWebhookEventType(providerRequestRecordId: string): string {
+  return `fal-completion:${providerRequestRecordIdSchema.parse(providerRequestRecordId)}`;
+}
 
 const providerRequestIdSchema = z
   .string()
@@ -80,6 +84,7 @@ type FalWebhookDependencies = Readonly<{
   sendSignal?: (
     workflowInstanceId: string,
     signal: Readonly<{ candidateIndex: 0 | 1; providerRequestId: string }>,
+    eventType: string,
   ) => Promise<void>;
 }>;
 
@@ -332,33 +337,49 @@ export async function handleFalWebhook(
     return webhookResponse(503);
   }
 
-  let target;
+  let signalClaim;
   try {
-    target = await getFalWebhookTarget(env.DB, verified.providerRequestId);
+    signalClaim = await claimFalWebhookSignal(
+      env.DB,
+      verified.providerRequestId,
+      new Date(dependencies.nowMilliseconds ?? Date.now()).toISOString(),
+    );
   } catch {
     return webhookResponse(503);
   }
+  const { target } = signalClaim;
   if (target === null) {
     return webhookResponse(404);
   }
-  if (target.requestStatus !== "submitted" || target.jobStatus !== "generating") {
+  if (
+    !signalClaim.claimed ||
+    target.requestStatus !== "submitted" ||
+    target.jobStatus !== "generating"
+  ) {
     return webhookResponse(202);
   }
+
+  const eventType = falWebhookEventType(target.providerRequestRecordId);
 
   const sendSignal =
     dependencies.sendSignal ??
     (async (
       workflowInstanceId: string,
       signal: Readonly<{ candidateIndex: 0 | 1; providerRequestId: string }>,
+      signalEventType: string,
     ) => {
       const instance = await env.GENERATION_WORKFLOW.get(workflowInstanceId);
-      await instance.sendEvent({ payload: signal, type: falWebhookEventType });
+      await instance.sendEvent({ payload: signal, type: signalEventType });
     });
   try {
-    await sendSignal(target.workflowInstanceId, {
-      candidateIndex: target.candidateIndex,
-      providerRequestId: verified.providerRequestId,
-    });
+    await sendSignal(
+      target.workflowInstanceId,
+      {
+        candidateIndex: target.candidateIndex,
+        providerRequestId: verified.providerRequestId,
+      },
+      eventType,
+    );
   } catch {
     return webhookResponse(503);
   }

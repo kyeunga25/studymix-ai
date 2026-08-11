@@ -15,6 +15,7 @@ test-results/
 .dev.vars
 .dev.vars.*
 wrangler.*.json
+wrangler.*.jsonc
 
 pnpm-debug.log*
 npm-debug.log*

@@ -144,4 +144,16 @@ describe("StudyMix authentication boundary", () => {
     expect(owner.kind).toBe("development");
     expect(owner.ownerId).toMatch(/^own_[0-9a-f]{32}$/);
   });
+
+  it("rejects remote test-mode authentication shortcuts", async () => {
+    await expect(
+      resolveOwnerContext(new Request("https://studymix.example/api/session"), {
+        ACCESS_AUD: "",
+        ACCESS_TEAM_DOMAIN: "",
+        APP_ENV: "test",
+        DEV_AUTH_SUBJECT: "integration-test-owner",
+        OWNER_IDENTITY_PEPPER: "",
+      }),
+    ).rejects.toMatchObject({ reason: "AUTH_CONFIGURATION_INVALID", status: 503 });
+  });
 });

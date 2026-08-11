@@ -1,4 +1,9 @@
+import {
+  privateApiRequestHeaderName,
+  privateApiRequestHeaderValue,
+} from "@studymix/contracts/private-api";
 import type { PrivateAccessFailureStatus } from "./auth-navigation";
+import { withWebJsonRequestTimeout } from "./request-timeout";
 
 export const privateAccessFailureEventName = "studymix:private-access-failure";
 
@@ -30,12 +35,16 @@ export async function fetchPrivateApi(
   request: typeof fetch = fetch,
 ): Promise<Response> {
   const headers = new Headers(init.headers);
-  headers.set("X-Requested-With", "XMLHttpRequest");
+  if (!headers.has("Accept")) {
+    headers.set("Accept", "application/json");
+  }
+  headers.set(privateApiRequestHeaderName, privateApiRequestHeaderValue);
 
   const response = await request(path, {
     ...init,
     credentials: "same-origin",
     headers,
+    signal: withWebJsonRequestTimeout(init.signal),
   });
 
   if (response.status === 401) {

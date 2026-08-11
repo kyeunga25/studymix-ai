@@ -162,8 +162,8 @@ function createSdkQueue(credentials: string): FalQueuePort {
 function parseFalOutputUrl(value: string): string {
   const parsed = new URL(httpsUrlSchema.parse(value));
   const hostname = parsed.hostname.toLowerCase();
-  if (hostname !== "fal.media" && !hostname.endsWith(".fal.media")) {
-    throw new TypeError("The fal output URL host is not allowed.");
+  if (parsed.port !== "" || (hostname !== "fal.media" && !hostname.endsWith(".fal.media"))) {
+    throw new TypeError("The fal output URL destination is not allowed.");
   }
   return parsed.href;
 }

@@ -1,0 +1,196 @@
+:root {
+  color: #202451;
+  background: #a79be0;
+  font-family:
+    "Avenir Next", ui-rounded, "SF Pro Rounded", "Hiragino Sans", "PingFang HK", system-ui,
+    sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-text-size-adjust: 100%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+label {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:focus-visible,
+label:has(input:focus-visible) {
+  outline: 3px solid rgba(79, 68, 218, 0.34);
+  outline-offset: 3px;
+}
+
+.route-loading {
+  display: grid;
+  min-height: 100vh;
+  place-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: #191847;
+  background: #c9c3ef url("./assets/study-room-bg.webp") center / cover;
+  text-align: center;
+}
+
+.route-loading strong {
+  font-size: 1.125rem;
+}
+
+.route-loading span {
+  color: #4c4a70;
+  font-size: 0.9375rem;
+}
+
+.route-loading button,
+.route-loading a {
+  min-height: 44px;
+  padding: 11px 18px;
+  border: 1px solid #5749d6;
+  border-radius: 10px;
+  color: #fff;
+  background: #5749d6;
+  cursor: pointer;
+  font-weight: 760;
+  text-decoration: none;
+}
+
+.route-loading a {
+  color: #4b3fc0;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.route-loading.is-error span {
+  margin-bottom: 8px;
+}
+
+.waveform-height-7 {
+  height: 7px;
+}
+
+.waveform-height-9 {
+  height: 9px;
+}
+
+.waveform-height-10 {
+  height: 10px;
+}
+
+.waveform-height-11 {
+  height: 11px;
+}
+
+.waveform-height-12 {
+  height: 12px;
+}
+
+.waveform-height-14 {
+  height: 14px;
+}
+
+.waveform-height-15 {
+  height: 15px;
+}
+
+.waveform-height-16 {
+  height: 16px;
+}
+
+.waveform-height-17 {
+  height: 17px;
+}
+
+.waveform-height-18 {
+  height: 18px;
+}
+
+.waveform-height-19 {
+  height: 19px;
+}
+
+.waveform-height-20 {
+  height: 20px;
+}
+
+.waveform-height-21 {
+  height: 21px;
+}
+
+.waveform-height-22 {
+  height: 22px;
+}
+
+.waveform-height-23 {
+  height: 23px;
+}
+
+.waveform-height-24 {
+  height: 24px;
+}
+
+.waveform-height-25 {
+  height: 25px;
+}
+
+.waveform-height-26 {
+  height: 26px;
+}
+
+.waveform-height-28 {
+  height: 28px;
+}
+
+.waveform-height-29 {
+  height: 29px;
+}
+
+.waveform-height-30 {
+  height: 30px;
+}
+
+.waveform-height-31 {
+  height: 31px;
+}
+
+.waveform-height-34 {
+  height: 34px;
+}
+
+.waveform-height-35 {
+  height: 35px;
+}
+
+.waveform-height-38 {
+  height: 38px;
+}
+
+.waveform-height-39 {
+  height: 39px;
+}
+
+.waveform-height-41 {
+  height: 41px;
+}
+
+.waveform-height-45 {
+  height: 45px;
+}
+
+.waveform-height-48 {
+  height: 48px;
+}

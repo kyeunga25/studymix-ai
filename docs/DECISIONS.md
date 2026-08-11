@@ -44,11 +44,11 @@ Generate two candidates for each job.
 
 **Status:** Accepted for MVP
 
-Only Soft Piano, Music Box, Lo-fi Study, Acoustic Ease, and Slowwave are exposed.
+Only Soft Piano, Music Box, Lo-fi Study, Acoustic Ease, Slowwave, and Kissa Jazzhop are exposed.
 
-**Reason:** Five controlled instrumental directions cover piano, music-box, lo-fi, light acoustic, and
-slow ambient-electronic study contexts while retaining bounded prompts, lower abuse risk, and practical
-benchmark variance.
+**Reason:** Six controlled instrumental directions cover piano, music-box, lo-fi, light acoustic,
+slow ambient-electronic, and café jazz-hop study contexts while retaining bounded prompts, lower abuse
+risk, and practical benchmark variance.
 
 ## ADR-008: Rights-holder positioning
 

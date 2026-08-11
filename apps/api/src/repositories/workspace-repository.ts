@@ -4,8 +4,11 @@ import type { OwnerContext } from "../auth/owner-context";
 import { upsertOwner } from "./owner-repository";
 
 const identityHashSchema = z.string().regex(/^[0-9a-f]{64}$/);
+const activityTimestampSchema = z.string().datetime({ offset: true });
+const ownerActivityRefreshIntervalMilliseconds = 5 * 60 * 1_000;
 const workspaceAccessRowSchema = z.object({
   ai_job_approval_mode: z.literal("manual"),
+  last_seen_at: activityTimestampSchema,
   max_job_credit_cost: z.number().int().positive().max(1_000),
   membership_status: z.enum(["active", "disabled"]),
   owner_id: ownerIdSchema,
@@ -60,6 +63,7 @@ async function findWorkspaceAccess(
     .prepare(
       `SELECT
         controls.ai_job_approval_mode,
+        owners.last_seen_at,
         controls.max_job_credit_cost,
         memberships.status AS membership_status,
         owners.id AS owner_id,
@@ -124,6 +128,28 @@ function parseRequestedWorkspaceId(value: string | null): string | null {
     throw new WorkspaceAccessError("WORKSPACE_ACCESS_FORBIDDEN", 403);
   }
   return parsed.data;
+}
+
+function shouldRefreshOwnerActivity(lastSeenAt: string, now: string): boolean {
+  return Date.parse(now) - Date.parse(lastSeenAt) >= ownerActivityRefreshIntervalMilliseconds;
+}
+
+async function refreshOwnerActivity(
+  db: D1Database,
+  ownerId: string,
+  previousLastSeenAt: string,
+  now: string,
+): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE owners
+       SET last_seen_at = ?1
+       WHERE id = ?2
+         AND status = 'active'
+         AND last_seen_at = ?3`,
+    )
+    .bind(now, ownerId, previousLastSeenAt)
+    .run();
 }
 
 async function prepareDevelopmentWorkspace(
@@ -283,13 +309,14 @@ export async function authorizeWorkspaceAccess(
   now: string,
 ): Promise<WorkspaceAccess> {
   const requestedWorkspaceId = parseRequestedWorkspaceId(requestedWorkspaceHeader);
+  const currentTimestamp = activityTimestampSchema.parse(now);
   let row = await findWorkspaceAccess(db, owner);
 
   if (row === null) {
     if (owner.kind === "development") {
-      await prepareDevelopmentWorkspace(db, owner, now);
+      await prepareDevelopmentWorkspace(db, owner, currentTimestamp);
     } else {
-      await consumeAuthenticatedInvitation(db, owner, now);
+      await consumeAuthenticatedInvitation(db, owner, currentTimestamp);
     }
     row = await findWorkspaceAccess(db, owner);
   }
@@ -299,14 +326,8 @@ export async function authorizeWorkspaceAccess(
   }
 
   const access = requireActiveWorkspaceAccess(row, owner, requestedWorkspaceId);
-  await db
-    .prepare(
-      `UPDATE owners
-       SET last_seen_at = ?1
-       WHERE id = ?2
-         AND status = 'active'`,
-    )
-    .bind(now, access.ownerId)
-    .run();
+  if (shouldRefreshOwnerActivity(row.last_seen_at, currentTimestamp)) {
+    await refreshOwnerActivity(db, access.ownerId, row.last_seen_at, currentTimestamp);
+  }
   return access;
 }

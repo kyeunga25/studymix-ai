@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { readLoginNavigation } from "./auth-navigation";
+import { preloadLegalRoute, preloadPrivateRoute } from "./route-loaders";
+import "./auth.css";
 
 type LoginLanguage = "en" | "zh-HK";
 
@@ -122,6 +124,11 @@ export function LoginPage() {
   const failure = navigation.reason === null ? null : copy.failure[navigation.reason];
   const primaryDestination =
     navigation.reason === "access-denied" ? "/cdn-cgi/access/logout" : navigation.destination;
+  const preloadPrimaryDestination = () => {
+    if (primaryDestination === "/app" || primaryDestination.startsWith("/app/")) {
+      preloadPrivateRoute();
+    }
+  };
 
   useEffect(() => {
     document.documentElement.lang = language;
@@ -221,13 +228,23 @@ export function LoginPage() {
               </span>
             </div>
 
-            <a className="login-submit" href={primaryDestination}>
+            <a
+              className="login-submit"
+              href={primaryDestination}
+              onFocus={preloadPrimaryDestination}
+              onMouseEnter={preloadPrimaryDestination}
+            >
               <AccessIcon />
               <span>{failure?.action ?? copy.action}</span>
               <ArrowIcon />
             </a>
             {navigation.reason === "access-denied" ? (
-              <a className="login-secondary-action" href={navigation.destination}>
+              <a
+                className="login-secondary-action"
+                href={navigation.destination}
+                onFocus={preloadPrivateRoute}
+                onMouseEnter={preloadPrivateRoute}
+              >
                 {copy.retryCurrent}
               </a>
             ) : null}
@@ -250,7 +267,7 @@ export function LoginPage() {
         <span>StudyMix AI · {copy.footer}</span>
         <nav aria-label={language === "en" ? "Legal documents" : "法律文件"}>
           {legalLinks[language].map(([href, label]) => (
-            <a href={href} key={href}>
+            <a href={href} key={href} onFocus={preloadLegalRoute} onMouseEnter={preloadLegalRoute}>
               {label}
             </a>
           ))}

@@ -10,7 +10,7 @@ StudyMix AI is a bilingual, security-first MVP for privately restyling audio tha
 
 - 私人封閉測試階段；沒有公開註冊或公開使用者內容。
 - 本機預設使用 mock／合成音訊，不需要付費憑證，也不會呼叫外部 AI。
-- 五個版本化雙語風格涵蓋柔和鋼琴、八音盒、Lo-fi、木結他輕奏及慢拍舒緩電音；首頁與私人工作區共用相同公開文案合約。
+- 六個版本化雙語風格涵蓋柔和鋼琴、八音盒、Lo-fi、木結他輕奏、慢拍舒緩電音及喫茶爵士輕拍；首頁與私人工作區共用相同公開文案合約。
 - fal.ai ACE-Step audio-to-audio adapter 已包含在程式庫，但真實供應商路徑預設停用。
 - 正式音訊上載、外部生成與自動清理必須在擁有者自己的隔離環境完成安全、法律及瀏覽器驗證後才可啟用。
 - 本存放庫尚未選定開源授權；請先閱讀 [`LICENSE.md`](LICENSE.md)。

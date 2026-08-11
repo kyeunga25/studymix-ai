@@ -71,11 +71,13 @@ describe("privacy-safe Cloudflare deployment verification", () => {
       buildWranglerEnvironment({
         WRANGLER_LOG: "error",
         WRANGLER_LOG_PATH: "private-log-path",
+        WRANGLER_SEND_METRICS: "true",
         EXISTING_SETTING: "preserved",
       }),
     ).toEqual({
       EXISTING_SETTING: "preserved",
       WRANGLER_LOG_SANITIZE: "true",
+      WRANGLER_SEND_METRICS: "false",
       WRANGLER_WRITE_LOGS: "false",
     });
   });
@@ -94,10 +96,11 @@ describe("privacy-safe Cloudflare deployment verification", () => {
       ownerAccess: true,
       publicSurface: true,
       privateMock: true,
-      realProvider: true,
+      realProvider: false,
     });
     expect(report.runtime.creditAccountingEnabled).toBe(true);
     expect(report.runtime.creditCostConfigured).toBe(true);
+    expect(report.runtime.turnstileVerificationImplemented).toBe(false);
     const serialized = JSON.stringify(report);
     for (const sensitiveValue of [
       "private-version-id",

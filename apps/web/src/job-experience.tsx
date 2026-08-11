@@ -2,15 +2,15 @@ import { useState, type ReactNode } from "react";
 import type { JobStatus, PublicJob } from "@studymix/contracts";
 import type { Language } from "./legal-content";
 import type { JobApiError } from "./job-api";
-
-const terminalStatuses: readonly JobStatus[] = ["cancelled", "completed", "expired", "failed"];
+import { isPendingJob, type ActiveJobAction } from "./job-lifecycle";
 
 const copy = {
   en: {
     aiNotice: "AI output may not preserve every musical detail. Review both candidates carefully.",
     candidate: "Candidate",
     cancel: "Cancel local job",
-    cancelledStatus: "The local job was cancelled and its customer credits were released.",
+    cancelledHeading: "Local job cancelled",
+    cancelledStatus: "The local job ended normally, and its reserved beta credits were released.",
     cancelling: "Cancelling local job…",
     completed: "Completed",
     deletePrivateData: "Delete this private mix",
@@ -28,10 +28,14 @@ const copy = {
     preferred: "Preferred",
     preset: "Preset",
     privateNotice: "Results are private and are not published on a public page.",
+    refreshOutputs: "Refresh private playback links",
+    refreshingOutputs: "Refreshing private playback links…",
     resultHeading: "Your study mix is ready",
     resultLead: "Compare both candidates before choosing the version you prefer.",
     retry: "Try again",
+    retrying: "Trying again…",
     retryGuidance: "Retry is available. If it fails again, start a new mix or try later.",
+    returnToUpload: "Back to private upload",
     source: "Source",
     startAnother: "Start another mix",
     status: "Status",
@@ -43,7 +47,8 @@ const copy = {
     aiNotice: "AI 輸出未必能保留每個音樂細節，請仔細比較兩個候選版本。",
     candidate: "候選版本",
     cancel: "取消本機工作",
-    cancelledStatus: "本機工作已取消，相關使用者額度亦已釋放。",
+    cancelledHeading: "本機工作已取消",
+    cancelledStatus: "本機工作已正常終止，已預留的 Beta 額度亦已釋放。",
     cancelling: "正在取消本機工作……",
     completed: "已完成",
     deletePrivateData: "刪除這個私人 Mix",
@@ -60,10 +65,14 @@ const copy = {
     preferred: "已選擇",
     preset: "風格",
     privateNotice: "結果保持私密，不會發佈到公開結果頁。",
+    refreshOutputs: "重新整理私人播放連結",
+    refreshingOutputs: "正在重新整理私人播放連結……",
     resultHeading: "你的 Study Mix 已準備好",
     resultLead: "比較兩個候選版本，然後選擇你較喜歡的一個。",
     retry: "再試一次",
+    retrying: "正在重試……",
     retryGuidance: "此錯誤可以重試；若再次失敗，請建立新的 Mix 或稍後再試。",
+    returnToUpload: "返回私人上載",
     source: "來源",
     startAnother: "建立另一個 Mix",
     status: "狀態",
@@ -72,54 +81,66 @@ const copy = {
   },
 } satisfies Record<Language, Record<string, string | readonly string[]>>;
 
-const pendingStatuses: readonly JobStatus[] = [
-  "created",
-  "validating",
-  "queued",
-  "generating",
-  "processing_output",
-];
-
 const safeErrorCopy = {
   en: {
+    access:
+      "Private beta access is not available for this account. Sign in with an approved account before continuing.",
+    credits:
+      "There are not enough beta credits to create this mix. Return to your private upload and try again after credits are updated.",
     invalid: "The request or service response was invalid. Review the input and try again.",
+    internal:
+      "The private service had a temporary problem. Retry if the option is available, or try again later.",
     legal: "Accept the current legal documents before creating a study mix.",
     limited: "The generation limit has been reached. Wait before trying again.",
     network: "The private job service could not be reached. Check your connection and try again.",
     notFound: "The private upload or job is no longer available.",
+    outputExpired:
+      "One or more private playback files have expired, so this mix can no longer be played. Delete this private mix and create a new one if needed.",
+    outputNotReady:
+      "One or more private playback files are not ready yet. Try again to request a fresh pair of playback links.",
     provider: "The private generation service could not complete this study mix.",
+    rights:
+      "Confirm that you have the rights needed to use this audio before creating a study mix.",
+    uploadExpired:
+      "The private upload has expired. Return to the upload step, delete it, and choose the file again.",
+    uploadNotConfirmed:
+      "The private upload was not confirmed. Return to the upload step, delete it, and choose the file again.",
   },
   "zh-HK": {
+    access: "此帳戶目前沒有私密 Beta 使用權。請以已獲批准的帳戶登入後再繼續。",
+    credits: "目前沒有足夠 Beta 額度建立這個 Mix。請返回私人上載，待額度更新後再試。",
     invalid: "要求或服務回應無效，請檢查輸入後再試。",
+    internal: "私人服務暫時出現問題。如畫面提供「再試一次」，可先重試；否則請稍後再試。",
     legal: "建立 Study Mix 前，請先接受現行法律文件。",
     limited: "已達生成上限，請稍後再試。",
     network: "未能連接私人工作服務，請檢查網絡後再試。",
     notFound: "私人上載或工作已不可用。",
+    outputExpired:
+      "一個或多個私人播放檔案已到期，因此這個 Mix 已無法播放。如有需要，請刪除這個私人 Mix 後再建立新的 Mix。",
+    outputNotReady: "一個或多個私人播放檔案尚未準備好。請再試一次，以取得一對新的播放連結。",
     provider: "私人生成服務未能完成這個 Study Mix。",
+    rights: "建立 Study Mix 前，請確認你擁有使用此音訊所需的權利。",
+    uploadExpired: "私人上載已到期。請返回上載步驟，刪除該上載後重新選擇檔案。",
+    uploadNotConfirmed: "私人上載未完成確認。請返回上載步驟，刪除該上載後重新選擇檔案。",
   },
 } satisfies Record<Language, Record<string, string>>;
 
-export function isPendingJob(status: JobStatus): boolean {
-  return pendingStatuses.includes(status);
-}
-
-export function isTerminalJob(status: JobStatus): boolean {
-  return terminalStatuses.includes(status);
-}
-
 type JobExperienceProps = {
+  activeAction: ActiveJobAction | null;
   canCancel: boolean;
+  canRefreshOutputs: boolean;
+  canReturnToUpload: boolean;
   candidateSources: readonly [string, string] | null;
   cancellationError: string | null;
   deletionError: string | null;
   error: JobApiError | null;
   filename: string;
-  isRetrying: boolean;
   job: PublicJob | null;
   language: Language;
   onRetry: () => void;
   onCancel: () => void;
   onDelete: () => void;
+  onRefreshOutputs: () => void;
   onStartOver: () => void;
   presetName: string;
 };
@@ -135,9 +156,9 @@ export function JobExperience(props: JobExperienceProps) {
     return <ResultPage {...props} job={props.job} />;
   }
   if (
+    props.job.status === "cancelled" ||
     props.job.status === "failed" ||
-    props.job.status === "expired" ||
-    props.job.status === "cancelled"
+    props.job.status === "expired"
   ) {
     return <ErrorPage {...props} retryable={props.job.retryPermitted} />;
   }
@@ -145,9 +166,9 @@ export function JobExperience(props: JobExperienceProps) {
 }
 
 function PendingPage({
+  activeAction,
   canCancel,
   cancellationError,
-  isRetrying,
   job,
   language,
   onCancel,
@@ -155,6 +176,7 @@ function PendingPage({
   const strings = copy[language];
   const steps = strings.steps as readonly string[];
   const currentStep = progressStep(job.status);
+  const isBusy = activeAction !== null;
 
   return (
     <section className="job-page" aria-labelledby="job-page-title">
@@ -189,13 +211,8 @@ function PendingPage({
       )}
       {canCancel ? (
         <div className="error-actions">
-          <button
-            className="secondary-action"
-            disabled={isRetrying}
-            type="button"
-            onClick={onCancel}
-          >
-            {isRetrying ? strings.cancelling : strings.cancel}
+          <button className="secondary-action" disabled={isBusy} type="button" onClick={onCancel}>
+            {activeAction === "cancel" ? strings.cancelling : strings.cancel}
           </button>
         </div>
       ) : null}
@@ -204,16 +221,19 @@ function PendingPage({
 }
 
 function ResultPage({
+  activeAction,
+  canRefreshOutputs,
   candidateSources,
   deletionError,
   filename,
   job,
   language,
-  isRetrying,
   onDelete,
+  onRefreshOutputs,
   presetName,
 }: JobExperienceProps & { job: PublicJob }) {
   const strings = copy[language];
+  const isBusy = activeAction !== null;
   const [preferredCandidate, setPreferredCandidate] = useState<number | null>(null);
 
   return (
@@ -296,8 +316,18 @@ function ResultPage({
         </p>
       )}
       <div className="error-actions">
-        <button className="secondary-action" disabled={isRetrying} type="button" onClick={onDelete}>
-          {isRetrying ? strings.deletingPrivateData : strings.deletePrivateData}
+        {canRefreshOutputs ? (
+          <button
+            className="secondary-action"
+            disabled={isBusy || candidateSources === null}
+            type="button"
+            onClick={onRefreshOutputs}
+          >
+            {candidateSources === null ? strings.refreshingOutputs : strings.refreshOutputs}
+          </button>
+        ) : null}
+        <button className="secondary-action" disabled={isBusy} type="button" onClick={onDelete}>
+          {activeAction === "delete" ? strings.deletingPrivateData : strings.deletePrivateData}
         </button>
       </div>
     </section>
@@ -305,11 +335,15 @@ function ResultPage({
 }
 
 function ErrorPage({
+  activeAction,
+  canCancel,
+  canReturnToUpload,
+  cancellationError,
   deletionError,
   error,
-  isRetrying,
   job,
   language,
+  onCancel,
   onRetry,
   onDelete,
   onStartOver,
@@ -317,39 +351,61 @@ function ErrorPage({
 }: JobExperienceProps & { retryable: boolean }) {
   const strings = copy[language];
   const message = safeErrorMessage(error, job, language);
+  const isBusy = activeAction !== null;
+  const isCancelled = error === null && job?.status === "cancelled";
+  const isPending = job !== null && isPendingJob(job.status);
 
   return (
     <section className="job-page error-page" aria-labelledby="job-error-title">
-      <div className="error-summary" role="alert" tabIndex={-1}>
-        <AlertIcon />
+      <div
+        className={`error-summary${isCancelled ? " is-cancelled" : ""}`}
+        role={isCancelled ? "status" : "alert"}
+        tabIndex={-1}
+      >
+        {isCancelled ? <CheckCircleIcon /> : <AlertIcon />}
         <div>
-          <h1 id="job-error-title">{strings.errorHeading}</h1>
-          <p>{strings.errorLead}</p>
-          <p className="error-message">{message}</p>
-          <p>{retryable ? strings.retryGuidance : strings.unavailableGuidance}</p>
+          <h1 id="job-error-title">
+            {isCancelled ? strings.cancelledHeading : strings.errorHeading}
+          </h1>
+          <p>{isCancelled ? strings.cancelledStatus : strings.errorLead}</p>
+          {isCancelled ? null : <p className="error-message">{message}</p>}
+          {isCancelled ? null : (
+            <p>{retryable ? strings.retryGuidance : strings.unavailableGuidance}</p>
+          )}
         </div>
       </div>
       <div className="error-actions">
         {retryable ? (
-          <button className="primary-action" disabled={isRetrying} type="button" onClick={onRetry}>
-            {strings.retry}
+          <button className="primary-action" disabled={isBusy} type="button" onClick={onRetry}>
+            {activeAction === "retry" ? strings.retrying : strings.retry}
           </button>
         ) : null}
         {job === null ? (
-          <button className="secondary-action" type="button" onClick={onStartOver}>
-            {strings.startAnother}
-          </button>
-        ) : (
           <button
             className="secondary-action"
-            disabled={isRetrying}
+            disabled={isBusy}
             type="button"
-            onClick={onDelete}
+            onClick={onStartOver}
           >
-            {isRetrying ? strings.deletingPrivateData : strings.deletePrivateData}
+            {canReturnToUpload ? strings.returnToUpload : strings.startAnother}
+          </button>
+        ) : isPending ? (
+          canCancel ? (
+            <button className="secondary-action" disabled={isBusy} type="button" onClick={onCancel}>
+              {activeAction === "cancel" ? strings.cancelling : strings.cancel}
+            </button>
+          ) : null
+        ) : (
+          <button className="secondary-action" disabled={isBusy} type="button" onClick={onDelete}>
+            {activeAction === "delete" ? strings.deletingPrivateData : strings.deletePrivateData}
           </button>
         )}
       </div>
+      {cancellationError === null ? null : (
+        <p className="form-status is-error" role="alert">
+          {cancellationError}
+        </p>
+      )}
       {deletionError === null ? null : (
         <p className="form-status is-error" role="alert">
           {deletionError}
@@ -445,15 +501,28 @@ function formatDate(value: string, language: Language): string {
   }).format(new Date(value));
 }
 
-function safeErrorMessage(
+function assertUnhandledJobApiErrorCode(code: never): never {
+  void code;
+  throw new Error("Unhandled private job error code.");
+}
+
+export function safeErrorMessage(
   error: JobApiError | null,
   job: PublicJob | null,
   language: Language,
 ): string {
   const messages = safeErrorCopy[language];
   if (error !== null) {
-    switch (error.code) {
+    const code = error.code;
+    switch (code) {
+      case "UNAUTHORIZED":
+      case "FORBIDDEN":
+      case "ENTITLEMENT_REQUIRED":
+        return messages.access;
+      case "INSUFFICIENT_CREDITS":
+        return messages.credits;
       case "LEGAL_ACCEPTANCE_REQUIRED":
+      case "LEGAL_DOCUMENT_VERSION_MISMATCH":
         return messages.legal;
       case "RATE_LIMITED":
         return messages.limited;
@@ -461,20 +530,29 @@ function safeErrorMessage(
         return messages.network;
       case "NOT_FOUND":
         return messages.notFound;
+      case "OUTPUT_EXPIRED":
+        return messages.outputExpired;
+      case "OUTPUT_NOT_READY":
+        return messages.outputNotReady;
       case "PROVIDER_UNAVAILABLE":
         return messages.provider;
+      case "RIGHTS_DECLARATION_REQUIRED":
+        return messages.rights;
+      case "UPLOAD_EXPIRED":
+        return messages.uploadExpired;
+      case "UPLOAD_NOT_CONFIRMED":
+        return messages.uploadNotConfirmed;
+      case "INTERNAL_ERROR":
+        return messages.internal;
       case "INVALID_RESPONSE":
       case "VALIDATION_ERROR":
       case "CONFLICT":
       case "ILLEGAL_JOB_TRANSITION":
       case "PRESET_NOT_FOUND":
-      case "UNAUTHORIZED":
-      case "INTERNAL_ERROR":
         return messages.invalid;
+      default:
+        return assertUnhandledJobApiErrorCode(code);
     }
-  }
-  if (job?.status === "cancelled") {
-    return copy[language].cancelledStatus as string;
   }
   if (
     job?.errorCode === "PROVIDER_WORKFLOW_FAILED" ||

@@ -42,6 +42,16 @@ export function PresetIcon({ presetId }: { presetId: PresetId }) {
           <path d="M2.5 12h2.2l1.5-4.5 2.3 9 2.2-13 2.5 17 2.2-12.5 1.8 8 1.5-4H22" />
         </IconBase>
       );
+    case "kissa-jazzhop":
+      return (
+        <IconBase>
+          <path d="M4 10h12v4a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4v-4Z" />
+          <path d="M16 11h1.5a2.5 2.5 0 0 1 0 5H16M5 20h13M7 7c-1-1-.8-2 .2-3M11 7c-1-1-.8-2 .2-3" />
+          <path d="M17 8V4.5L21 3v3.5" />
+          <circle cx="15.7" cy="8.2" r="1.3" />
+          <circle cx="19.7" cy="6.7" r="1.3" />
+        </IconBase>
+      );
   }
 }
 

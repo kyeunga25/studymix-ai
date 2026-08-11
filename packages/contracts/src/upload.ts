@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { httpsUrlSchema, isoDateTimeSchema, uploadIdSchema } from "./common";
+import { httpsUrlSchema, idempotencyKeySchema, isoDateTimeSchema, uploadIdSchema } from "./common";
 
 export const audioContentTypes = [
   "audio/mpeg",
@@ -21,7 +21,7 @@ export const uploadStatusSchema = z.enum([
   "failed",
 ]);
 
-export const createUploadRequestSchema = z
+export const createUploadMetadataSchema = z
   .object({
     originalFilename: z
       .string()
@@ -34,9 +34,14 @@ export const createUploadRequestSchema = z
   })
   .strict();
 
+export const createUploadRequestSchema = createUploadMetadataSchema
+  .extend({ idempotencyKey: idempotencyKeySchema })
+  .strict();
+
 export const createUploadResponseSchema = z
   .object({
     uploadId: uploadIdSchema,
+    idempotencyKey: idempotencyKeySchema,
     objectKey: z.string().min(1).max(1024),
     uploadUrl: httpsUrlSchema,
     uploadMethod: z.literal("PUT"),
@@ -74,6 +79,7 @@ export const deleteUploadResponseSchema = z
 
 export type AudioContentType = z.infer<typeof audioContentTypeSchema>;
 export type UploadStatus = z.infer<typeof uploadStatusSchema>;
+export type CreateUploadMetadata = z.infer<typeof createUploadMetadataSchema>;
 export type CreateUploadRequest = z.infer<typeof createUploadRequestSchema>;
 export type CreateUploadResponse = z.infer<typeof createUploadResponseSchema>;
 export type PublicUpload = z.infer<typeof publicUploadSchema>;

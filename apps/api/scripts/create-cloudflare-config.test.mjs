@@ -50,6 +50,8 @@ describe("protected Cloudflare deployment configuration", () => {
     expect(config.ratelimits?.[0]?.name).toBe("JOB_RATE_LIMITER");
     expect(config.keep_vars).toBe(true);
     expect(config.workers_dev).toBe(false);
+    expect(config.send_metrics).toBe(false);
+    expect(config.dependencies_instrumentation).toEqual({ enabled: false });
   });
 
   it("passes the same protected config to deploy and preview without local log files", () => {
@@ -70,11 +72,13 @@ describe("protected Cloudflare deployment configuration", () => {
     const environment = buildProtectedWranglerEnvironment({
       WRANGLER_LOG: "error",
       WRANGLER_LOG_PATH: "private-log-path",
+      WRANGLER_SEND_METRICS: "true",
       SAFE_VALUE: "kept",
     });
     expect(environment).toEqual({
       SAFE_VALUE: "kept",
       WRANGLER_LOG_SANITIZE: "true",
+      WRANGLER_SEND_METRICS: "false",
       WRANGLER_WRITE_LOGS: "false",
     });
   });

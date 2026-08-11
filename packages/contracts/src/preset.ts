@@ -6,6 +6,7 @@ export const presetIds = [
   "lofi-study",
   "acoustic-ease",
   "slowwave",
+  "kissa-jazzhop",
 ] as const;
 
 type PresetPresentationV1 = Readonly<{
@@ -49,6 +50,13 @@ export const presetPresentationV1 = {
       "zh-HK": "慢速電子氛圍與輕柔脈動",
     },
   },
+  "kissa-jazzhop": {
+    displayName: { en: "Kissa Jazzhop", "zh-HK": "喫茶爵士輕拍" },
+    description: {
+      en: "Warm jazz chords and mellow café beats",
+      "zh-HK": "暖調爵士和弦與咖啡店輕拍",
+    },
+  },
 } as const satisfies Readonly<Record<(typeof presetIds)[number], PresetPresentationV1>>;
 
 export const presetIdSchema = z.enum(presetIds);
@@ -70,7 +78,7 @@ export const publicPresetSchema = z
   })
   .strict();
 
-export const publicPresetsSchema = z.array(publicPresetSchema).length(5);
+export const publicPresetsSchema = z.array(publicPresetSchema).length(presetIds.length);
 
 export const presetReferenceSchema = z
   .object({

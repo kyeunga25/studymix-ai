@@ -20,6 +20,10 @@ async function readBoundedJsonStream(
   body: ReadableStream<Uint8Array> | null,
   maximumBytes: number,
 ): Promise<BoundedJsonBody> {
+  if (!Number.isSafeInteger(maximumBytes) || maximumBytes < 1) {
+    throw new RangeError("The maximum JSON body size must be a positive safe integer.");
+  }
+
   const mediaType = headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
   if (mediaType !== "application/json") {
     throw new UnsupportedJsonMediaTypeError("The request must use application/json.");
@@ -47,7 +51,11 @@ async function readBoundedJsonStream(
     }
     totalBytes += result.value.byteLength;
     if (totalBytes > maximumBytes) {
-      await reader.cancel();
+      try {
+        await reader.cancel();
+      } catch {
+        // Preserve the safe size classification even if the underlying stream cannot be cancelled.
+      }
       throw new JsonBodyTooLargeError("The JSON request body is too large.");
     }
     chunks.push(result.value);

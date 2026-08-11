@@ -65,6 +65,7 @@ function parseOutputUrl(value: string, allowedHosts: readonly string[]): URL {
     url.protocol !== "https:" ||
     url.username !== "" ||
     url.password !== "" ||
+    url.port !== "" ||
     !allowedHosts.some(
       (host) =>
         url.hostname.toLowerCase() === host || url.hostname.toLowerCase().endsWith(`.${host}`),

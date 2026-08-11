@@ -5,6 +5,10 @@ import {
   deleteJobResponseSchema,
   publicJobSchema,
 } from "@studymix/contracts";
+import {
+  privateApiRequestHeaderName,
+  privateApiRequestHeaderValue,
+} from "@studymix/contracts/private-api";
 import { createSecureId } from "@studymix/core";
 import { env, introspectWorkflow } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -17,6 +21,13 @@ const uploadEnvelopeSchema = apiEnvelopeSchema(createUploadResponseSchema);
 const jobEnvelopeSchema = apiEnvelopeSchema(publicJobSchema);
 const deleteJobEnvelopeSchema = apiEnvelopeSchema(deleteJobResponseSchema);
 const errorEnvelopeSchema = z.object({ error: z.object({ code: z.string() }) });
+const browserMutationHeaders = {
+  [privateApiRequestHeaderName]: privateApiRequestHeaderValue,
+} as const;
+const jsonBrowserMutationHeaders = {
+  ...browserMutationHeaders,
+  "Content-Type": "application/json",
+} as const;
 
 async function resetStorage(): Promise<void> {
   let cursor: string | undefined;
@@ -52,14 +63,15 @@ async function createConfirmedUpload(): Promise<{
   uploadId: string;
 }> {
   const response = await app.request(
-    "https://studymix.example/api/uploads",
+    "http://localhost:8787/api/uploads",
     {
       body: JSON.stringify({
         contentType: "audio/mpeg",
+        idempotencyKey: "test-upload-retention-fixture",
         originalFilename: "retention-fixture.mp3",
         sizeBytes: 4,
       }),
-      headers: { "Content-Type": "application/json" },
+      headers: jsonBrowserMutationHeaders,
       method: "POST",
     },
     env,
@@ -72,8 +84,8 @@ async function createConfirmedUpload(): Promise<{
     httpMetadata: { contentType: "audio/mpeg" },
   });
   const confirmation = await app.request(
-    `https://studymix.example/api/uploads/${envelope.data.uploadId}/confirm`,
-    { method: "POST" },
+    `http://localhost:8787/api/uploads/${envelope.data.uploadId}/confirm`,
+    { headers: browserMutationHeaders, method: "POST" },
     env,
   );
   expect(confirmation.status).toBe(200);
@@ -110,7 +122,7 @@ async function createCompletedJob(): Promise<{
       await modifier.disableRetryDelays();
     });
     const response = await app.request(
-      "https://studymix.example/api/jobs",
+      "http://localhost:8787/api/jobs",
       {
         body: JSON.stringify({
           candidateCount: 2,
@@ -120,7 +132,7 @@ async function createCompletedJob(): Promise<{
           rightsDeclarationVersion: currentRightsDeclarationVersion,
           uploadId: upload.uploadId,
         }),
-        headers: { "Content-Type": "application/json" },
+        headers: jsonBrowserMutationHeaders,
         method: "POST",
       },
       env,
@@ -152,25 +164,205 @@ async function createCompletedJob(): Promise<{
   }
 }
 
+async function insertSharedJob(
+  ownerId: string,
+  uploadId: string,
+  input: Readonly<{
+    completedAt: string | null;
+    status: "completed" | "generating";
+    updatedAt: string;
+  }>,
+): Promise<string> {
+  const sharedJobId = createSecureId("job");
+  await env.DB.prepare(
+    `INSERT INTO jobs (
+       id, owner_id, upload_id, preset_id, preset_version, status,
+       idempotency_key, request_fingerprint, workflow_instance_id,
+       candidate_count, provider, error_code, created_at, updated_at,
+       completed_at, expires_at
+     ) VALUES (
+       ?1, ?2, ?3, 'soft-piano', 1, ?4,
+       ?5, ?6, ?1, 2, 'mock', NULL, ?7, ?7, ?8, ?9
+     )`,
+  )
+    .bind(
+      sharedJobId,
+      ownerId,
+      uploadId,
+      input.status,
+      `shared-${sharedJobId}`,
+      "c".repeat(64),
+      input.updatedAt,
+      input.completedAt,
+      "2026-08-02T00:00:00.000Z",
+    )
+    .run();
+  return sharedJobId;
+}
+
 describe("private retention and deletion", () => {
   beforeEach(async () => {
     await resetStorage();
     await resetDatabase();
   });
 
+  it("uses bounded indexes for unattached upload retention candidates", async () => {
+    const plan = await env.DB.prepare(
+      `EXPLAIN QUERY PLAN
+       SELECT uploads.id
+       FROM uploads
+       WHERE (
+           (uploads.status = 'pending' AND uploads.created_at <= ?1)
+           OR (
+             uploads.status IN ('confirmed', 'expired')
+             AND uploads.expires_at <= ?2
+           )
+         )
+         AND uploads.created_at <= ?3
+         AND NOT EXISTS (SELECT 1 FROM jobs WHERE jobs.upload_id = uploads.id)
+       ORDER BY uploads.created_at, uploads.id
+       LIMIT ?4`,
+    )
+      .bind("2026-07-25T12:00:00.000Z", "2026-07-26T12:00:00.000Z", "2026-07-26T11:00:00.000Z", 50)
+      .all<{ detail: string }>();
+    const details = plan.results.map((row) => row.detail);
+
+    expect({
+      fullTableScan: details.some((detail) => /^SCAN (?:jobs|uploads)(?:\s|$)/.test(detail)),
+      usesJobUploadIndex: details.some((detail) => detail.includes("idx_jobs_upload_id")),
+      usesPendingUploadIndex: details.some((detail) =>
+        detail.includes("idx_uploads_pending_created_id"),
+      ),
+      usesStoredUploadIndex: details.some((detail) =>
+        detail.includes("idx_uploads_stored_expires_id"),
+      ),
+    }).toEqual({
+      fullTableScan: false,
+      usesJobUploadIndex: true,
+      usesPendingUploadIndex: true,
+      usesStoredUploadIndex: true,
+    });
+  });
+
+  it("uses a bounded index for completed source retention candidates", async () => {
+    const plan = await env.DB.prepare(
+      `EXPLAIN QUERY PLAN
+       SELECT uploads.id
+       FROM uploads
+       INNER JOIN jobs ON jobs.upload_id = uploads.id
+       WHERE jobs.status = 'completed'
+         AND jobs.completed_at IS NOT NULL
+         AND jobs.completed_at <= ?1
+         AND uploads.status IN ('confirmed', 'expired')
+         AND NOT EXISTS (
+           SELECT 1 FROM jobs AS retaining_jobs
+           WHERE retaining_jobs.upload_id = uploads.id
+             AND retaining_jobs.id <> jobs.id
+             AND (
+               retaining_jobs.status NOT IN ('completed', 'expired')
+               OR (
+                 retaining_jobs.status = 'completed'
+                 AND (
+                   retaining_jobs.completed_at IS NULL
+                   OR retaining_jobs.completed_at > ?1
+                 )
+               )
+             )
+         )
+       ORDER BY jobs.completed_at, uploads.id
+       LIMIT ?2`,
+    )
+      .bind("2026-07-25T12:00:00.000Z", 50)
+      .all<{ detail: string }>();
+    const details = plan.results.map((row) => row.detail);
+
+    expect({
+      fullJobsScan: details.some((detail) => /^SCAN jobs(?:\s|$)/.test(detail)),
+      usesCompletedSourceIndex: details.some((detail) =>
+        detail.includes("idx_jobs_completed_source_cutoff"),
+      ),
+    }).toEqual({
+      fullJobsScan: false,
+      usesCompletedSourceIndex: true,
+    });
+  });
+
+  it("uses bounded cutoff indexes for terminal job retention candidates", async () => {
+    const plan = await env.DB.prepare(
+      `EXPLAIN QUERY PLAN
+       SELECT jobs.id, jobs.owner_id
+       FROM jobs
+       WHERE (
+         (jobs.status = 'completed' AND jobs.expires_at <= ?1)
+         OR (
+           jobs.status IN ('failed', 'cancelled')
+           AND jobs.completed_at IS NOT NULL
+           AND jobs.completed_at <= ?2
+         )
+         OR jobs.status = 'expired'
+       )
+       AND (
+         jobs.status <> 'expired'
+         OR
+         EXISTS (
+           SELECT 1 FROM uploads
+           WHERE uploads.id = jobs.upload_id
+             AND uploads.status <> 'deleted'
+             AND NOT EXISTS (
+               SELECT 1 FROM jobs AS retaining_jobs
+               WHERE retaining_jobs.upload_id = uploads.id
+                 AND retaining_jobs.id <> jobs.id
+                 AND retaining_jobs.status <> 'expired'
+             )
+         )
+         OR EXISTS (
+           SELECT 1 FROM outputs
+           WHERE outputs.job_id = jobs.id AND outputs.status <> 'deleted'
+         )
+       )
+       ORDER BY jobs.updated_at, jobs.id
+       LIMIT ?3`,
+    )
+      .bind("2026-07-26T12:00:00.000Z", "2026-07-25T12:00:00.000Z", 50)
+      .all<{ detail: string }>();
+    const details = plan.results.map((row) => row.detail);
+
+    expect({
+      fullRetentionTableScan: details.some((detail) =>
+        /^SCAN (?:jobs|outputs|uploads)(?:\s|$)/.test(detail),
+      ),
+      usesCompletedExpiryRange: details.some(
+        (detail) =>
+          detail.includes("idx_jobs_completed_expiry_cutoff") && detail.includes("expires_at"),
+      ),
+      usesExpiredStatusIndex: details.some((detail) =>
+        detail.includes("idx_jobs_status (status=?"),
+      ),
+      usesFailedCompletedRange: details.some(
+        (detail) =>
+          detail.includes("idx_jobs_failed_completed_cutoff") && detail.includes("completed_at"),
+      ),
+    }).toEqual({
+      fullRetentionTableScan: false,
+      usesCompletedExpiryRange: true,
+      usesExpiredStatusIndex: true,
+      usesFailedCompletedRange: true,
+    });
+  });
+
   it("lets only the owner purge a terminal job and remains idempotent", async () => {
     const fixture = await createCompletedJob();
     const denied = await app.request(
-      `https://studymix.example/api/jobs/${fixture.jobId}`,
-      { method: "DELETE" },
+      `http://localhost:8787/api/jobs/${fixture.jobId}`,
+      { headers: browserMutationHeaders, method: "DELETE" },
       { ...env, DEV_AUTH_SUBJECT: "another-retention-owner" },
     );
     expect(denied.status).toBe(404);
     expect(errorEnvelopeSchema.parse(await denied.json()).error.code).toBe("NOT_FOUND");
 
     const response = await app.request(
-      `https://studymix.example/api/jobs/${fixture.jobId}`,
-      { method: "DELETE" },
+      `http://localhost:8787/api/jobs/${fixture.jobId}`,
+      { headers: browserMutationHeaders, method: "DELETE" },
       env,
     );
     const envelope = deleteJobEnvelopeSchema.parse(await response.json());
@@ -192,16 +384,85 @@ describe("private retention and deletion", () => {
     expect(statuses).toEqual({
       deleted_outputs: 2,
       job_status: "expired",
-      upload_status: "deleted",
+      upload_status: "expired",
     });
 
     const repeated = await app.request(
-      `https://studymix.example/api/jobs/${fixture.jobId}`,
-      { method: "DELETE" },
+      `http://localhost:8787/api/jobs/${fixture.jobId}`,
+      { headers: browserMutationHeaders, method: "DELETE" },
       env,
     );
     expect(repeated.status).toBe(200);
     expect(deleteJobEnvelopeSchema.parse(await repeated.json()).error).toBeNull();
+  });
+
+  it("preserves a shared source until every referencing job is terminal", async () => {
+    const fixture = await createCompletedJob();
+    const sharedJobId = await insertSharedJob(fixture.ownerId, fixture.uploadId, {
+      completedAt: null,
+      status: "generating",
+      updatedAt: new Date().toISOString(),
+    });
+
+    const firstDeletion = await app.request(
+      `http://localhost:8787/api/jobs/${fixture.jobId}`,
+      { headers: browserMutationHeaders, method: "DELETE" },
+      env,
+    );
+    const preserved = await env.DB.prepare("SELECT status FROM uploads WHERE id = ?1")
+      .bind(fixture.uploadId)
+      .first<{ status: string }>();
+
+    expect(firstDeletion.status).toBe(200);
+    expect(preserved?.status).toBe("confirmed");
+    expect(await env.AUDIO_BUCKET.head(fixture.sourceKey)).not.toBeNull();
+
+    const completedAt = new Date().toISOString();
+    await env.DB.prepare(
+      "UPDATE jobs SET status = 'completed', completed_at = ?1, updated_at = ?1 WHERE id = ?2",
+    )
+      .bind(completedAt, sharedJobId)
+      .run();
+    const finalDeletion = await app.request(
+      `http://localhost:8787/api/jobs/${sharedJobId}`,
+      { headers: browserMutationHeaders, method: "DELETE" },
+      env,
+    );
+
+    expect(finalDeletion.status).toBe(200);
+    expect(await env.AUDIO_BUCKET.head(fixture.sourceKey)).toBeNull();
+  });
+
+  it("does not run completed-source retention while a newer shared job needs the upload", async () => {
+    const fixture = await createCompletedJob();
+    const newerJobId = await insertSharedJob(fixture.ownerId, fixture.uploadId, {
+      completedAt: "2026-07-26T11:30:00.000Z",
+      status: "completed",
+      updatedAt: "2026-07-26T11:30:00.000Z",
+    });
+    await env.DB.prepare(
+      "UPDATE jobs SET completed_at = ?1, expires_at = ?2, updated_at = ?1 WHERE id = ?3",
+    )
+      .bind("2026-07-23T11:00:00.000Z", "2026-07-27T12:00:00.000Z", fixture.jobId)
+      .run();
+    await env.DB.prepare("UPDATE jobs SET expires_at = ?1 WHERE id = ?2")
+      .bind("2026-07-27T12:00:00.000Z", newerJobId)
+      .run();
+    await env.DB.prepare("UPDATE uploads SET created_at = ?1 WHERE id = ?2")
+      .bind("2026-07-23T10:00:00.000Z", fixture.uploadId)
+      .run();
+
+    const now = new Date("2026-07-26T12:00:00.000Z");
+    const preserved = await runRetentionCleanup(env, now);
+    expect(preserved.deletedSources).toBe(0);
+    expect(await env.AUDIO_BUCKET.head(fixture.sourceKey)).not.toBeNull();
+
+    await env.DB.prepare("UPDATE jobs SET completed_at = ?1, updated_at = ?1 WHERE id = ?2")
+      .bind("2026-07-23T11:30:00.000Z", newerJobId)
+      .run();
+    const purged = await runRetentionCleanup(env, now);
+    expect(purged.deletedSources).toBe(1);
+    expect(await env.AUDIO_BUCKET.head(fixture.sourceKey)).toBeNull();
   });
 
   it("deletes completed sources first and expires outputs at the final deadline", async () => {
@@ -211,6 +472,9 @@ describe("private retention and deletion", () => {
       "UPDATE jobs SET completed_at = ?1, expires_at = ?2, updated_at = ?1 WHERE id = ?3",
     )
       .bind("2026-07-23T11:00:00.000Z", "2026-07-27T12:00:00.000Z", fixture.jobId)
+      .run();
+    await env.DB.prepare("UPDATE uploads SET created_at = ?1 WHERE id = ?2")
+      .bind("2026-07-23T10:00:00.000Z", fixture.uploadId)
       .run();
 
     const sourceCleanup = await runRetentionCleanup(env, now);

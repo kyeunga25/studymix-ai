@@ -1,15 +1,18 @@
 import {
   RepositoryNotFoundError,
   RepositoryStateError,
+  claimOwnedUploadDeletion,
   claimDueCompletedSourcePurges,
   claimDueUnattachedUploadPurges,
   claimOwnedTerminalJobPurge,
+  finishOwnedUploadDeletion,
   finishClaimedUploadPurges,
   finishOwnedJobPurge,
   listDueTerminalJobPurges,
   type JobPurgeTarget,
   type PurgeUploadTarget,
 } from "./repositories";
+import { maximumSignedR2UrlTtlSeconds } from "./r2-transfer";
 
 export class RetentionCleanupDisabledError extends Error {
   constructor() {
@@ -98,6 +101,7 @@ async function purgeClaimedUploads(
   db: D1Database,
   bucket: R2Bucket,
   targets: readonly PurgeUploadTarget[],
+  capabilityCutoff: string,
 ): Promise<number> {
   if (targets.length === 0) {
     return 0;
@@ -106,7 +110,7 @@ async function purgeClaimedUploads(
     bucket,
     targets.map((target) => target.objectKey),
   );
-  await finishClaimedUploadPurges(db, targets);
+  await finishClaimedUploadPurges(db, targets, capabilityCutoff);
   return deletedObjects;
 }
 
@@ -121,8 +125,42 @@ export async function purgeOwnedTerminalJob(
   }
   const target = await claimOwnedTerminalJobPurge(env.DB, ownerId, jobId, now.toISOString());
   const deletedObjects = await deleteObjectKeys(env.AUDIO_BUCKET, objectKeys(target));
-  await finishOwnedJobPurge(env.DB, target.ownerId, target.jobId);
+  const capabilityCutoff = new Date(
+    now.getTime() - maximumSignedR2UrlTtlSeconds * 1_000,
+  ).toISOString();
+  await finishOwnedJobPurge(env.DB, target.ownerId, target.jobId, capabilityCutoff);
   return { deletedObjects, jobId: target.jobId };
+}
+
+export async function purgeOwnedUnattachedUpload(
+  env: Env,
+  ownerId: string,
+  uploadId: string,
+  now: Date,
+  options: Readonly<{ outstandingPutCapabilityTtlSeconds?: number }> = {},
+): Promise<{ uploadId: string }> {
+  if (env.AUDIO_BUCKET === undefined) {
+    throw new RetentionCleanupConfigurationError();
+  }
+  const target = await claimOwnedUploadDeletion(env.DB, ownerId, uploadId, now.toISOString());
+  await env.AUDIO_BUCKET.delete(target.objectKey);
+  const capabilityTtlSeconds =
+    options.outstandingPutCapabilityTtlSeconds ?? maximumSignedR2UrlTtlSeconds;
+  if (
+    !Number.isSafeInteger(capabilityTtlSeconds) ||
+    capabilityTtlSeconds < 0 ||
+    capabilityTtlSeconds > maximumSignedR2UrlTtlSeconds
+  ) {
+    throw new TypeError("The outstanding PUT capability lifetime is invalid.");
+  }
+  const capabilityCutoff = new Date(now.getTime() - capabilityTtlSeconds * 1_000).toISOString();
+  const deleted = await finishOwnedUploadDeletion(
+    env.DB,
+    target.ownerId,
+    target.id,
+    capabilityCutoff,
+  );
+  return { uploadId: deleted.id };
 }
 
 export async function runRetentionCleanup(env: Env, now: Date): Promise<RetentionCleanupResult> {
@@ -152,6 +190,9 @@ export async function runRetentionCleanup(env: Env, now: Date): Promise<Retentio
   const abandonedUploadCutoff = new Date(
     now.getTime() - configuration.abandonedUploadRetentionHours * 60 * 60 * 1_000,
   ).toISOString();
+  const uploadCapabilityCutoff = new Date(
+    now.getTime() - maximumSignedR2UrlTtlSeconds * 1_000,
+  ).toISOString();
 
   let deletedJobs = 0;
   let deletedObjects = 0;
@@ -177,10 +218,16 @@ export async function runRetentionCleanup(env: Env, now: Date): Promise<Retentio
     cutoff: sourceCutoff,
     limit: configuration.batchSize,
   });
-  deletedObjects += await purgeClaimedUploads(env.DB, configuration.bucket, sourceTargets);
+  deletedObjects += await purgeClaimedUploads(
+    env.DB,
+    configuration.bucket,
+    sourceTargets,
+    uploadCapabilityCutoff,
+  );
 
   const unattachedUploadTargets = await claimDueUnattachedUploadPurges(env.DB, {
     confirmedCutoff: nowIso,
+    capabilityCutoff: uploadCapabilityCutoff,
     limit: configuration.batchSize,
     pendingCutoff: abandonedUploadCutoff,
   });
@@ -188,6 +235,7 @@ export async function runRetentionCleanup(env: Env, now: Date): Promise<Retentio
     env.DB,
     configuration.bucket,
     unattachedUploadTargets,
+    uploadCapabilityCutoff,
   );
 
   return {

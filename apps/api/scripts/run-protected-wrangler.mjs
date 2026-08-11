@@ -22,6 +22,7 @@ export function buildProtectedWranglerEnvironment(environment) {
   const result = {
     ...environment,
     WRANGLER_LOG_SANITIZE: "true",
+    WRANGLER_SEND_METRICS: "false",
     WRANGLER_WRITE_LOGS: "false",
   };
   delete result.WRANGLER_LOG;

@@ -5,7 +5,7 @@ import {
   type CreditSummary,
 } from "@studymix/contracts";
 import { z } from "zod";
-import { RepositoryNotFoundError, RepositoryStateError } from "./errors";
+import { RepositoryConflictError, RepositoryNotFoundError } from "./errors";
 
 const creditEventIdSchema = z.string().regex(/^evt_[0-9a-f]{32}$/);
 const creditReferenceKeySchema = z
@@ -26,25 +26,62 @@ const grantCreditsSchema = z.object({
 
 const creditSummaryRowSchema = z.object({
   available_credits: z.number().int().nonnegative().safe(),
+  entitlement_updated_at: z.string().datetime({ offset: true }),
+  ledger_updated_at: z.string().datetime({ offset: true }).nullable(),
   plan_code: z.literal("private-beta"),
   reserved_credits: z.number().int().nonnegative().safe(),
   settled_credits: z.number().int().nonnegative().safe(),
   status: z.enum(["trialing", "active", "past_due", "grace", "uncollectible", "cancelled"]),
-  updated_at: z.string().datetime({ offset: true }),
+});
+const creditReferenceRowSchema = z.object({
+  event_type: z.enum(["grant", "reserve", "settle", "release"]),
+  quantity: creditQuantitySchema,
 });
 
 export type CreditReservationStatus = "none" | "released" | "reserved" | "settled";
 
 function mapCreditSummary(value: unknown): CreditSummary {
   const row = creditSummaryRowSchema.parse(value);
+  const updatedAt =
+    row.ledger_updated_at !== null &&
+    Date.parse(row.ledger_updated_at) > Date.parse(row.entitlement_updated_at)
+      ? row.ledger_updated_at
+      : row.entitlement_updated_at;
   return creditSummarySchema.parse({
     availableCredits: row.available_credits,
     plan: row.plan_code,
     reservedCredits: row.reserved_credits,
     settledCredits: row.settled_credits,
     status: row.status,
-    updatedAt: row.updated_at,
+    updatedAt,
   });
+}
+
+async function getOwnedCreditReference(
+  db: D1Database,
+  ownerId: string,
+  referenceKey: string,
+): Promise<z.infer<typeof creditReferenceRowSchema> | null> {
+  const row = await db
+    .prepare(
+      `SELECT event_type, quantity
+       FROM credit_ledger
+       WHERE owner_id = ?1 AND reference_key = ?2`,
+    )
+    .bind(ownerIdSchema.parse(ownerId), creditReferenceKeySchema.parse(referenceKey))
+    .first();
+  return row === null ? null : creditReferenceRowSchema.parse(row);
+}
+
+function assertMatchingGrantReference(
+  reference: z.infer<typeof creditReferenceRowSchema>,
+  quantity: number,
+): void {
+  if (reference.event_type !== "grant" || reference.quantity !== quantity) {
+    throw new RepositoryConflictError(
+      "The credit reference is already bound to a different grant.",
+    );
+  }
 }
 
 export async function getOwnedCreditSummary(
@@ -57,12 +94,23 @@ export async function getOwnedCreditSummary(
       `SELECT
         entitlements.plan_code,
         entitlements.status,
-        entitlements.updated_at,
+        entitlements.updated_at AS entitlement_updated_at,
+        (
+          SELECT ledger.created_at
+          FROM credit_ledger AS ledger
+          WHERE ledger.owner_id = entitlements.owner_id
+          ORDER BY julianday(ledger.created_at) DESC, ledger.created_at DESC
+          LIMIT 1
+        ) AS ledger_updated_at,
         COALESCE(balances.available_credits, 0) AS available_credits,
         COALESCE(balances.reserved_credits, 0) AS reserved_credits,
         COALESCE(balances.settled_credits, 0) AS settled_credits
       FROM owner_entitlements AS entitlements
-      LEFT JOIN credit_balances AS balances ON balances.owner_id = entitlements.owner_id
+      LEFT JOIN (
+        SELECT owner_id, available_credits, reserved_credits, settled_credits
+        FROM credit_balances
+        WHERE owner_id = ?1
+      ) AS balances ON balances.owner_id = entitlements.owner_id
       WHERE entitlements.owner_id = ?1`,
     )
     .bind(parsedOwnerId)
@@ -75,6 +123,15 @@ export async function grantPrivateBetaCredits(
   input: z.input<typeof grantCreditsSchema>,
 ): Promise<CreditSummary> {
   const parsed = grantCreditsSchema.parse(input);
+  const existingReference = await getOwnedCreditReference(db, parsed.ownerId, parsed.referenceKey);
+  if (existingReference !== null) {
+    assertMatchingGrantReference(existingReference, parsed.quantity);
+    const existingSummary = await getOwnedCreditSummary(db, parsed.ownerId);
+    if (existingSummary === null) {
+      throw new RepositoryNotFoundError("The owner entitlement could not be found.");
+    }
+    return existingSummary;
+  }
   await db.batch([
     db
       .prepare(
@@ -100,8 +157,12 @@ export async function grantPrivateBetaCredits(
       .bind(parsed.eventId, parsed.ownerId, parsed.quantity, parsed.referenceKey, parsed.createdAt),
   ]);
 
+  const recordedReference = await getOwnedCreditReference(db, parsed.ownerId, parsed.referenceKey);
+  if (recordedReference !== null) {
+    assertMatchingGrantReference(recordedReference, parsed.quantity);
+  }
   const summary = await getOwnedCreditSummary(db, parsed.ownerId);
-  if (summary === null) {
+  if (recordedReference === null || summary === null) {
     throw new RepositoryNotFoundError("The owner entitlement could not be provisioned.");
   }
   return summary;
@@ -131,73 +192,4 @@ export async function getOwnedCreditReservationStatus(
     return "released";
   }
   return events.has("reserve") ? "reserved" : "none";
-}
-
-async function finalizeOwnedJobCredits(
-  db: D1Database,
-  input: {
-    createdAt: string;
-    eventId: string;
-    eventType: "release" | "settle";
-    jobId: string;
-    ownerId: string;
-  },
-): Promise<CreditReservationStatus> {
-  const parsed = z
-    .object({
-      createdAt: z.string().datetime({ offset: true }),
-      eventId: creditEventIdSchema,
-      eventType: z.enum(["release", "settle"]),
-      jobId: jobIdSchema,
-      ownerId: ownerIdSchema,
-    })
-    .parse(input);
-  const referenceKey = `job:${parsed.jobId}:${parsed.eventType}`;
-  await db
-    .prepare(
-      `INSERT INTO credit_ledger (
-        id, owner_id, job_id, event_type, quantity, reference_key, created_at
-      )
-      SELECT ?1, reserve.owner_id, reserve.job_id, ?2, reserve.quantity, ?3, ?4
-      FROM credit_ledger AS reserve
-      WHERE reserve.owner_id = ?5
-        AND reserve.job_id = ?6
-        AND reserve.event_type = 'reserve'
-        AND NOT EXISTS (
-          SELECT 1 FROM credit_ledger AS final
-          WHERE final.owner_id = reserve.owner_id
-            AND final.job_id = reserve.job_id
-            AND final.event_type IN ('settle', 'release')
-        )
-      ON CONFLICT (owner_id, reference_key) DO NOTHING`,
-    )
-    .bind(
-      parsed.eventId,
-      parsed.eventType,
-      referenceKey,
-      parsed.createdAt,
-      parsed.ownerId,
-      parsed.jobId,
-    )
-    .run();
-
-  const status = await getOwnedCreditReservationStatus(db, parsed.ownerId, parsed.jobId);
-  if (status === "none") {
-    throw new RepositoryStateError("The job has no credit reservation.");
-  }
-  return status;
-}
-
-export async function settleOwnedJobCredits(
-  db: D1Database,
-  input: Omit<Parameters<typeof finalizeOwnedJobCredits>[1], "eventType">,
-): Promise<CreditReservationStatus> {
-  return await finalizeOwnedJobCredits(db, { ...input, eventType: "settle" });
-}
-
-export async function releaseOwnedJobCredits(
-  db: D1Database,
-  input: Omit<Parameters<typeof finalizeOwnedJobCredits>[1], "eventType">,
-): Promise<CreditReservationStatus> {
-  return await finalizeOwnedJobCredits(db, { ...input, eventType: "release" });
 }

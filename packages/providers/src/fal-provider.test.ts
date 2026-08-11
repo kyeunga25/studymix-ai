@@ -96,6 +96,7 @@ describe("fal music generation provider", () => {
   it.each([
     ["acoustic-ease", "acoustic guitar", "soft piano"],
     ["slowwave", "slow-paced ambient electronic", "gentle pulse"],
+    ["kissa-jazzhop", "relaxed jazz-hop", "cafe ambience"],
   ] as const)(
     "maps the %s style through the bounded provider adapter",
     async (id, first, second) => {
@@ -198,7 +199,7 @@ describe("fal music generation provider", () => {
     });
   });
 
-  it("fails closed for mismatched request IDs and unexpected output hosts", async () => {
+  it("fails closed for mismatched request IDs and unexpected output destinations", async () => {
     const mismatched = createProvider(
       createQueue({
         status: vi.fn(async () => ({ request_id: "different-request", status: "COMPLETED" })),
@@ -217,12 +218,28 @@ describe("fal music generation provider", () => {
         })),
       }),
     );
+    const unexpectedPort = createProvider(
+      createQueue({
+        result: vi.fn(async (providerRequestId) => ({
+          data: {
+            audio: { url: "https://v3.fal.media:8443/files/example/output.mp3" },
+            lyrics: "[inst]",
+            seed: 42,
+            tags: "instrumental",
+          },
+          requestId: providerRequestId,
+        })),
+      }),
+    );
 
     await expect(mismatched.getStatus("fal-request-1")).rejects.toThrow(
       "request ID does not match",
     );
     await expect(unexpectedHost.getResult("fal-request-1")).rejects.toThrow(
-      "output URL host is not allowed",
+      "output URL destination is not allowed",
+    );
+    await expect(unexpectedPort.getResult("fal-request-1")).rejects.toThrow(
+      "output URL destination is not allowed",
     );
   });
 

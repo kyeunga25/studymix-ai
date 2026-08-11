@@ -47,7 +47,7 @@ import {
   transitionOwnedJob,
   type OutputRecord,
 } from "../repositories";
-import { createSignedR2ObjectUrl } from "../r2-transfer";
+import { R2TransferResourceExpiredError, createSignedR2ObjectUrl } from "../r2-transfer";
 
 const stepConfiguration = {
   retries: { backoff: "exponential", delay: "1 second", limit: 3 },
@@ -73,6 +73,7 @@ type PreparedCandidate = Readonly<{
 
 type PrivateSource = Readonly<{
   contentType: string;
+  expiresAt: string;
   objectKey: string;
   sizeBytes: number;
 }>;
@@ -114,12 +115,14 @@ async function waitForProviderCompletion({
   candidateIndex,
   configuration,
   provider,
+  providerRequestRecordId,
   providerRequestId,
   step,
 }: {
   candidateIndex: 0 | 1;
   configuration: GenerationWorkflowConfiguration;
   provider: MusicGenerationProvider;
+  providerRequestRecordId: string;
   providerRequestId: string;
   step: WorkflowStep;
 }): Promise<void> {
@@ -144,7 +147,10 @@ async function waitForProviderCompletion({
         try {
           await step.waitForEvent(
             `wait for candidate ${candidateIndex.toString()} signal attempt ${attempt.toString()}`,
-            { timeout: pollIntervalMilliseconds, type: falWebhookEventType },
+            {
+              timeout: pollIntervalMilliseconds,
+              type: falWebhookEventType(providerRequestRecordId),
+            },
           );
         } catch {
           // Polling remains the source of truth when no callback signal arrives.
@@ -445,6 +451,7 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationWorkfl
               }
               return {
                 contentType,
+                expiresAt: upload.expiresAt,
                 objectKey: upload.objectKey,
                 sizeBytes: upload.sizeBytes,
               };
@@ -598,12 +605,21 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationWorkfl
               if (privateSource === null) {
                 throw new NonRetryableError("The private source is unavailable.");
               }
-              const signedSource = await createSignedR2ObjectUrl({
-                configuration: configuration.fal.r2,
-                method: "GET",
-                now: new Date(),
-                objectKey: privateSource.objectKey,
-              });
+              let signedSource;
+              try {
+                signedSource = await createSignedR2ObjectUrl({
+                  configuration: configuration.fal.r2,
+                  method: "GET",
+                  now: new Date(),
+                  objectKey: privateSource.objectKey,
+                  resourceExpiresAt: new Date(privateSource.expiresAt),
+                });
+              } catch (error) {
+                if (error instanceof R2TransferResourceExpiredError) {
+                  throw new NonRetryableError("The private source has expired.");
+                }
+                throw error;
+              }
               sourceAudioUrl = signedSource.url;
             }
             try {
@@ -642,6 +658,7 @@ export class GenerationWorkflow extends WorkflowEntrypoint<Env, GenerationWorkfl
             candidateIndex,
             configuration,
             provider,
+            providerRequestRecordId: resources.providerRequest.id,
             providerRequestId: submission.providerRequestId,
             step,
           });
