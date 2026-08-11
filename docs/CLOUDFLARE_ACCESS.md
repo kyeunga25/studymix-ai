@@ -287,7 +287,11 @@ Before production traffic is enabled:
    a disabled workspace, a disabled membership, and a cross-workspace assertion each receive `403` and
    no workspace interface, then return to the same public login notice. Every private browser API request
    must send `X-Requested-With: XMLHttpRequest` so expiry is handled as `401` without treating redirected
-   HTML as a valid session. This follows Cloudflare's current
+   HTML as a valid session. For every user-facing API method, the Worker requires that exact value after
+   Access authentication and before workspace lookup; missing, different, or combined duplicate values must
+   receive `403` without creating owner, workspace, or route-specific rows. Reads are included because the
+   workspace boundary may consume a first-login invitation and records owner activity. The exact signed fal
+   callback remains outside this browser-only check. This follows Cloudflare's current
    [Access session-management guidance](https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/session-management/#ajax).
 6. Send a request without `Cf-Access-Jwt-Assertion` directly to each protected parent and deep Worker
    path. Confirm `/app` and `/app/*` return a `303` to the public login interface with only a fixed safe

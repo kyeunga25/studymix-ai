@@ -1,6 +1,6 @@
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { handleFalWebhook } from "./fal-webhook";
+import { falWebhookEventType, handleFalWebhook } from "./fal-webhook";
 import { app } from "./index";
 
 const now = "2026-07-26T01:02:03.000Z";
@@ -175,8 +175,9 @@ describe("fal webhook boundary", () => {
     const response = await handleFalWebhook(fixture.request, realGenerationEnvironment(), {
       fetcher: fixture.fetcher,
       nowMilliseconds,
-      async sendSignal(workflowInstanceId, signal) {
+      async sendSignal(workflowInstanceId, signal, eventType) {
         expect(workflowInstanceId).toBe(jobId);
+        expect(eventType).toBe(falWebhookEventType("req_44444444444444444444444444444444"));
         signals.push(signal);
       },
     });
@@ -192,6 +193,27 @@ describe("fal webhook boundary", () => {
       "SELECT COUNT(*) AS total FROM provider_requests WHERE error_code IS NOT NULL",
     ).first<{ total: number }>();
     expect(persistedPayload?.total).toBe(0);
+
+    const replayWhileSubmitted = await createSignedRequest(providerRequestId);
+    const replayWhileSubmittedResponse = await handleFalWebhook(
+      replayWhileSubmitted.request,
+      realGenerationEnvironment(),
+      {
+        fetcher: replayWhileSubmitted.fetcher,
+        nowMilliseconds,
+        async sendSignal() {
+          throw new Error("A replayed callback must not send another signal.");
+        },
+      },
+    );
+    expect(replayWhileSubmittedResponse.status).toBe(202);
+    expect(signals).toEqual([{ candidateIndex: 0, providerRequestId }]);
+    const signalClaim = await env.DB.prepare(
+      "SELECT webhook_signal_claimed_at FROM provider_requests WHERE provider_request_id = ?1",
+    )
+      .bind(providerRequestId)
+      .first<{ webhook_signal_claimed_at: string | null }>();
+    expect(signalClaim?.webhook_signal_claimed_at).toBe(now);
 
     await env.DB.prepare(
       "UPDATE provider_requests SET status = 'completed', completed_at = ?1 WHERE provider_request_id = ?2",

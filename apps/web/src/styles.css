@@ -1,47 +1,8 @@
-:root {
-  color: #202451;
-  background: #a79be0;
-  font-family:
-    "Avenir Next", ui-rounded, "SF Pro Rounded", "Hiragino Sans", "PingFang HK", system-ui,
-    sans-serif;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-text-size-adjust: 100%;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  min-width: 320px;
-  min-height: 100vh;
-}
-
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
-button,
-label {
-  -webkit-tap-highlight-color: transparent;
-}
-
-button:focus-visible,
-label:has(input:focus-visible) {
-  outline: 3px solid rgba(79, 68, 218, 0.34);
-  outline-offset: 3px;
-}
-
 .app-shell {
   position: relative;
   min-height: 100vh;
   overflow: hidden;
-  background-image: url("./assets/study-room-bg.png");
+  background-image: url("./assets/study-room-bg.webp");
   background-position: center;
   background-size: cover;
 }
@@ -614,7 +575,7 @@ main {
 
 .preset-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 9px;
 }
 
@@ -855,6 +816,10 @@ main {
   color: #3b7d5a;
 }
 
+.form-status.is-error {
+  color: #793f4a;
+}
+
 .privacy-note {
   display: flex;
   width: min(620px, 100%);
@@ -1054,6 +1019,35 @@ main {
   background: rgba(255, 252, 250, 0.95);
   box-shadow: 0 20px 52px rgba(51, 41, 104, 0.2);
   backdrop-filter: blur(18px);
+}
+
+.job-recovery-notice {
+  width: min(760px, 100%);
+  margin: 0 auto 14px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.job-recovery-notice.is-warning {
+  display: grid;
+  justify-items: center;
+  gap: 7px;
+  border: 1px solid #e3c78e;
+  color: #664816;
+  background: #fff8e7;
+}
+
+.job-recovery-notice.is-saved {
+  border: 1px solid #b7d9c4;
+  color: #245d3e;
+  background: #eff9f2;
+}
+
+.job-recovery-notice p {
+  margin: 0;
 }
 
 .text-button {
@@ -1406,6 +1400,16 @@ main {
   font-weight: 760;
 }
 
+.error-summary.is-cancelled {
+  border-color: #bddbc8;
+  color: #32724f;
+  background: #f2faf5;
+}
+
+.error-summary.is-cancelled h1 {
+  color: #245c40;
+}
+
 .error-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1564,14 +1568,6 @@ main {
     gap: 5px;
     padding: 14px 9px 11px;
     text-align: center;
-  }
-
-  .preset-option[data-preset="slowwave"] {
-    min-height: 82px;
-    grid-column: 1 / -1;
-    flex-direction: row;
-    gap: 12px;
-    padding: 12px 44px;
   }
 
   .preset-option strong {

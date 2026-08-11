@@ -1,5 +1,11 @@
 import { apiEnvelopeSchema } from "@studymix/contracts";
+import {
+  privateApiRequestHeaderName,
+  privateApiRequestHeaderValue,
+} from "@studymix/contracts/private-api";
 import { z } from "zod";
+import { readBoundedWebJsonResponse } from "./bounded-json-response";
+import { isWebRequestInterruption, withWebJsonRequestTimeout } from "./request-timeout";
 
 const workspacePermissionSchema = z.enum([
   "workspace:read",
@@ -47,41 +53,68 @@ export type PrivateSessionResult =
   | { session: PrivateSession; status: "verified" }
   | { session: null; status: Exclude<PrivateAccessStatus, "checking" | "verified"> };
 
+const unavailablePrivateSessionResult = {
+  session: null,
+  status: "unavailable",
+} as const satisfies PrivateSessionResult;
+
+async function requestPrivateSession(
+  signal: AbortSignal,
+  request: typeof fetch,
+): Promise<PrivateSessionResult> {
+  const response = await request("/api/session", {
+    credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+      [privateApiRequestHeaderName]: privateApiRequestHeaderValue,
+    },
+    signal: withWebJsonRequestTimeout(signal),
+  });
+
+  if (response.status === 401) {
+    return { session: null, status: "signed-out" };
+  }
+  if (response.status === 403) {
+    return { session: null, status: "denied" };
+  }
+  if (!response.ok) {
+    return unavailablePrivateSessionResult;
+  }
+
+  let body: unknown;
+  try {
+    body = await readBoundedWebJsonResponse(response);
+  } catch (error) {
+    if (isWebRequestInterruption(error)) {
+      throw error;
+    }
+    return unavailablePrivateSessionResult;
+  }
+  const parsed = privateSessionSchema.safeParse(body);
+  if (!parsed.success || parsed.data.error !== null || parsed.data.data === null) {
+    return unavailablePrivateSessionResult;
+  }
+
+  return { session: parsed.data.data, status: "verified" };
+}
+
 export async function loadPrivateSession(
   signal: AbortSignal,
   request: typeof fetch = fetch,
 ): Promise<PrivateSessionResult> {
   try {
-    const response = await request("/api/session", {
-      credentials: "same-origin",
-      headers: {
-        Accept: "application/json",
-        "X-Requested-With": "XMLHttpRequest",
-      },
-      signal,
-    });
-
-    if (response.status === 401) {
-      return { session: null, status: "signed-out" };
-    }
-    if (response.status === 403) {
-      return { session: null, status: "denied" };
-    }
-    if (!response.ok) {
-      return { session: null, status: "unavailable" };
-    }
-
-    const body: unknown = await response.json();
-    const parsed = privateSessionSchema.safeParse(body);
-    if (!parsed.success || parsed.data.error !== null || parsed.data.data === null) {
-      return { session: null, status: "unavailable" };
-    }
-
-    return { session: parsed.data.data, status: "verified" };
+    return await requestPrivateSession(signal, request);
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw error;
     }
-    return { session: null, status: "unavailable" };
+    try {
+      return await requestPrivateSession(signal, request);
+    } catch (retryError) {
+      if (retryError instanceof DOMException && retryError.name === "AbortError") {
+        throw retryError;
+      }
+      return unavailablePrivateSessionResult;
+    }
   }
 }

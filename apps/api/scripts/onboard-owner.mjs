@@ -61,7 +61,10 @@ export function buildOwnerOnboardingSql(input) {
   ${parsed.initialCreditGrant}, ${parsed.maxJobCreditCost}, ${timestamp}, ${timestamp}
 )
 ON CONFLICT (login_identity_hash) DO UPDATE SET
-  initial_credit_grant = excluded.initial_credit_grant,
+  initial_credit_grant = CASE
+    WHEN owner_invitations.status = 'consumed' THEN owner_invitations.initial_credit_grant
+    ELSE excluded.initial_credit_grant
+  END,
   max_job_credit_cost = excluded.max_job_credit_cost,
   status = CASE
     WHEN owner_invitations.status = 'revoked' THEN 'pending'
@@ -151,6 +154,7 @@ export function buildOwnerOnboardingEnvironment(environment) {
   const result = {
     ...environment,
     WRANGLER_LOG_SANITIZE: "true",
+    WRANGLER_SEND_METRICS: "false",
     WRANGLER_WRITE_LOGS: "false",
   };
   delete result.WRANGLER_LOG;

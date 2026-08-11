@@ -30,6 +30,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Validate tracked public Cloudflare configuration
+        run: pnpm public-config:check
+
       - name: Check generated Worker types
         run: pnpm cf-typegen
 

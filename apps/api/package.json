@@ -4,19 +4,20 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "WRANGLER_WRITE_LOGS=false WRANGLER_LOG_SANITIZE=true WRANGLER_REGISTRY_PATH=.wrangler/registry wrangler dev --var APP_ENV:local --var DEV_AUTH_SUBJECT:local-development-owner --var LEGAL_CONTACT_EMAIL:privacy@example.test",
+    "dev": "WRANGLER_SEND_METRICS=false WRANGLER_WRITE_LOGS=false WRANGLER_LOG_SANITIZE=true WRANGLER_REGISTRY_PATH=.wrangler/registry wrangler dev --var APP_ENV:local --var DEV_AUTH_SUBJECT:local-development-owner --var LEGAL_CONTACT_EMAIL:privacy@example.test",
     "prepare:local-ai": "node scripts/prepare-local-ai.mjs",
-    "dev:local-ai": "pnpm prepare:local-ai && WRANGLER_WRITE_LOGS=false WRANGLER_LOG_SANITIZE=true WRANGLER_REGISTRY_PATH=.wrangler/registry wrangler dev --local --var APP_ENV:local --var DEV_AUTH_SUBJECT:local-ai-development-owner --var LEGAL_CONTACT_EMAIL:privacy@example.test --var GENERATION_PROVIDER:mock --var REAL_GENERATION_ENABLED:false --var R2_TRANSFER_ENABLED:true --var JOB_WORKFLOW_ENABLED:true --var CREDIT_ACCOUNTING_ENABLED:true --var MAX_DAILY_JOBS_PER_OWNER:20",
-    "build": "WRANGLER_WRITE_LOGS=false WRANGLER_LOG_SANITIZE=true wrangler deploy --dry-run --outdir dist",
+    "dev:local-ai": "pnpm prepare:local-ai && WRANGLER_SEND_METRICS=false WRANGLER_WRITE_LOGS=false WRANGLER_LOG_SANITIZE=true WRANGLER_REGISTRY_PATH=.wrangler/registry wrangler dev --local --var APP_ENV:local --var DEV_AUTH_SUBJECT:local-ai-development-owner --var LEGAL_CONTACT_EMAIL:privacy@example.test --var GENERATION_PROVIDER:mock --var REAL_GENERATION_ENABLED:false --var R2_TRANSFER_ENABLED:true --var JOB_WORKFLOW_ENABLED:true --var CREDIT_ACCOUNTING_ENABLED:true --var MAX_DAILY_JOBS_PER_OWNER:20",
+    "build": "pnpm public-config:check && WRANGLER_SEND_METRICS=false WRANGLER_WRITE_LOGS=false WRANGLER_LOG_SANITIZE=true wrangler deploy --dry-run --outdir dist",
     "deploy": "pnpm deploy:cloudflare",
     "deploy:cloudflare": "node scripts/create-cloudflare-config.mjs && node scripts/run-protected-wrangler.mjs deploy",
     "preview:cloudflare": "node scripts/create-cloudflare-config.mjs && node scripts/run-protected-wrangler.mjs preview",
     "deploy:verify": "node scripts/verify-cloudflare-deployment.mjs",
     "owner:onboard": "node scripts/onboard-owner.mjs",
     "r2:cors:prepare": "node scripts/create-r2-cors.mjs",
-    "d1:migrate:local": "WRANGLER_WRITE_LOGS=false WRANGLER_LOG_SANITIZE=true wrangler d1 migrations apply DB --local",
+    "d1:migrate:local": "WRANGLER_SEND_METRICS=false WRANGLER_WRITE_LOGS=false WRANGLER_LOG_SANITIZE=true wrangler d1 migrations apply DB --local",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "cf-typegen": "WRANGLER_WRITE_LOGS=false WRANGLER_LOG_SANITIZE=true wrangler types --strict-vars=false"
+    "public-config:check": "node scripts/validate-public-config.mjs",
+    "cf-typegen": "pnpm public-config:check && WRANGLER_SEND_METRICS=false WRANGLER_WRITE_LOGS=false WRANGLER_LOG_SANITIZE=true wrangler types --strict-vars=false"
   },
   "dependencies": {
     "@studymix/contracts": "workspace:*",

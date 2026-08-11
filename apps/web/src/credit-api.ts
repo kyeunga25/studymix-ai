@@ -1,5 +1,7 @@
 import { apiEnvelopeSchema, creditSummarySchema, type CreditSummary } from "@studymix/contracts";
+import { readBoundedWebJsonResponse } from "./bounded-json-response";
 import { fetchPrivateApi } from "./private-api";
+import { isWebRequestInterruption } from "./request-timeout";
 
 const creditSummaryEnvelopeSchema = apiEnvelopeSchema(creditSummarySchema);
 
@@ -7,9 +9,9 @@ export class CreditApiError extends Error {
   override readonly name = "CreditApiError";
 }
 
-export async function getCreditSummary(
+async function requestCreditSummary(
   signal: AbortSignal,
-  request: typeof fetch = fetch,
+  request: typeof fetch,
 ): Promise<CreditSummary> {
   const response = await fetchPrivateApi(
     "/api/credits",
@@ -19,7 +21,15 @@ export async function getCreditSummary(
     },
     request,
   );
-  const body: unknown = await response.json();
+  let body: unknown;
+  try {
+    body = await readBoundedWebJsonResponse(response);
+  } catch (error) {
+    if (isWebRequestInterruption(error)) {
+      throw error;
+    }
+    throw new CreditApiError("The private beta credit response is invalid.");
+  }
   const parsed = creditSummaryEnvelopeSchema.safeParse(body);
   if (!parsed.success) {
     throw new CreditApiError("The private beta credit response is invalid.");
@@ -28,4 +38,35 @@ export async function getCreditSummary(
     throw new CreditApiError("The private beta credit balance is unavailable.");
   }
   return parsed.data.data;
+}
+
+function normalizeCreditRequestError(error: unknown): never {
+  if (error instanceof DOMException && error.name === "AbortError") {
+    throw error;
+  }
+  if (error instanceof CreditApiError) {
+    throw error;
+  }
+  throw new CreditApiError("The private beta credit balance is unavailable.");
+}
+
+export async function getCreditSummary(
+  signal: AbortSignal,
+  request: typeof fetch = fetch,
+): Promise<CreditSummary> {
+  try {
+    return await requestCreditSummary(signal, request);
+  } catch (error) {
+    if (
+      error instanceof CreditApiError ||
+      (error instanceof DOMException && error.name === "AbortError")
+    ) {
+      throw error;
+    }
+    try {
+      return await requestCreditSummary(signal, request);
+    } catch (retryError) {
+      normalizeCreditRequestError(retryError);
+    }
+  }
 }

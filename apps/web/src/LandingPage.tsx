@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { presetOptions, presetPresentation, PresetIcon } from "./preset-presentation";
+import { preloadLegalRoute, preloadLoginRoute } from "./route-loaders";
+import "./landing.css";
 
 type LandingLanguage = "en" | "zh-HK";
 
@@ -15,7 +17,7 @@ const landingCopy = {
     mobileLogin: "Sign in",
     hero: {
       title: "Turn your recording into a better study mix",
-      body: "Upload audio you own or are authorized to process, choose a focus style from piano and acoustic guitar to slow electronic ambience, then privately compare two candidates.",
+      body: "Upload audio you own or are authorized to process, choose a focus style—from soft piano and acoustic guitar to slow electronic ambience or café jazz-hop—then privately compare two candidates.",
       primaryAction: "See how it works",
       status: "Closed beta only. Registration and real generation are not open.",
     },
@@ -39,7 +41,7 @@ const landingCopy = {
         },
         {
           title: "Choose a Study Mix style",
-          body: "Choose Soft Piano, Music Box, Lo-fi Study, Acoustic Ease, or Slowwave—without artist-name prompting.",
+          body: "Choose Soft Piano, Music Box, Lo-fi Study, Acoustic Ease, Slowwave, or Kissa Jazzhop—without artist-name prompting.",
         },
         {
           title: "Compare privately",
@@ -73,7 +75,7 @@ const landingCopy = {
     mobileLogin: "登入",
     hero: {
       title: "把你的錄音，變成更適合專注的 Study Mix",
-      body: "上載你擁有或已獲授權的音訊，從鋼琴、木結他到慢拍舒緩電音選擇專注風格，再私密比較兩個候選版本。",
+      body: "上載你擁有或已獲授權的音訊，從柔和鋼琴、木結他、慢拍舒緩電音或咖啡店爵士輕拍中選擇專注風格，再私密比較兩個候選版本。",
       primaryAction: "了解如何運作",
       status: "目前為封閉測試，尚未開放註冊及真實生成。",
     },
@@ -96,7 +98,7 @@ const landingCopy = {
         },
         {
           title: "選擇 Study Mix 風格",
-          body: "可選柔和鋼琴、八音盒、Lo-fi 學習、木結他輕奏或慢拍舒緩電音，預設不使用歌手名稱。",
+          body: "可選柔和鋼琴、八音盒、Lo-fi 學習、木結他輕奏、慢拍舒緩電音或喫茶爵士輕拍，預設不使用歌手名稱。",
         },
         {
           title: "私密比較候選版本",
@@ -151,7 +153,12 @@ export function LandingPage() {
                 {copy.hero.primaryAction}
                 <ArrowIcon />
               </a>
-              <a className="landing-secondary-action" href="/login">
+              <a
+                className="landing-secondary-action"
+                href="/login"
+                onFocus={preloadLoginRoute}
+                onMouseEnter={preloadLoginRoute}
+              >
                 {copy.login}
               </a>
             </div>
@@ -211,7 +218,7 @@ export function LandingPage() {
             <HeadphonesIcon />
             <span className="landing-beta-wave">
               {waveform.slice(0, 18).map((height, index) => (
-                <i key={`${height}-${index}`} style={{ height }} />
+                <i className={`waveform-height-${height}`} key={`${height}-${index}`} />
               ))}
             </span>
           </div>
@@ -219,7 +226,12 @@ export function LandingPage() {
             <h2>{copy.status.heading}</h2>
             <p>{copy.status.body}</p>
             <p className="landing-beta-limitation">{copy.status.limitation}</p>
-            <a className="landing-primary-action" href="/login">
+            <a
+              className="landing-primary-action"
+              href="/login"
+              onFocus={preloadLoginRoute}
+              onMouseEnter={preloadLoginRoute}
+            >
               {copy.login}
               <ArrowIcon />
             </a>
@@ -234,12 +246,24 @@ export function LandingPage() {
         </a>
         <span>{copy.footer}</span>
         <nav aria-label={language === "en" ? "Legal documents" : "法律文件"}>
-          <a href="/legal/terms">{language === "en" ? "Terms" : "使用條款"}</a>
-          <a href="/legal/privacy">{language === "en" ? "Privacy" : "私隱通知"}</a>
-          <a href="/legal/acceptable-use">
+          <a href="/legal/terms" onFocus={preloadLegalRoute} onMouseEnter={preloadLegalRoute}>
+            {language === "en" ? "Terms" : "使用條款"}
+          </a>
+          <a href="/legal/privacy" onFocus={preloadLegalRoute} onMouseEnter={preloadLegalRoute}>
+            {language === "en" ? "Privacy" : "私隱通知"}
+          </a>
+          <a
+            href="/legal/acceptable-use"
+            onFocus={preloadLegalRoute}
+            onMouseEnter={preloadLegalRoute}
+          >
             {language === "en" ? "Acceptable use" : "可接受使用政策"}
           </a>
-          <a href="/legal/ai-output-notice">
+          <a
+            href="/legal/ai-output-notice"
+            onFocus={preloadLegalRoute}
+            onMouseEnter={preloadLegalRoute}
+          >
             {language === "en" ? "AI & output notice" : "AI 及輸出聲明"}
           </a>
         </nav>
@@ -271,7 +295,7 @@ function PublicHeader({
         <button type="button" onClick={() => onLanguageChange(language === "en" ? "zh-HK" : "en")}>
           {copy.language}
         </button>
-        <a href="/login">
+        <a href="/login" onFocus={preloadLoginRoute} onMouseEnter={preloadLoginRoute}>
           <span className="landing-login-wide">{copy.login}</span>
           <span className="landing-login-compact">{copy.mobileLogin}</span>
         </a>
@@ -282,7 +306,7 @@ function PublicHeader({
 
 function ProductPreview({ language }: { language: LandingLanguage }) {
   const copy = landingCopy[language].preview;
-  const selectedPreviewPreset = "acoustic-ease" as const;
+  const selectedPreviewPreset = "kissa-jazzhop" as const;
   const selectedPreviewName = presetPresentation[selectedPreviewPreset].displayName[language];
   return (
     <section
@@ -317,8 +341,8 @@ function ProductPreview({ language }: { language: LandingLanguage }) {
 
       <strong className="landing-preview-label">{copy.candidates}</strong>
       <div className="landing-candidate-rows">
-        <CandidatePreview label={copy.candidateA} style={selectedPreviewName} />
-        <CandidatePreview label={copy.candidateB} style={selectedPreviewName} offset />
+        <CandidatePreview label={copy.candidateA} presetName={selectedPreviewName} />
+        <CandidatePreview label={copy.candidateB} presetName={selectedPreviewName} offset />
       </div>
       <p className="landing-preview-private">
         <LockIcon />
@@ -336,7 +360,7 @@ function WaveformRow() {
       </span>
       <span className="landing-waveform">
         {waveform.map((height, index) => (
-          <i key={`${height}-${index}`} style={{ height }} />
+          <i className={`waveform-height-${height}`} key={`${height}-${index}`} />
         ))}
       </span>
     </div>
@@ -345,11 +369,11 @@ function WaveformRow() {
 
 function CandidatePreview({
   label,
-  style,
+  presetName,
   offset = false,
 }: {
   label: string;
-  style: string;
+  presetName: string;
   offset?: boolean;
 }) {
   return (
@@ -358,13 +382,14 @@ function CandidatePreview({
         <PlayIcon />
       </span>
       <span className={`landing-waveform${offset ? " is-offset" : ""}`} aria-hidden="true">
-        {waveform.slice(2, 23).map((height, index) => (
-          <i key={`${height}-${index}`} style={{ height: Math.max(7, height - 5) }} />
-        ))}
+        {waveform.slice(2, 23).map((height, index) => {
+          const candidateHeight = Math.max(7, height - 5);
+          return <i className={`waveform-height-${candidateHeight}`} key={`${height}-${index}`} />;
+        })}
       </span>
       <span>
         <strong>{label}</strong>
-        <small>{style}</small>
+        <small>{presetName}</small>
       </span>
     </div>
   );

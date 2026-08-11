@@ -24,5 +24,15 @@ describe("private API requests", () => {
     expect(headers.get("Accept")).toBe("application/json");
     expect(headers.get("Content-Type")).toBe("application/json");
     expect(headers.get("X-Requested-With")).toBe("XMLHttpRequest");
+    expect(options?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("adds the JSON accept header when a caller does not provide one", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ data: null }));
+
+    await fetchPrivateApi("/api/jobs", {}, request);
+
+    const headers = new Headers(request.mock.calls[0]?.[1]?.headers);
+    expect(headers.get("Accept")).toBe("application/json");
   });
 });

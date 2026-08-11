@@ -418,10 +418,3 @@ export const legalPageContent: Record<LegalDocumentId, LegalPageContent> = {
     ],
   },
 };
-
-export const legalPathToDocumentId: Readonly<Record<string, LegalDocumentId>> = {
-  "/legal/acceptable-use": "acceptable-use",
-  "/legal/ai-output-notice": "ai-output-notice",
-  "/legal/privacy": "privacy-notice",
-  "/legal/terms": "terms-of-use",
-};

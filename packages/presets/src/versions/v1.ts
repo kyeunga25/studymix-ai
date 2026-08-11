@@ -79,4 +79,19 @@ export const presetsV1 = [
       instrumentalOnly: true,
     },
   },
+  {
+    id: "kissa-jazzhop",
+    version: PRESET_VERSION,
+    ...presetPresentationV1["kissa-jazzhop"],
+    providerParameters: {
+      targetTags:
+        "instrumental, relaxed jazz-hop, warm jazz piano chords, recognizable central melody, mellow upright bass, brushed drums, restrained boom-bap groove, intimate cafe ambience, gentle dynamics, no vocals",
+      lyrics: "[inst]",
+      editMode: "remix",
+    },
+    policy: {
+      disallowArtistNames: true,
+      instrumentalOnly: true,
+    },
+  },
 ] as const satisfies readonly StylePreset[];

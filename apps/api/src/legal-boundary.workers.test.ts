@@ -1,7 +1,19 @@
 import { currentLegalAcceptanceDocuments } from "@studymix/contracts";
+import {
+  privateApiRequestHeaderName,
+  privateApiRequestHeaderValue,
+} from "@studymix/contracts/private-api";
 import { env } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { app } from "./index";
+
+const browserMutationHeaders = {
+  [privateApiRequestHeaderName]: privateApiRequestHeaderValue,
+} as const;
+const jsonBrowserMutationHeaders = {
+  ...browserMutationHeaders,
+  "Content-Type": "application/json",
+} as const;
 
 describe("legal document and acceptance boundary", () => {
   beforeEach(async () => {
@@ -65,24 +77,24 @@ describe("legal document and acceptance boundary", () => {
 
   it("rejects malformed, oversized, and non-JSON acceptance requests", async () => {
     const nonJson = await app.request(
-      "https://studymix.example/api/legal/acceptances",
-      { method: "POST", body: "not-json" },
+      "http://localhost:8787/api/legal/acceptances",
+      { method: "POST", headers: browserMutationHeaders, body: "not-json" },
       env,
     );
     const malformed = await app.request(
-      "https://studymix.example/api/legal/acceptances",
+      "http://localhost:8787/api/legal/acceptances",
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonBrowserMutationHeaders,
         body: "{",
       },
       env,
     );
     const oversized = await app.request(
-      "https://studymix.example/api/legal/acceptances",
+      "http://localhost:8787/api/legal/acceptances",
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonBrowserMutationHeaders,
         body: JSON.stringify({ padding: "x".repeat(4_096) }),
       },
       env,
@@ -100,10 +112,10 @@ describe("legal document and acceptance boundary", () => {
 
   it("rejects stale versions without recording partial acceptance", async () => {
     const response = await app.request(
-      "https://studymix.example/api/legal/acceptances",
+      "http://localhost:8787/api/legal/acceptances",
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: jsonBrowserMutationHeaders,
         body: JSON.stringify({
           documents: currentLegalAcceptanceDocuments.map((document, index) => ({
             ...document,
@@ -128,18 +140,14 @@ describe("legal document and acceptance boundary", () => {
   it("records the exact current set once and reports current owner status", async () => {
     const request = {
       method: "POST" as const,
-      headers: { "Content-Type": "application/json" },
+      headers: jsonBrowserMutationHeaders,
       body: JSON.stringify({ documents: currentLegalAcceptanceDocuments }),
     };
-    const first = await app.request("https://studymix.example/api/legal/acceptances", request, env);
-    const repeated = await app.request(
-      "https://studymix.example/api/legal/acceptances",
-      request,
-      env,
-    );
+    const first = await app.request("http://localhost:8787/api/legal/acceptances", request, env);
+    const repeated = await app.request("http://localhost:8787/api/legal/acceptances", request, env);
     const status = await app.request(
-      "https://studymix.example/api/legal/acceptances",
-      undefined,
+      "http://localhost:8787/api/legal/acceptances",
+      { headers: browserMutationHeaders },
       env,
     );
     const rowCount = await env.DB.prepare("SELECT COUNT(*) AS total FROM legal_acceptances").first<{

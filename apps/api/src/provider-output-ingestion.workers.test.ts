@@ -115,7 +115,7 @@ describe("provider output ingestion", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("rejects untrusted URLs and redirects before writing an object", async () => {
+  it("rejects untrusted destinations and redirects before writing an object", async () => {
     const fetcher = vi.fn(
       async () =>
         new Response(null, { headers: { Location: "https://example.test/output" }, status: 302 }),
@@ -125,6 +125,14 @@ describe("provider output ingestion", () => {
       ingestProviderOutput({
         ...ingestionInput(secondObjectKey, fetcher),
         outputUrl: "https://fal.media.example.test/output.mp3",
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_OUTPUT_URL", retryable: false });
+    expect(fetcher).not.toHaveBeenCalled();
+
+    await expect(
+      ingestProviderOutput({
+        ...ingestionInput(secondObjectKey, fetcher),
+        outputUrl: "https://v3.fal.media:8443/files/example/output.mp3",
       }),
     ).rejects.toMatchObject({ code: "INVALID_OUTPUT_URL", retryable: false });
     expect(fetcher).not.toHaveBeenCalled();

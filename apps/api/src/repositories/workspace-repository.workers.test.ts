@@ -12,6 +12,20 @@ const authenticatedOwner: OwnerContext = {
   kind: "authenticated",
   ownerId: `own_${"1".repeat(32)}`,
 };
+const developmentOwner: OwnerContext = {
+  authIssuer: "urn:studymix:development",
+  authSubjectHash: "5".repeat(64),
+  invitationIdentityHash: null,
+  kind: "development",
+  ownerId: `own_${"5".repeat(32)}`,
+};
+const secondDevelopmentOwner: OwnerContext = {
+  authIssuer: "urn:studymix:development",
+  authSubjectHash: "6".repeat(64),
+  invitationIdentityHash: null,
+  kind: "development",
+  ownerId: `own_${"6".repeat(32)}`,
+};
 
 async function insertInvitation(status: "pending" | "revoked" = "pending"): Promise<string> {
   const workspaceId = `wsp_${"3".repeat(32)}`;
@@ -100,6 +114,49 @@ describe("workspace authorization repository", () => {
     expect(counts).toEqual({ consumed: 1, grants: 1, memberships: 1, owners: 1, workspaces: 1 });
   });
 
+  it("refreshes owner activity at most once per five-minute window", async () => {
+    await insertInvitation();
+    await authorizeWorkspaceAccess(env.DB, authenticatedOwner, null, now);
+
+    await authorizeWorkspaceAccess(env.DB, authenticatedOwner, null, "2026-08-05T00:04:59.999Z");
+    await expect(
+      env.DB.prepare("SELECT last_seen_at FROM owners WHERE id = ?1")
+        .bind(authenticatedOwner.ownerId)
+        .first<{ last_seen_at: string }>(),
+    ).resolves.toEqual({ last_seen_at: now });
+
+    await authorizeWorkspaceAccess(env.DB, authenticatedOwner, null, "2026-08-05T00:05:00.000Z");
+    await expect(
+      env.DB.prepare("SELECT last_seen_at FROM owners WHERE id = ?1")
+        .bind(authenticatedOwner.ownerId)
+        .first<{ last_seen_at: string }>(),
+    ).resolves.toEqual({ last_seen_at: "2026-08-05T00:05:00.000Z" });
+
+    await authorizeWorkspaceAccess(env.DB, authenticatedOwner, null, "2026-08-05T00:09:59.999Z");
+    await expect(
+      env.DB.prepare("SELECT last_seen_at FROM owners WHERE id = ?1")
+        .bind(authenticatedOwner.ownerId)
+        .first<{ last_seen_at: string }>(),
+    ).resolves.toEqual({ last_seen_at: "2026-08-05T00:05:00.000Z" });
+  });
+
+  it("never refreshes another owner's activity", async () => {
+    await authorizeWorkspaceAccess(env.DB, developmentOwner, null, now);
+    await authorizeWorkspaceAccess(env.DB, secondDevelopmentOwner, null, now);
+
+    await authorizeWorkspaceAccess(env.DB, developmentOwner, null, "2026-08-05T00:05:00.000Z");
+
+    const activity = await env.DB.prepare(
+      `SELECT id, last_seen_at
+       FROM owners
+       ORDER BY id`,
+    ).all<{ id: string; last_seen_at: string }>();
+    expect(activity.results).toEqual([
+      { id: developmentOwner.ownerId, last_seen_at: "2026-08-05T00:05:00.000Z" },
+      { id: secondDevelopmentOwner.ownerId, last_seen_at: now },
+    ]);
+  });
+
   it("rejects disabled accounts and memberships after successful onboarding", async () => {
     await insertInvitation();
     const access = await authorizeWorkspaceAccess(env.DB, authenticatedOwner, null, now);
@@ -165,13 +222,6 @@ describe("workspace authorization repository", () => {
   });
 
   it("keeps credential-free development access isolated from the production invite gate", async () => {
-    const developmentOwner: OwnerContext = {
-      authIssuer: "urn:studymix:development",
-      authSubjectHash: "5".repeat(64),
-      invitationIdentityHash: null,
-      kind: "development",
-      ownerId: `own_${"5".repeat(32)}`,
-    };
     const access = await authorizeWorkspaceAccess(env.DB, developmentOwner, null, now);
     expect(access).toMatchObject({
       membershipStatus: "active",

@@ -1,9 +1,17 @@
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
+import {
+  createRemoteJWKSet,
+  customFetch,
+  jwtVerify,
+  type FetchImplementation,
+  type JWTPayload,
+} from "jose";
 import { z } from "zod";
 import { isLoopbackRequest } from "../local-runtime";
+import { readBoundedJsonResponse } from "../request-json";
 
 const ACCESS_TOKEN_HEADER = "cf-access-jwt-assertion";
 const ACCESS_CLOCK_TOLERANCE_SECONDS = 5;
+const MAXIMUM_ACCESS_JWKS_BYTES = 32_768;
 const DEVELOPMENT_ISSUER = "urn:studymix:development";
 const INVITATION_HASH_CONTEXT = "studymix-owner-invite-v1";
 
@@ -58,13 +66,43 @@ export class AuthenticationError extends Error {
 
 const remoteJwksByIssuer = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
+export const fetchBoundedAccessJwks: FetchImplementation = async (url, options) => {
+  const response = await fetch(url, options);
+  if (response.status !== 200) {
+    return response;
+  }
+
+  const mediaType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+  if (mediaType !== "application/json" && mediaType !== "application/jwk-set+json") {
+    throw new TypeError("The Access JWKS response must use a JSON media type.");
+  }
+
+  const boundedHeaders = new Headers({ "Content-Type": "application/json" });
+  const contentLength = response.headers.get("content-length");
+  if (contentLength !== null) {
+    boundedHeaders.set("Content-Length", contentLength);
+  }
+  const value = await readBoundedJsonResponse(
+    new Response(response.body, {
+      headers: boundedHeaders,
+      status: response.status,
+      statusText: response.statusText,
+    }),
+    MAXIMUM_ACCESS_JWKS_BYTES,
+  );
+
+  return Response.json(value);
+};
+
 function getRemoteJwks(issuer: string): ReturnType<typeof createRemoteJWKSet> {
   const existing = remoteJwksByIssuer.get(issuer);
   if (existing !== undefined) {
     return existing;
   }
 
-  const jwks = createRemoteJWKSet(new URL("/cdn-cgi/access/certs", issuer));
+  const jwks = createRemoteJWKSet(new URL("/cdn-cgi/access/certs", issuer), {
+    [customFetch]: fetchBoundedAccessJwks,
+  });
   remoteJwksByIssuer.set(issuer, jwks);
   return jwks;
 }
@@ -165,9 +203,10 @@ export async function resolveOwnerContext(
   verifier: AccessJwtVerifier = verifyAccessJwt,
 ): Promise<OwnerContext> {
   if (
-    environment.APP_ENV === "test" ||
-    ((environment.APP_ENV === "development" || environment.APP_ENV === "local") &&
-      isLoopbackRequest(request))
+    (environment.APP_ENV === "test" ||
+      environment.APP_ENV === "development" ||
+      environment.APP_ENV === "local") &&
+    isLoopbackRequest(request)
   ) {
     const parsedSubject = developmentSubjectSchema.safeParse(environment.DEV_AUTH_SUBJECT);
     if (!parsedSubject.success) {

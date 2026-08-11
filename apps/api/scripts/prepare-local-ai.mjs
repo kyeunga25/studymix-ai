@@ -25,6 +25,7 @@ function runWrangler(arguments_) {
     env: {
       ...process.env,
       WRANGLER_LOG_SANITIZE: "true",
+      WRANGLER_SEND_METRICS: "false",
       WRANGLER_WRITE_LOGS: "false",
     },
     stdio: "inherit",
@@ -41,6 +42,7 @@ function runWranglerJson(arguments_) {
     env: {
       ...process.env,
       WRANGLER_LOG_SANITIZE: "true",
+      WRANGLER_SEND_METRICS: "false",
       WRANGLER_WRITE_LOGS: "false",
     },
     stdio: ["ignore", "pipe", "inherit"],
@@ -73,6 +75,28 @@ function countLocalSchemaObjects(names) {
   return total;
 }
 
+function countLocalTableColumns(tableName, names) {
+  const result = runWranglerJson([
+    "d1",
+    "execute",
+    "DB",
+    "--local",
+    "--json",
+    "--command",
+    `PRAGMA table_info(${tableName});`,
+  ]);
+  const rows = result?.[0]?.results;
+  if (!Array.isArray(rows)) {
+    throw new Error("The local D1 column check returned an invalid result.");
+  }
+  const present = new Set(
+    rows.flatMap((row) =>
+      typeof row === "object" && row !== null && typeof row.name === "string" ? [row.name] : [],
+    ),
+  );
+  return names.filter((name) => present.has(name)).length;
+}
+
 function ensureMigrationGroup(names, migrationFilename) {
   const existingCount = countLocalSchemaObjects(names);
   if (existingCount === 0) {
@@ -87,6 +111,28 @@ function ensureMigrationGroup(names, migrationFilename) {
     return;
   }
   if (existingCount !== names.length) {
+    throw new Error(
+      `The local D1 schema is partially initialized for ${migrationFilename}; back it up and repair it before continuing.`,
+    );
+  }
+}
+
+function ensureUploadIdempotencyMigration() {
+  const migrationFilename = "0006_upload_idempotency.sql";
+  const columnCount = countLocalTableColumns("uploads", ["idempotency_key", "request_fingerprint"]);
+  const indexCount = countLocalSchemaObjects(["idx_uploads_owner_idempotency"]);
+  if (columnCount === 0 && indexCount === 0) {
+    runWrangler([
+      "d1",
+      "execute",
+      "DB",
+      "--local",
+      "--file",
+      path.join(apiDirectory, "migrations", migrationFilename),
+    ]);
+    return;
+  }
+  if (columnCount !== 2 || indexCount !== 1) {
     throw new Error(
       `The local D1 schema is partially initialized for ${migrationFilename}; back it up and repair it before continuing.`,
     );
@@ -122,6 +168,7 @@ ensureMigrationGroup(
   ["workspaces", "workspace_memberships", "workspace_controls", "owner_invitations"],
   "0005_owner_workspaces.sql",
 );
+ensureUploadIdempotencyMigration();
 runWrangler(["d1", "execute", "DB", "--local", "--file", localSchemaPath]);
 
 const seedSql = `

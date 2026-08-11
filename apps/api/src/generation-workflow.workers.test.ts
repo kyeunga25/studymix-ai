@@ -5,6 +5,10 @@ import {
   currentRightsDeclarationVersion,
   publicJobSchema,
 } from "@studymix/contracts";
+import {
+  privateApiRequestHeaderName,
+  privateApiRequestHeaderValue,
+} from "@studymix/contracts/private-api";
 import { createSecureId } from "@studymix/core";
 import { env, introspectWorkflow } from "cloudflare:test";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -29,6 +33,64 @@ const uploadEnvelopeSchema = apiEnvelopeSchema(createUploadResponseSchema);
 const jobEnvelopeSchema = apiEnvelopeSchema(publicJobSchema);
 const creditEnvelopeSchema = apiEnvelopeSchema(creditSummarySchema);
 const errorEnvelopeSchema = z.object({ error: z.object({ code: z.string() }) });
+const browserMutationHeaders = {
+  [privateApiRequestHeaderName]: privateApiRequestHeaderValue,
+} as const;
+const jsonBrowserMutationHeaders = {
+  ...browserMutationHeaders,
+  "Content-Type": "application/json",
+} as const;
+const validJobRequestBody = {
+  candidateCount: 2,
+  idempotencyKey: "synthetic-job-request-0001",
+  presetId: "soft-piano",
+  presetVersion: 1,
+  rightsDeclarationVersion: currentRightsDeclarationVersion,
+  uploadId: `upl_${"1".repeat(32)}`,
+} as const;
+const invalidJobRequestCases = [
+  {
+    body: JSON.stringify(validJobRequestBody),
+    contentType: "text/plain",
+    expectedStatus: 415,
+    label: "a non-JSON media type",
+  },
+  {
+    body: "{",
+    contentType: "application/json",
+    expectedStatus: 400,
+    label: "malformed JSON",
+  },
+  {
+    body: JSON.stringify({ padding: "x".repeat(4_096) }),
+    contentType: "application/json",
+    expectedStatus: 413,
+    label: "a JSON body over 4 KiB",
+  },
+  {
+    body: JSON.stringify({ ...validJobRequestBody, unexpected: true }),
+    contentType: "application/json",
+    expectedStatus: 400,
+    label: "an extra request field",
+  },
+  {
+    body: JSON.stringify({ ...validJobRequestBody, candidateCount: 1 }),
+    contentType: "application/json",
+    expectedStatus: 400,
+    label: "an unsupported candidate count",
+  },
+  {
+    body: JSON.stringify({ ...validJobRequestBody, rightsDeclarationVersion: "v2" }),
+    contentType: "application/json",
+    expectedStatus: 400,
+    label: "a non-current rights declaration version",
+  },
+] satisfies readonly Readonly<{
+  body: string;
+  contentType: string;
+  expectedStatus: 400 | 413 | 415;
+  label: string;
+}>[];
 
 async function resetDatabase(): Promise<void> {
   await env.DB.prepare("DELETE FROM legal_acceptances").run();
@@ -49,14 +111,15 @@ async function resetDatabase(): Promise<void> {
 
 async function createConfirmedUpload(withLegalAcceptance: boolean): Promise<string> {
   const uploadResponse = await app.request(
-    "https://studymix.example/api/uploads",
+    "http://localhost:8787/api/uploads",
     {
       body: JSON.stringify({
         contentType: "audio/mpeg",
+        idempotencyKey: "test-upload-workflow-fixture",
         originalFilename: "workflow-fixture.mp3",
         sizeBytes: 4,
       }),
-      headers: { "Content-Type": "application/json" },
+      headers: jsonBrowserMutationHeaders,
       method: "POST",
     },
     env,
@@ -69,8 +132,8 @@ async function createConfirmedUpload(withLegalAcceptance: boolean): Promise<stri
     httpMetadata: { contentType: "audio/mpeg" },
   });
   const confirmResponse = await app.request(
-    `https://studymix.example/api/uploads/${uploadEnvelope.data.uploadId}/confirm`,
-    { method: "POST" },
+    `http://localhost:8787/api/uploads/${uploadEnvelope.data.uploadId}/confirm`,
+    { headers: browserMutationHeaders, method: "POST" },
     env,
   );
   expect(confirmResponse.status).toBe(200);
@@ -102,7 +165,7 @@ function jobRequest(uploadId: string): RequestInit {
       rightsDeclarationVersion: currentRightsDeclarationVersion,
       uploadId,
     }),
-    headers: { "Content-Type": "application/json" },
+    headers: jsonBrowserMutationHeaders,
     method: "POST",
   };
 }
@@ -112,11 +175,55 @@ describe("feature-gated mock generation Workflow", () => {
     await resetDatabase();
   });
 
+  it.each(invalidJobRequestCases)(
+    "rejects $label before creating generation side effects",
+    async ({ body, contentType, expectedStatus }) => {
+      const response = await app.request(
+        "http://localhost:8787/api/jobs",
+        {
+          body,
+          headers: { ...browserMutationHeaders, "Content-Type": contentType },
+          method: "POST",
+        },
+        env,
+      );
+      const responseBody: unknown = await response.json();
+      const sideEffects = await env.DB.prepare(
+        `SELECT
+          (SELECT COUNT(*) FROM jobs) AS jobs,
+          (SELECT COUNT(*) FROM outputs) AS outputs,
+          (SELECT COUNT(*) FROM provider_requests) AS provider_requests,
+          (SELECT COUNT(*) FROM rights_declarations) AS rights_declarations,
+          (SELECT COUNT(*) FROM usage_events) AS usage_events`,
+      ).first<{
+        jobs: number;
+        outputs: number;
+        provider_requests: number;
+        rights_declarations: number;
+        usage_events: number;
+      }>();
+
+      expect(response.status).toBe(expectedStatus);
+      expect(responseBody).toMatchObject({
+        data: null,
+        error: { code: "VALIDATION_ERROR", retryable: false },
+      });
+      expect(JSON.stringify(responseBody)).not.toContain("synthetic-job-request");
+      expect(sideEffects).toEqual({
+        jobs: 0,
+        outputs: 0,
+        provider_requests: 0,
+        rights_declarations: 0,
+        usage_events: 0,
+      });
+    },
+  );
+
   it("creates two private mock outputs and keeps retries and reads owner-scoped", async () => {
     const uploadId = await createConfirmedUpload(true);
     const creditResponse = await app.request(
-      "https://studymix.example/api/credits",
-      undefined,
+      "http://localhost:8787/api/credits",
+      { headers: browserMutationHeaders },
       env,
     );
     const creditEnvelope = creditEnvelopeSchema.parse(await creditResponse.json());
@@ -136,7 +243,7 @@ describe("feature-gated mock generation Workflow", () => {
         );
       });
       const createResponse = await app.request(
-        "https://studymix.example/api/jobs",
+        "http://localhost:8787/api/jobs",
         jobRequest(uploadId),
         env,
       );
@@ -160,8 +267,8 @@ describe("feature-gated mock generation Workflow", () => {
       });
 
       const jobResponse = await app.request(
-        `https://studymix.example/api/jobs/${createEnvelope.data.jobId}`,
-        undefined,
+        `http://localhost:8787/api/jobs/${createEnvelope.data.jobId}`,
+        { headers: browserMutationHeaders },
         env,
       );
       const completedEnvelope = jobEnvelopeSchema.parse(await jobResponse.json());
@@ -220,7 +327,7 @@ describe("feature-gated mock generation Workflow", () => {
       });
 
       const repeatedResponse = await app.request(
-        "https://studymix.example/api/jobs",
+        "http://localhost:8787/api/jobs",
         jobRequest(uploadId),
         env,
       );
@@ -233,8 +340,8 @@ describe("feature-gated mock generation Workflow", () => {
       expect(await introspector.get()).toHaveLength(1);
 
       const denied = await app.request(
-        `https://studymix.example/api/jobs/${createEnvelope.data.jobId}`,
-        undefined,
+        `http://localhost:8787/api/jobs/${createEnvelope.data.jobId}`,
+        { headers: browserMutationHeaders },
         { ...env, DEV_AUTH_SUBJECT: "another-test-owner" },
       );
       expect(denied.status).toBe(404);
@@ -257,7 +364,7 @@ describe("feature-gated mock generation Workflow", () => {
         );
       });
       const createResponse = await app.request(
-        "https://studymix.example/api/jobs",
+        "http://localhost:8787/api/jobs",
         jobRequest(uploadId),
         env,
       );
@@ -293,8 +400,8 @@ describe("feature-gated mock generation Workflow", () => {
       });
 
       const jobResponse = await app.request(
-        `https://studymix.example/api/jobs/${createEnvelope.data.jobId}`,
-        undefined,
+        `http://localhost:8787/api/jobs/${createEnvelope.data.jobId}`,
+        { headers: browserMutationHeaders },
         env,
       );
       const failedEnvelope = jobEnvelopeSchema.parse(await jobResponse.json());
@@ -313,7 +420,7 @@ describe("feature-gated mock generation Workflow", () => {
     const introspector = await introspectWorkflow(env.GENERATION_WORKFLOW);
     try {
       const response = await app.request(
-        "https://studymix.example/api/jobs",
+        "http://localhost:8787/api/jobs",
         jobRequest(uploadId),
         env,
       );
@@ -334,7 +441,7 @@ describe("feature-gated mock generation Workflow", () => {
 
   it("fails closed while the Workflow feature flag is disabled", async () => {
     const response = await app.request(
-      "https://studymix.example/api/jobs",
+      "http://localhost:8787/api/jobs",
       jobRequest("upl_11111111111111111111111111111111"),
       { ...env, JOB_WORKFLOW_ENABLED: "false" },
     );
@@ -417,7 +524,7 @@ describe("feature-gated mock generation Workflow", () => {
     };
     const baseRequest = jobRequest(uploadId);
     const response = await app.request(
-      "https://studymix.example/api/jobs",
+      "http://localhost:8787/api/jobs",
       {
         ...baseRequest,
         headers: {

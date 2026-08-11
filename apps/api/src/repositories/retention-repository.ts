@@ -80,9 +80,18 @@ export async function listDueTerminalJobPurges(
          OR jobs.status = 'expired'
        )
        AND (
+         jobs.status <> 'expired'
+         OR
          EXISTS (
            SELECT 1 FROM uploads
-           WHERE uploads.id = jobs.upload_id AND uploads.status <> 'deleted'
+           WHERE uploads.id = jobs.upload_id
+             AND uploads.status <> 'deleted'
+             AND NOT EXISTS (
+               SELECT 1 FROM jobs AS retaining_jobs
+               WHERE retaining_jobs.upload_id = uploads.id
+                 AND retaining_jobs.id <> jobs.id
+                 AND retaining_jobs.status <> 'expired'
+             )
          )
          OR EXISTS (
            SELECT 1 FROM outputs
@@ -118,39 +127,15 @@ export async function claimOwnedTerminalJobPurge(
     throw new RepositoryStateError("Only a terminal job can be deleted.");
   }
 
-  const uploadRow = await db
-    .prepare(
-      `SELECT uploads.id, uploads.owner_id, uploads.object_key
-       FROM uploads
-       INNER JOIN jobs ON jobs.upload_id = uploads.id
-       WHERE jobs.id = ?1
-         AND jobs.owner_id = ?2
-         AND uploads.owner_id = ?2
-         AND uploads.status <> 'deleted'`,
-    )
-    .bind(parsedJobId, parsedOwnerId)
-    .first();
-  const outputRows = await db
-    .prepare(
-      `SELECT outputs.id, outputs.object_key
-       FROM outputs
-       INNER JOIN jobs ON jobs.id = outputs.job_id
-       WHERE jobs.id = ?1
-         AND jobs.owner_id = ?2
-         AND outputs.status <> 'deleted'
-       ORDER BY outputs.candidate_index`,
-    )
-    .bind(parsedJobId, parsedOwnerId)
-    .all();
-
-  await db.batch([
+  const batchResults = await db.batch([
     db
       .prepare(
         `UPDATE jobs
          SET status = 'expired', updated_at = ?1
          WHERE id = ?2
            AND owner_id = ?3
-           AND status IN ('completed', 'failed', 'cancelled', 'expired')`,
+           AND status IN ('completed', 'failed', 'cancelled', 'expired')
+         RETURNING id`,
       )
       .bind(parsedExpiredAt, parsedJobId, parsedOwnerId),
     db
@@ -159,7 +144,14 @@ export async function claimOwnedTerminalJobPurge(
          SET status = 'expired'
          WHERE id = (SELECT upload_id FROM jobs WHERE id = ?1 AND owner_id = ?2)
            AND owner_id = ?2
-           AND status IN ('pending', 'confirmed', 'expired')`,
+           AND status IN ('pending', 'confirmed', 'expired')
+           AND NOT EXISTS (
+             SELECT 1 FROM jobs AS retaining_jobs
+             WHERE retaining_jobs.upload_id = uploads.id
+               AND retaining_jobs.id <> ?1
+               AND retaining_jobs.status <> 'expired'
+           )
+         RETURNING id, owner_id, object_key`,
       )
       .bind(parsedJobId, parsedOwnerId),
     db
@@ -170,16 +162,23 @@ export async function claimOwnedTerminalJobPurge(
            AND status IN ('pending', 'ready', 'failed', 'expired')
            AND EXISTS (
              SELECT 1 FROM jobs WHERE jobs.id = outputs.job_id AND jobs.owner_id = ?2
-           )`,
+           )
+         RETURNING id, object_key`,
       )
       .bind(parsedJobId, parsedOwnerId),
   ]);
 
+  if (batchResults[0]?.results[0] === undefined) {
+    throw new RepositoryStateError("The terminal job could not be claimed for deletion.");
+  }
+  const uploadRow = batchResults[1]?.results[0];
+  const outputRows = batchResults[2]?.results ?? [];
+
   return {
     jobId: parsedJobId,
-    outputs: outputRows.results.map(mapOutputTarget),
+    outputs: outputRows.map(mapOutputTarget),
     ownerId: parsedOwnerId,
-    upload: uploadRow === null ? null : mapUploadTarget(uploadRow),
+    upload: uploadRow === undefined ? null : mapUploadTarget(uploadRow),
   };
 }
 
@@ -187,9 +186,11 @@ export async function finishOwnedJobPurge(
   db: D1Database,
   ownerId: string,
   jobId: string,
+  capabilityCutoff: string,
 ): Promise<void> {
   const parsedOwnerId = ownerIdSchema.parse(ownerId);
   const parsedJobId = jobIdSchema.parse(jobId);
+  const parsedCapabilityCutoff = isoDateTimeSchema.parse(capabilityCutoff);
   await db.batch([
     db
       .prepare(
@@ -197,9 +198,16 @@ export async function finishOwnedJobPurge(
          SET status = 'deleted'
          WHERE id = (SELECT upload_id FROM jobs WHERE id = ?1 AND owner_id = ?2)
            AND owner_id = ?2
-           AND status = 'expired'`,
+           AND status = 'expired'
+           AND created_at <= ?3
+           AND NOT EXISTS (
+             SELECT 1 FROM jobs AS retaining_jobs
+             WHERE retaining_jobs.upload_id = uploads.id
+               AND retaining_jobs.id <> ?1
+               AND retaining_jobs.status <> 'expired'
+           )`,
       )
-      .bind(parsedJobId, parsedOwnerId),
+      .bind(parsedJobId, parsedOwnerId, parsedCapabilityCutoff),
     db
       .prepare(
         `UPDATE outputs
@@ -243,6 +251,21 @@ export async function claimDueCompletedSourcePurges(
          AND jobs.completed_at IS NOT NULL
          AND jobs.completed_at <= ?1
          AND uploads.status IN ('confirmed', 'expired')
+         AND NOT EXISTS (
+           SELECT 1 FROM jobs AS retaining_jobs
+           WHERE retaining_jobs.upload_id = uploads.id
+             AND retaining_jobs.id <> jobs.id
+             AND (
+               retaining_jobs.status NOT IN ('completed', 'expired')
+               OR (
+                 retaining_jobs.status = 'completed'
+                 AND (
+                   retaining_jobs.completed_at IS NULL
+                   OR retaining_jobs.completed_at > ?1
+                 )
+               )
+             )
+         )
        ORDER BY jobs.completed_at, uploads.id
        LIMIT ?2
      )
@@ -253,10 +276,16 @@ export async function claimDueCompletedSourcePurges(
 
 export async function claimDueUnattachedUploadPurges(
   db: D1Database,
-  input: { confirmedCutoff: string; limit: number; pendingCutoff: string },
+  input: {
+    capabilityCutoff: string;
+    confirmedCutoff: string;
+    limit: number;
+    pendingCutoff: string;
+  },
 ): Promise<readonly PurgeUploadTarget[]> {
   const parsed = z
     .object({
+      capabilityCutoff: isoDateTimeSchema,
       confirmedCutoff: isoDateTimeSchema,
       limit: limitSchema,
       pendingCutoff: isoDateTimeSchema,
@@ -276,31 +305,37 @@ export async function claimDueUnattachedUploadPurges(
              AND uploads.expires_at <= ?2
            )
          )
+         AND uploads.created_at <= ?3
          AND NOT EXISTS (SELECT 1 FROM jobs WHERE jobs.upload_id = uploads.id)
        ORDER BY uploads.created_at, uploads.id
-       LIMIT ?3
+       LIMIT ?4
      )
      RETURNING id, owner_id, object_key`,
-    [parsed.pendingCutoff, parsed.confirmedCutoff, parsed.limit],
+    [parsed.pendingCutoff, parsed.confirmedCutoff, parsed.capabilityCutoff, parsed.limit],
   );
 }
 
 export async function finishClaimedUploadPurges(
   db: D1Database,
   targets: readonly PurgeUploadTarget[],
+  capabilityCutoff: string,
 ): Promise<void> {
   if (targets.length === 0) {
     return;
   }
+  const parsedCapabilityCutoff = isoDateTimeSchema.parse(capabilityCutoff);
   await db.batch(
     targets.map((target) =>
       db
         .prepare(
           `UPDATE uploads
            SET status = 'deleted'
-           WHERE id = ?1 AND owner_id = ?2 AND status = 'expired'`,
+           WHERE id = ?1
+             AND owner_id = ?2
+             AND status = 'expired'
+             AND created_at <= ?3`,
         )
-        .bind(target.id, target.ownerId),
+        .bind(target.id, target.ownerId, parsedCapabilityCutoff),
     ),
   );
 }

@@ -100,15 +100,16 @@ git status --short
 git diff --check
 git diff --name-only
 git diff --cached --name-only
-git ls-files | rg '(^|/)(\.env|\.dev\.vars)(\.|$)|(^|/)wrangler\..*\.json$'
-git check-ignore --no-index apps/api/wrangler.production.json
+git ls-files | rg '(^|/)(\.env|\.dev\.vars)(\.|$)|(^|/)wrangler(?:\.[^/]*)?\.jsonc?$'
+pnpm public-config:check
+git check-ignore --no-index apps/api/wrangler.production.json apps/api/wrangler.production.jsonc
 ```
 
 預期：
 
 - 所有變更檔案都能解釋。
 - `git diff --check` 沒有錯誤。
-- 私有設定不在 tracked file list。
+- 私有設定不在 tracked file list；已追蹤的 JSON／JSONC Wrangler 設定不使用註解，`.env.example` 只使用固定公開段落標題，兩者只接受已批准 variable 名稱，受保護值只可使用語義式不可部署佔位值。
 - `git check-ignore` 能命中 private deployment filename。
 
 再做只返回檔名的關鍵字掃描：

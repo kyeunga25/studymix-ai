@@ -7,12 +7,18 @@ import {
   createUploadRequestSchema,
   currentLegalAcceptanceDocuments,
   jobIdSchema,
+  localSyntheticUploadResponseSchema,
   outputIdSchema,
   publicPresetsSchema,
   uploadIdSchema,
   type ApiErrorCode,
+  type CreateUploadRequest,
   type PublicUpload,
 } from "@studymix/contracts";
+import {
+  privateApiRequestHeaderName,
+  privateApiRequestHeaderValue,
+} from "@studymix/contracts/private-api";
 import { createSecureId } from "@studymix/core";
 import { listPresets, resolvePreset, toPublicPreset } from "@studymix/presets";
 import { Hono, type Context } from "hono";
@@ -36,6 +42,7 @@ import {
   createLocalSyntheticSource,
   getLocalAiJobPolicy,
   isLocalAiHarnessRequest,
+  isOwnedLocalAiSource,
 } from "./local-ai";
 import { LegalConfigurationError, resolveLegalDocumentsManifest } from "./legal-documents";
 import {
@@ -50,16 +57,15 @@ import {
   cancelOwnedJobWithCreditRelease,
   confirmOwnedUpload,
   createJobIdempotently,
-  createUpload,
-  expireOwnedUpload,
+  createUploadIdempotently,
   getCurrentLegalAcceptanceStatus,
   getOwnedCreditSummary,
   getOwnedOutput,
   getOwnedUpload,
-  markOwnedUploadDeleted,
   recordCurrentLegalAcceptances,
   authorizeWorkspaceAccess,
   WorkspaceAccessError,
+  type IdempotentUploadResult,
   type WorkspaceAccess,
 } from "./repositories";
 import type { UploadRecord } from "./repositories/upload-repository";
@@ -72,6 +78,7 @@ import {
 import {
   R2TransferConfigurationError,
   R2TransferDisabledError,
+  R2TransferResourceExpiredError,
   createSignedR2ObjectUrl,
   isR2TransferAvailable,
   resolveMaxUploadBytes,
@@ -80,6 +87,7 @@ import {
 import {
   RetentionCleanupConfigurationError,
   isRetentionCleanupAvailable,
+  purgeOwnedUnattachedUpload,
   purgeOwnedTerminalJob,
   resolveAbandonedUploadRetentionHours,
   runRetentionCleanup,
@@ -104,17 +112,61 @@ const securityHeaders = {
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
 } as const;
+const PRIVATE_CACHE_CONTROL = "private, no-store";
+const IMMUTABLE_ASSET_CACHE_CONTROL = "public, max-age=31536000, immutable";
+const fingerprintedAssetPathPattern =
+  /^\/assets\/[A-Za-z0-9][A-Za-z0-9._-]*-[A-Za-z0-9_-]{8,}\.(css|js|png|webp)$/;
+const fingerprintedAssetContentTypes = {
+  css: new Set(["text/css"]),
+  js: new Set(["application/javascript", "text/javascript"]),
+  png: new Set(["image/png"]),
+  webp: new Set(["image/webp"]),
+} as const;
+
+export function resolveResponseCacheControl(
+  method: string,
+  path: string,
+  status: number,
+  contentType: string | null,
+): string {
+  if ((method !== "GET" && method !== "HEAD") || status !== 200) {
+    return PRIVATE_CACHE_CONTROL;
+  }
+  const match = fingerprintedAssetPathPattern.exec(path);
+  if (match === null) return PRIVATE_CACHE_CONTROL;
+
+  const extension = match[1] as keyof typeof fingerprintedAssetContentTypes;
+  const mediaType = contentType?.split(";", 1)[0]?.trim().toLowerCase();
+  return mediaType !== undefined && fingerprintedAssetContentTypes[extension].has(mediaType)
+    ? IMMUTABLE_ASSET_CACHE_CONTROL
+    : PRIVATE_CACHE_CONTROL;
+}
 
 function contentSecurityPolicy(env: Env, includePrivateR2Origin: boolean): string {
   const r2Origin =
     includePrivateR2Origin && isR2TransferAvailable(env)
       ? ` https://${env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`
       : "";
-  return `default-src 'self'; base-uri 'none'; connect-src 'self'${r2Origin}; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; media-src 'self' blob:${r2Origin}; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'`;
+  return `default-src 'self'; base-uri 'none'; connect-src 'self'${r2Origin}; form-action 'self'; frame-ancestors 'none'; img-src 'self'; media-src 'self' blob:${r2Origin}; object-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'none'`;
 }
 
 function createRequestId(): string {
   return crypto.randomUUID();
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function createUploadRequestFingerprint(request: CreateUploadRequest): Promise<string> {
+  const parsed = createUploadRequestSchema.parse(request);
+  const canonical = JSON.stringify({
+    contentType: parsed.contentType,
+    originalFilename: parsed.originalFilename,
+    sizeBytes: parsed.sizeBytes,
+  });
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical));
+  return bytesToHex(new Uint8Array(digest));
 }
 
 function errorResponse(
@@ -138,6 +190,14 @@ type LoginRedirectReason = "access-denied" | "session-expired" | "verification-f
 
 function isPrivateAppPath(path: string): boolean {
   return path === "/app" || path.startsWith("/app/");
+}
+
+function isPrivateApiPath(path: string): boolean {
+  return path === "/api" || path.startsWith("/api/");
+}
+
+function privateApiNotFoundResponse(context: Context<AppBindings>): Response {
+  return errorResponse(context, 404, "NOT_FOUND", "The requested API route was not found.", false);
 }
 
 function privateAppLoginRedirect(
@@ -269,7 +329,15 @@ app.use("*", async (context, next) => {
   for (const [name, value] of Object.entries(securityHeaders)) {
     context.header(name, value);
   }
-  context.header("Cache-Control", "private, no-store");
+  context.header(
+    "Cache-Control",
+    resolveResponseCacheControl(
+      context.req.method,
+      path,
+      context.res.status,
+      context.res.headers.get("content-type"),
+    ),
+  );
   return;
 });
 
@@ -348,6 +416,27 @@ app.use("/app", requireAuthentication);
 app.use("/app/*", requireAuthentication);
 app.use("/api", requireAuthentication);
 app.use("/api/*", requireAuthentication);
+
+const requirePrivateApiBrowserIntent = async (
+  context: Context<AppBindings>,
+  next: () => Promise<void>,
+): Promise<Response | undefined> => {
+  if (context.req.header(privateApiRequestHeaderName) !== privateApiRequestHeaderValue) {
+    return errorResponse(
+      context,
+      403,
+      "FORBIDDEN",
+      "A same-origin browser request is required.",
+      false,
+    );
+  }
+
+  await next();
+  return;
+};
+
+app.use("/api", requirePrivateApiBrowserIntent);
+app.use("/api/*", requirePrivateApiBrowserIntent);
 
 const requireWorkspaceAccess = async (
   context: Context<AppBindings>,
@@ -623,12 +712,25 @@ app.post("/api/local/synthetic-upload", async (context) => {
       parsed.data,
       new Date(),
     );
+    const responseData = localSyntheticUploadResponseSchema.parse({
+      request: parsed.data,
+      upload: toPublicUpload(upload),
+    });
     return context.json({
-      data: toPublicUpload(upload),
+      data: responseData,
       error: null,
       requestId: createRequestId(),
     });
   } catch (error) {
+    if (error instanceof RepositoryConflictError) {
+      return errorResponse(
+        context,
+        409,
+        "CONFLICT",
+        "The idempotency key cannot be reused for this local source request.",
+        false,
+      );
+    }
     if (error instanceof RepositoryQuotaError) {
       return errorResponse(
         context,
@@ -690,26 +792,40 @@ app.post("/api/uploads", async (context) => {
   const now = new Date();
   const uploadId = createSecureId("upl");
   const objectKey = `owners/${owner.ownerId}/uploads/${uploadId}/source`;
-  const signedUpload = await createSignedR2ObjectUrl({
+  const requestedSignedUpload = await createSignedR2ObjectUrl({
     configuration,
+    contentLength: parsed.data.sizeBytes,
     contentType: parsed.data.contentType,
     method: "PUT",
     now,
     objectKey,
   });
+  const requestFingerprint = await createUploadRequestFingerprint(parsed.data);
+  let uploadResult: IdempotentUploadResult;
   try {
-    await createUpload(context.env.DB, {
+    uploadResult = await createUploadIdempotently(context.env.DB, {
       createdAt: now.toISOString(),
       declaredContentType: parsed.data.contentType,
-      expiresAt: signedUpload.expiresAt,
+      expiresAt: requestedSignedUpload.expiresAt,
       id: uploadId,
+      idempotencyKey: parsed.data.idempotencyKey,
       maxActiveUploads: configuration.maxActiveUploads,
       objectKey,
       originalFilename: parsed.data.originalFilename,
       ownerId: owner.ownerId,
+      requestFingerprint,
       sizeBytes: parsed.data.sizeBytes,
     });
   } catch (error) {
+    if (error instanceof RepositoryConflictError) {
+      return errorResponse(
+        context,
+        409,
+        "CONFLICT",
+        "The upload idempotency key cannot be reused for this request.",
+        false,
+      );
+    }
     if (error instanceof RepositoryQuotaError) {
       return errorResponse(
         context,
@@ -722,25 +838,62 @@ app.post("/api/uploads", async (context) => {
     throw error;
   }
 
+  const upload = uploadResult.upload;
+  const createdAt = Date.parse(upload.createdAt);
+  const expiresAt = Date.parse(upload.expiresAt);
+  const storedTtlSeconds = (expiresAt - createdAt) / 1_000;
+  if (
+    upload.status !== "pending" ||
+    upload.declaredContentType !== parsed.data.contentType ||
+    upload.originalFilename !== parsed.data.originalFilename ||
+    upload.sizeBytes !== parsed.data.sizeBytes ||
+    expiresAt <= now.getTime() ||
+    !Number.isSafeInteger(storedTtlSeconds) ||
+    storedTtlSeconds < 1 ||
+    storedTtlSeconds > 3_600
+  ) {
+    return errorResponse(
+      context,
+      409,
+      "CONFLICT",
+      "The upload idempotency key is no longer available.",
+      false,
+    );
+  }
+  const signedUpload = uploadResult.created
+    ? requestedSignedUpload
+    : await createSignedR2ObjectUrl({
+        configuration: { ...configuration, uploadUrlTtlSeconds: storedTtlSeconds },
+        contentLength: upload.sizeBytes,
+        contentType: parsed.data.contentType,
+        method: "PUT",
+        now: new Date(createdAt),
+        objectKey: upload.objectKey,
+      });
+  if (signedUpload.expiresAt !== upload.expiresAt) {
+    throw new TypeError("The private upload signing lifetime is inconsistent.");
+  }
+
   return context.json(
     {
       data: {
         allowedContentTypes: audioContentTypes,
         expiresAt: signedUpload.expiresAt,
+        idempotencyKey: parsed.data.idempotencyKey,
         maxUploadBytes: configuration.maxUploadBytes,
-        objectKey,
+        objectKey: upload.objectKey,
         requiredHeaders: {
           "Content-Type": parsed.data.contentType,
           "If-None-Match": "*" as const,
         },
-        uploadId,
+        uploadId: upload.id,
         uploadMethod: "PUT" as const,
         uploadUrl: signedUpload.url,
       },
       error: null,
       requestId: createRequestId(),
     },
-    201,
+    uploadResult.created ? 201 : 200,
   );
 });
 
@@ -755,21 +908,22 @@ app.post("/api/uploads/:uploadId/confirm", async (context) => {
   if (upload === null || upload.status === "deleted") {
     return errorResponse(context, 404, "NOT_FOUND", "The upload was not found.", false);
   }
+  const now = new Date();
+  if (upload.status === "expired") {
+    return errorResponse(context, 409, "UPLOAD_EXPIRED", "The upload has expired.", false);
+  }
+  if (new Date(upload.expiresAt).getTime() <= now.getTime()) {
+    if (upload.status === "pending") {
+      await purgeOwnedUnattachedUpload(context.env, owner.ownerId, upload.id, now);
+    }
+    return errorResponse(context, 409, "UPLOAD_EXPIRED", "The upload has expired.", false);
+  }
   if (upload.status === "confirmed") {
     return context.json({
       data: toPublicUpload(upload),
       error: null,
       requestId: createRequestId(),
     });
-  }
-
-  const now = new Date();
-  if (upload.status === "expired" || new Date(upload.expiresAt).getTime() <= now.getTime()) {
-    await context.env.AUDIO_BUCKET.delete(upload.objectKey);
-    if (upload.status === "pending") {
-      await expireOwnedUpload(context.env.DB, owner.ownerId, upload.id, now.toISOString());
-    }
-    return errorResponse(context, 409, "UPLOAD_EXPIRED", "The upload has expired.", false);
   }
 
   const object = await context.env.AUDIO_BUCKET.head(upload.objectKey);
@@ -799,8 +953,7 @@ app.post("/api/uploads/:uploadId/confirm", async (context) => {
     object.size !== upload.sizeBytes ||
     contentType !== upload.declaredContentType;
   if (invalidObject) {
-    await markOwnedUploadDeleted(context.env.DB, owner.ownerId, upload.id);
-    await context.env.AUDIO_BUCKET.delete(upload.objectKey);
+    await purgeOwnedUnattachedUpload(context.env, owner.ownerId, upload.id, now);
     return errorResponse(
       context,
       400,
@@ -835,8 +988,16 @@ app.delete("/api/uploads/:uploadId", async (context) => {
 
   const owner = context.get("owner");
   try {
-    const upload = await markOwnedUploadDeleted(context.env.DB, owner.ownerId, parsedUploadId.data);
-    await context.env.AUDIO_BUCKET.delete(upload.objectKey);
+    const localSyntheticSource =
+      isLocalAiHarnessRequest(context.req.raw, context.env) &&
+      (await isOwnedLocalAiSource(context.env.DB, owner.ownerId, parsedUploadId.data));
+    await purgeOwnedUnattachedUpload(
+      context.env,
+      owner.ownerId,
+      parsedUploadId.data,
+      new Date(),
+      localSyntheticSource ? { outstandingPutCapabilityTtlSeconds: 0 } : undefined,
+    );
   } catch (error) {
     if (error instanceof RepositoryNotFoundError) {
       return errorResponse(context, 404, "NOT_FOUND", "The upload was not found.", false);
@@ -1200,12 +1361,21 @@ app.post("/api/outputs/:outputId/download", async (context) => {
     });
   }
 
-  const signedDownload = await createSignedR2ObjectUrl({
-    configuration,
-    method: "GET",
-    now,
-    objectKey: output.objectKey,
-  });
+  let signedDownload;
+  try {
+    signedDownload = await createSignedR2ObjectUrl({
+      configuration,
+      method: "GET",
+      now,
+      objectKey: output.objectKey,
+      resourceExpiresAt: new Date(output.expiresAt),
+    });
+  } catch (error) {
+    if (error instanceof R2TransferResourceExpiredError) {
+      return errorResponse(context, 409, "OUTPUT_EXPIRED", "The output has expired.", false);
+    }
+    throw error;
+  }
   return context.json({
     data: {
       downloadMethod: "GET" as const,
@@ -1254,7 +1424,7 @@ app.get("/api/local/outputs/:outputId/content", async (context) => {
   }
   return new Response(object.body, {
     headers: {
-      "Cache-Control": "private, no-store",
+      "Cache-Control": PRIVATE_CACHE_CONTROL,
       "Content-Disposition": `attachment; filename="studymix-${parsedOutputId.data}.wav"`,
       "Content-Length": object.size.toString(),
       "Content-Type": output.contentType,
@@ -1262,10 +1432,20 @@ app.get("/api/local/outputs/:outputId/content", async (context) => {
   });
 });
 
-app.get("*", (context) => context.env.ASSETS.fetch(context.req.raw));
+app.get("*", (context) =>
+  isPrivateApiPath(context.req.path)
+    ? privateApiNotFoundResponse(context)
+    : context.env.ASSETS.fetch(context.req.raw),
+);
+
+app.notFound((context) =>
+  isPrivateApiPath(context.req.path)
+    ? privateApiNotFoundResponse(context)
+    : context.text("404 Not Found", 404),
+);
 
 app.onError((error, context) => {
-  const requestSurface = context.req.path.startsWith("/api/")
+  const requestSurface = isPrivateApiPath(context.req.path)
     ? "api"
     : context.req.path.startsWith("/app")
       ? "app"

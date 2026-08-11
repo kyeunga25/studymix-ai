@@ -4,9 +4,14 @@ import {
   isoDateTimeSchema,
   jobIdSchema,
   localAiFixtureSchema,
+  localSyntheticSourceDurationSeconds,
+  localSyntheticSourceFilename,
+  localSyntheticSourceSizeBytes,
+  maximumLocalAiOutputBytes,
   localAiScenarioSchema,
   ownerIdSchema,
   uploadIdSchema,
+  type CreateLocalSyntheticUploadRequest,
   type LocalAiScenario,
 } from "@studymix/contracts";
 import { createSecureId } from "@studymix/core";
@@ -18,19 +23,17 @@ import {
 import { z } from "zod";
 import { isLocalRuntimeEnvironment, isLocalRuntimeRequest } from "./local-runtime";
 import {
+  RepositoryConflictError,
   createUpload,
   confirmOwnedUpload,
   getOwnedUpload,
-  markOwnedUploadDeleted,
 } from "./repositories";
 import type { UploadRecord } from "./repositories/upload-repository";
-import { resolveAbandonedUploadRetentionHours } from "./retention";
+import { purgeOwnedUnattachedUpload, resolveAbandonedUploadRetentionHours } from "./retention";
 import { resolveR2TransferConfiguration } from "./r2-transfer";
 
-const LOCAL_SOURCE_DURATION_SECONDS = 2;
 const LOCAL_MAX_INPUT_DURATION_SECONDS = 30;
 const LOCAL_MAX_OUTPUT_DURATION_SECONDS = 5;
-const LOCAL_MAX_OUTPUT_BYTES = 65_536;
 const LOCAL_MAX_ATTEMPTS_PER_CANDIDATE = 3;
 const LOCAL_MAX_CONCURRENT_CANDIDATES = 1;
 const LOCAL_MAX_COST_UNITS = 4;
@@ -217,6 +220,26 @@ export async function getLocalAiSource(
   return row === null ? null : mapLocalAiSource(row);
 }
 
+export async function isOwnedLocalAiSource(
+  db: D1Database,
+  ownerId: string,
+  uploadId: string,
+): Promise<boolean> {
+  const row = await db
+    .prepare(
+      `SELECT 1 AS present
+       FROM local_ai_sources
+       INNER JOIN uploads ON uploads.id = local_ai_sources.upload_id
+       WHERE local_ai_sources.owner_id = ?1
+         AND local_ai_sources.upload_id = ?2
+         AND uploads.owner_id = ?1
+       LIMIT 1`,
+    )
+    .bind(ownerIdSchema.parse(ownerId), uploadIdSchema.parse(uploadId))
+    .first();
+  return row !== null;
+}
+
 async function getLocalAiSourceByRequestKey(
   db: D1Database,
   ownerId: string,
@@ -229,12 +252,18 @@ async function getLocalAiSourceByRequestKey(
        INNER JOIN uploads ON uploads.id = local_ai_sources.upload_id
        WHERE local_ai_sources.owner_id = ?1
          AND local_ai_sources.request_key = ?2
-         AND uploads.owner_id = ?1
-         AND uploads.status = 'confirmed'`,
+         AND uploads.owner_id = ?1`,
     )
     .bind(ownerIdSchema.parse(ownerId), idempotencyKeySchema.parse(requestKey))
     .first();
   return row === null ? null : mapLocalAiSource(row);
+}
+
+function isSameLocalSourceRequest(
+  source: LocalAiSource,
+  request: CreateLocalSyntheticUploadRequest,
+): boolean {
+  return source.fixture === request.fixture && source.scenario === request.scenario;
 }
 
 export async function createLocalSyntheticSource(
@@ -249,14 +278,29 @@ export async function createLocalSyntheticSource(
   const parsed = createLocalSyntheticUploadRequestSchema.parse(request);
   const existingSource = await getLocalAiSourceByRequestKey(env.DB, ownerId, parsed.idempotencyKey);
   if (existingSource !== null) {
+    if (!isSameLocalSourceRequest(existingSource, parsed)) {
+      throw new RepositoryConflictError(
+        "Idempotency key was already used for a different local source request.",
+      );
+    }
     const existingUpload = await getOwnedUpload(env.DB, ownerId, existingSource.uploadId);
     if (existingUpload !== null && existingUpload.status === "confirmed") {
       return existingUpload;
     }
+    throw new RepositoryConflictError(
+      "Idempotency key is attached to a local source that is no longer available.",
+    );
   }
 
   const configuration = resolveR2TransferConfiguration(env);
-  const audio = createDeterministicSyntheticWave(0, LOCAL_SOURCE_DURATION_SECONDS);
+  const audio = createDeterministicSyntheticWave(0, localSyntheticSourceDurationSeconds);
+  if (
+    audio.contentType !== "audio/wav" ||
+    audio.durationSeconds !== localSyntheticSourceDurationSeconds ||
+    audio.body.byteLength !== localSyntheticSourceSizeBytes
+  ) {
+    throw new TypeError("The local synthetic fixture did not match its versioned contract.");
+  }
   if (audio.body.byteLength > configuration.maxUploadBytes) {
     throw new TypeError("The local synthetic fixture exceeds the upload limit.");
   }
@@ -273,7 +317,7 @@ export async function createLocalSyntheticSource(
     id: uploadId,
     maxActiveUploads: configuration.maxActiveUploads,
     objectKey,
-    originalFilename: "studymix-synthetic-tone.wav",
+    originalFilename: localSyntheticSourceFilename,
     ownerId,
     sizeBytes: audio.body.byteLength,
   });
@@ -281,7 +325,7 @@ export async function createLocalSyntheticSource(
   try {
     const created = await env.AUDIO_BUCKET.put(objectKey, audio.body, {
       customMetadata: {
-        durationSeconds: LOCAL_SOURCE_DURATION_SECONDS.toString(),
+        durationSeconds: localSyntheticSourceDurationSeconds.toString(),
         localFixture: parsed.fixture,
         validationVersion: "local-v1",
       },
@@ -294,7 +338,7 @@ export async function createLocalSyntheticSource(
       object.size !== audio.body.byteLength ||
       object.httpMetadata?.contentType !== audio.contentType ||
       object.customMetadata?.localFixture !== parsed.fixture ||
-      object.customMetadata?.durationSeconds !== LOCAL_SOURCE_DURATION_SECONDS.toString()
+      object.customMetadata?.durationSeconds !== localSyntheticSourceDurationSeconds.toString()
     ) {
       throw new TypeError("The local synthetic fixture could not be verified.");
     }
@@ -306,11 +350,13 @@ export async function createLocalSyntheticSource(
       createdAt,
       expiresAt,
     );
-    await env.DB.prepare(
+    const insertedSource = await env.DB.prepare(
       `INSERT INTO local_ai_sources (
         upload_id, owner_id, request_key, fixture_id, scenario,
         duration_seconds, content_type, size_bytes, created_at
-      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)`,
+      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+      ON CONFLICT (owner_id, request_key) DO NOTHING
+      RETURNING upload_id`,
     )
       .bind(
         confirmed.id,
@@ -318,16 +364,42 @@ export async function createLocalSyntheticSource(
         parsed.idempotencyKey,
         parsed.fixture,
         parsed.scenario,
-        LOCAL_SOURCE_DURATION_SECONDS,
+        localSyntheticSourceDurationSeconds,
         audio.contentType,
         audio.body.byteLength,
         createdAt,
       )
-      .run();
+      .first();
+    if (insertedSource === null) {
+      const replayedSource = await getLocalAiSourceByRequestKey(
+        env.DB,
+        ownerId,
+        parsed.idempotencyKey,
+      );
+      if (replayedSource === null) {
+        throw new TypeError("The concurrent local synthetic source could not be read.");
+      }
+      if (!isSameLocalSourceRequest(replayedSource, parsed)) {
+        throw new RepositoryConflictError(
+          "Idempotency key was already used for a different local source request.",
+        );
+      }
+      const replayedUpload = await getOwnedUpload(env.DB, ownerId, replayedSource.uploadId);
+      if (replayedUpload === null || replayedUpload.status !== "confirmed") {
+        throw new RepositoryConflictError(
+          "Idempotency key is attached to a local source that is no longer available.",
+        );
+      }
+      await purgeOwnedUnattachedUpload(env, ownerId, upload.id, new Date(), {
+        outstandingPutCapabilityTtlSeconds: 0,
+      });
+      return replayedUpload;
+    }
     return confirmed;
   } catch (error) {
-    await markOwnedUploadDeleted(env.DB, ownerId, upload.id);
-    await env.AUDIO_BUCKET.delete(objectKey);
+    await purgeOwnedUnattachedUpload(env, ownerId, upload.id, new Date(), {
+      outstandingPutCapabilityTtlSeconds: 0,
+    });
     throw error;
   }
 }
@@ -363,7 +435,7 @@ export async function buildLocalAiJobPolicy(
     maxConcurrentCandidates: LOCAL_MAX_CONCURRENT_CANDIDATES,
     maxCostUnits: LOCAL_MAX_COST_UNITS,
     maxInputDurationSeconds: LOCAL_MAX_INPUT_DURATION_SECONDS,
-    maxOutputBytes: LOCAL_MAX_OUTPUT_BYTES,
+    maxOutputBytes: maximumLocalAiOutputBytes,
     maxOutputDurationSeconds: LOCAL_MAX_OUTPUT_DURATION_SECONDS,
     qualityTier: "synthetic-preview",
     retentionSeconds: outputRetentionHours * 60 * 60,

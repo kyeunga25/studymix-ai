@@ -44,6 +44,7 @@ const falWebhookTargetRowSchema = z.object({
     "expired",
   ]),
   request_status: z.enum(["pending", "submitted", "completed", "failed"]),
+  provider_request_record_id: providerRequestIdSchema,
   workflow_instance_id: z.string().trim().min(1).max(100),
 });
 
@@ -98,8 +99,14 @@ export type FalWebhookTarget = {
   jobId: string;
   jobStatus: z.infer<typeof falWebhookTargetRowSchema>["job_status"];
   requestStatus: z.infer<typeof falWebhookTargetRowSchema>["request_status"];
+  providerRequestRecordId: string;
   workflowInstanceId: string;
 };
+
+export type FalWebhookSignalClaim = Readonly<{
+  claimed: boolean;
+  target: FalWebhookTarget | null;
+}>;
 
 export type OutputRecord = {
   candidateIndex: 0 | 1;
@@ -157,6 +164,7 @@ function mapFalWebhookTargetRow(value: unknown): FalWebhookTarget {
     jobId: row.job_id,
     jobStatus: row.job_status,
     requestStatus: row.request_status,
+    providerRequestRecordId: row.provider_request_record_id,
     workflowInstanceId: row.workflow_instance_id,
   };
 }
@@ -231,6 +239,7 @@ export async function getFalWebhookTarget(
     .prepare(
       `SELECT
          provider_requests.candidate_index,
+         provider_requests.id AS provider_request_record_id,
          provider_requests.status AS request_status,
          jobs.id AS job_id,
          jobs.status AS job_status,
@@ -245,6 +254,35 @@ export async function getFalWebhookTarget(
     .bind(parsedProviderRequestId)
     .first();
   return row === null ? null : mapFalWebhookTargetRow(row);
+}
+
+export async function claimFalWebhookSignal(
+  db: D1Database,
+  providerRequestId: string,
+  claimedAt: string,
+): Promise<FalWebhookSignalClaim> {
+  const parsedProviderRequestId = z.string().trim().min(1).max(256).parse(providerRequestId);
+  const parsedClaimedAt = isoDateTimeSchema.parse(claimedAt);
+  const claimed = await db
+    .prepare(
+      `UPDATE provider_requests
+       SET webhook_signal_claimed_at = ?2
+       WHERE provider = 'fal'
+         AND provider_request_id = ?1
+         AND status = 'submitted'
+         AND webhook_signal_claimed_at IS NULL
+         AND EXISTS (
+           SELECT 1 FROM jobs
+           WHERE jobs.id = provider_requests.job_id
+             AND jobs.status = 'generating'
+             AND jobs.workflow_instance_id IS NOT NULL
+         )
+       RETURNING id`,
+    )
+    .bind(parsedProviderRequestId, parsedClaimedAt)
+    .first();
+  const target = await getFalWebhookTarget(db, parsedProviderRequestId);
+  return { claimed: claimed !== null, target };
 }
 
 export async function createProviderRequest(

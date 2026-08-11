@@ -74,6 +74,10 @@ export function buildProtectedCloudflareConfig(environment) {
     compatibility_flags: ["nodejs_compat"],
     workers_dev: false,
     keep_vars: true,
+    send_metrics: false,
+    dependencies_instrumentation: {
+      enabled: false,
+    },
     assets: {
       directory: "../web/dist",
       binding: "ASSETS",

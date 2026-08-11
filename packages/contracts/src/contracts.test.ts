@@ -6,6 +6,7 @@ import {
   acceptLegalDocumentsRequestSchema,
   createJobRequestSchema,
   deleteJobResponseSchema,
+  createUploadMetadataSchema,
   createUploadRequestSchema,
   createUploadResponseSchema,
   publicJobSchema,
@@ -13,6 +14,9 @@ import {
   publicPresetsSchema,
   currentLegalAcceptanceDocuments,
   legalAcceptanceStatusSchema,
+  localSyntheticSourceFilename,
+  localSyntheticSourceSizeBytes,
+  localSyntheticUploadResponseSchema,
   presetIds,
   presetIdSchema,
 } from "./index";
@@ -41,10 +45,58 @@ describe("private-beta credit contracts", () => {
   });
 });
 
-describe("upload contracts", () => {
-  it("accepts supported audio upload metadata", () => {
+describe("local synthetic source contracts", () => {
+  const request = {
+    fixture: "deterministic-tone-v1",
+    idempotencyKey: "local-source-contract",
+    scenario: "success",
+  } as const;
+  const response = {
+    request,
+    upload: {
+      confirmedAt: now,
+      createdAt: now,
+      declaredContentType: "audio/wav",
+      expiresAt: "2026-07-25T00:00:00.000Z",
+      originalFilename: localSyntheticSourceFilename,
+      sizeBytes: localSyntheticSourceSizeBytes,
+      status: "confirmed",
+      uploadId,
+    },
+  } as const;
+
+  it("binds a versioned confirmed source to its strict request", () => {
+    expect(localSyntheticUploadResponseSchema.parse(response)).toEqual(response);
+  });
+
+  it.each([
+    ["an unconfirmed status", { confirmedAt: null, status: "created" }],
+    ["another content type", { declaredContentType: "audio/mpeg" }],
+    ["another filename", { originalFilename: "other.wav" }],
+    ["another byte size", { sizeBytes: localSyntheticSourceSizeBytes - 1 }],
+  ] as const)("rejects %s from the fixed fixture response", (_caseName, mutation) => {
     expect(
-      createUploadRequestSchema.parse({
+      localSyntheticUploadResponseSchema.safeParse({
+        ...response,
+        upload: { ...response.upload, ...mutation },
+      }).success,
+    ).toBe(false);
+  });
+
+  it("rejects extra private source fields", () => {
+    expect(
+      localSyntheticUploadResponseSchema.safeParse({
+        ...response,
+        upload: { ...response.upload, objectKey: "private-object-key" },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("upload contracts", () => {
+  it("separates supported audio metadata from an idempotent upload request", () => {
+    expect(
+      createUploadMetadataSchema.parse({
         originalFilename: "study.wav",
         contentType: "audio/wav",
         sizeBytes: 1024,
@@ -54,6 +106,21 @@ describe("upload contracts", () => {
       contentType: "audio/wav",
       sizeBytes: 1024,
     });
+    expect(
+      createUploadRequestSchema.parse({
+        contentType: "audio/wav",
+        idempotencyKey: "ui-upload:request-001",
+        originalFilename: "study.wav",
+        sizeBytes: 1024,
+      }),
+    ).toMatchObject({ idempotencyKey: "ui-upload:request-001" });
+    expect(
+      createUploadRequestSchema.safeParse({
+        contentType: "audio/wav",
+        originalFilename: "study.wav",
+        sizeBytes: 1024,
+      }).success,
+    ).toBe(false);
   });
 
   it("rejects unsupported content types and unknown keys", () => {
@@ -61,6 +128,7 @@ describe("upload contracts", () => {
       createUploadRequestSchema.safeParse({
         originalFilename: "study.flac",
         contentType: "audio/flac",
+        idempotencyKey: "ui-upload:request-002",
         sizeBytes: 1024,
         objectKey: "user-controlled-key",
       }).success,
@@ -70,6 +138,7 @@ describe("upload contracts", () => {
   it("validates the direct upload response", () => {
     const response = {
       uploadId,
+      idempotencyKey: "ui-upload:request-003",
       objectKey: `owners/anonymous/uploads/${uploadId}`,
       uploadUrl: "https://uploads.example.test/signed",
       uploadMethod: "PUT",
@@ -93,16 +162,18 @@ describe("upload contracts", () => {
 });
 
 describe("preset and job contracts", () => {
-  it("exposes the complete five-style MVP contract", () => {
+  it("exposes the complete six-style MVP contract", () => {
     expect(presetIds).toEqual([
       "soft-piano",
       "music-box",
       "lofi-study",
       "acoustic-ease",
       "slowwave",
+      "kissa-jazzhop",
     ]);
     expect(presetIdSchema.parse("acoustic-ease")).toBe("acoustic-ease");
     expect(presetIdSchema.parse("slowwave")).toBe("slowwave");
+    expect(presetIdSchema.parse("kissa-jazzhop")).toBe("kissa-jazzhop");
 
     const publicPresets = presetIds.map((id) => ({
       id,
@@ -111,7 +182,7 @@ describe("preset and job contracts", () => {
       description: { en: `${id} description`, "zh-HK": `${id} description` },
     }));
     expect(publicPresetsSchema.parse(publicPresets)).toEqual(publicPresets);
-    expect(publicPresetsSchema.safeParse(publicPresets.slice(0, 4)).success).toBe(false);
+    expect(publicPresetsSchema.safeParse(publicPresets.slice(0, 5)).success).toBe(false);
   });
 
   it("validates the minimal private job deletion response", () => {
@@ -155,7 +226,7 @@ describe("preset and job contracts", () => {
       createJobRequestSchema.safeParse({ ...validRequest, rightsDeclarationVersion: "v2" }).success,
     ).toBe(false);
 
-    for (const presetId of ["acoustic-ease", "slowwave"] as const) {
+    for (const presetId of ["acoustic-ease", "slowwave", "kissa-jazzhop"] as const) {
       expect(createJobRequestSchema.safeParse({ ...validRequest, presetId }).success).toBe(true);
     }
   });

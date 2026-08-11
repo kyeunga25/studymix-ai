@@ -10,6 +10,8 @@ const objectKeySchema = z
     /^owners\/own_[0-9a-f]{32}\/(?:uploads\/upl_[0-9a-f]{32}\/source|outputs\/out_[0-9a-f]{32}\/candidate)$/,
   );
 
+export const maximumSignedR2UrlTtlSeconds = 3_600;
+
 export class R2TransferDisabledError extends Error {
   constructor() {
     super("Private object transfer is disabled.");
@@ -21,6 +23,13 @@ export class R2TransferConfigurationError extends Error {
   constructor() {
     super("Private object transfer is not configured.");
     this.name = "R2TransferConfigurationError";
+  }
+}
+
+export class R2TransferResourceExpiredError extends Error {
+  constructor() {
+    super("The private object capability has expired.");
+    this.name = "R2TransferResourceExpiredError";
   }
 }
 
@@ -76,10 +85,14 @@ export function resolveR2TransferConfiguration(env: Env): R2TransferConfiguratio
 
   return {
     ...parsed.data,
-    downloadUrlTtlSeconds: parseInteger(env.DOWNLOAD_URL_TTL_SECONDS, 1, 3_600),
+    downloadUrlTtlSeconds: parseInteger(
+      env.DOWNLOAD_URL_TTL_SECONDS,
+      1,
+      maximumSignedR2UrlTtlSeconds,
+    ),
     maxActiveUploads: resolveMaxActiveUploads(env),
     maxUploadBytes: resolveMaxUploadBytes(env),
-    uploadUrlTtlSeconds: parseInteger(env.UPLOAD_URL_TTL_SECONDS, 1, 3_600),
+    uploadUrlTtlSeconds: parseInteger(env.UPLOAD_URL_TTL_SECONDS, 1, maximumSignedR2UrlTtlSeconds),
   };
 }
 
@@ -111,9 +124,11 @@ export async function createSignedR2ObjectUrl(
         method: "GET";
         now: Date;
         objectKey: string;
+        resourceExpiresAt: Date;
       }
     | {
         configuration: R2TransferConfiguration;
+        contentLength: number;
         contentType: string;
         method: "PUT";
         now: Date;
@@ -122,10 +137,27 @@ export async function createSignedR2ObjectUrl(
 ): Promise<{ expiresAt: string; url: string }> {
   const { configuration, method, now, objectKey } = input;
   const parsedObjectKey = objectKeySchema.parse(objectKey);
+  const remainingSeconds =
+    method === "GET"
+      ? Math.floor((input.resourceExpiresAt.getTime() - now.getTime()) / 1_000)
+      : configuration.uploadUrlTtlSeconds;
+  if (!Number.isSafeInteger(remainingSeconds) || remainingSeconds < 1) {
+    throw new R2TransferResourceExpiredError();
+  }
   const ttlSeconds =
-    method === "PUT" ? configuration.uploadUrlTtlSeconds : configuration.downloadUrlTtlSeconds;
+    method === "PUT"
+      ? configuration.uploadUrlTtlSeconds
+      : Math.min(configuration.downloadUrlTtlSeconds, remainingSeconds);
   const headers = new Headers();
   if (input.method === "PUT") {
+    const contentLength = z
+      .number()
+      .int()
+      .positive()
+      .safe()
+      .max(configuration.maxUploadBytes)
+      .parse(input.contentLength);
+    headers.set("Content-Length", contentLength.toString());
     headers.set("Content-Type", input.contentType);
     headers.set("If-None-Match", "*");
   }

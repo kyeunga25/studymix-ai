@@ -86,6 +86,7 @@ export function buildWranglerEnvironment(environment) {
   const result = {
     ...environment,
     WRANGLER_LOG_SANITIZE: "true",
+    WRANGLER_SEND_METRICS: "false",
     WRANGLER_WRITE_LOGS: "false",
   };
   delete result.WRANGLER_LOG;
@@ -288,6 +289,7 @@ export function buildDeploymentReport({
     workflowEnabled: featureFlag(bindings, "JOB_WORKFLOW_ENABLED"),
     retentionEnabled: featureFlag(bindings, "RETENTION_CLEANUP_ENABLED"),
     realGenerationEnabled: featureFlag(bindings, "REAL_GENERATION_ENABLED"),
+    turnstileVerificationImplemented: false,
   };
   const secretStatus = {
     ownerIdentityPepper: secretNames.has("OWNER_IDENTITY_PEPPER"),
@@ -345,6 +347,7 @@ export function buildDeploymentReport({
     bindingStatus.rateLimit &&
     secretStatus.falProviderPair &&
     secretStatus.turnstile &&
+    runtimeStatus.turnstileVerificationImplemented &&
     plainText(bindings, "GENERATION_PROVIDER") === "fal" &&
     runtimeStatus.realGenerationEnabled === true;
 

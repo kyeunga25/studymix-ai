@@ -187,6 +187,195 @@ describe("D1 repositories", () => {
     expect(counts).toEqual({ jobs: 0, reserves: 0 });
   });
 
+  it("prevents simultaneous owner jobs from over-reserving credits", async () => {
+    const owner = ownerContext("1");
+    const firstUploadId = await createConfirmedUpload(owner, true, 2);
+    const secondUploadId = await createConfirmedUpload(owner, true, 2);
+    const firstRequest = {
+      createdAt: now,
+      creditCost: 2,
+      expiresAt: later,
+      id: createSecureId("job"),
+      idempotencyKey: "concurrent-credit-job-a",
+      maxActiveJobs: 2,
+      ownerId: owner.ownerId,
+      presetId: "soft-piano" as const,
+      presetVersion: 1,
+      provider: "mock" as const,
+      requestFingerprint: "a".repeat(64),
+      uploadId: firstUploadId,
+    };
+    const requests = [
+      firstRequest,
+      {
+        createdAt: now,
+        creditCost: 2,
+        expiresAt: later,
+        id: createSecureId("job"),
+        idempotencyKey: "concurrent-credit-job-b",
+        maxActiveJobs: 2,
+        ownerId: owner.ownerId,
+        presetId: "music-box" as const,
+        presetVersion: 1,
+        provider: "mock" as const,
+        requestFingerprint: "b".repeat(64),
+        uploadId: secondUploadId,
+      },
+    ];
+    const outcomes = await Promise.all(
+      requests.map(async (request) => {
+        try {
+          return { kind: "created", value: await createJobIdempotently(env.DB, request) } as const;
+        } catch (error) {
+          return { error, kind: "rejected" } as const;
+        }
+      }),
+    );
+    const created = outcomes.flatMap((outcome) =>
+      outcome.kind === "created" ? [outcome.value] : [],
+    );
+    const rejected = outcomes.flatMap((outcome) =>
+      outcome.kind === "rejected" ? [outcome.error] : [],
+    );
+    const state = await env.DB.prepare(
+      `SELECT
+        (SELECT COUNT(*) FROM jobs WHERE owner_id = ?1) AS jobs,
+        (SELECT COUNT(*) FROM rights_declarations WHERE owner_id = ?1) AS rights,
+        (SELECT COUNT(*) FROM credit_ledger WHERE owner_id = ?1 AND event_type = 'reserve') AS reserves`,
+    )
+      .bind(owner.ownerId)
+      .first<{ jobs: number; reserves: number; rights: number }>();
+
+    expect(created).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toBeInstanceOf(RepositoryCreditsInsufficientError);
+    expect(state).toEqual({ jobs: 1, reserves: 1, rights: 1 });
+    expect(await getOwnedCreditSummary(env.DB, owner.ownerId)).toMatchObject({
+      availableCredits: 0,
+      reservedCredits: 2,
+      settledCredits: 0,
+    });
+    const createdJob = created[0];
+    if (createdJob === undefined) {
+      throw new Error("The concurrent credit test did not create one owner job.");
+    }
+
+    const otherOwner = ownerContext("2");
+    const otherUploadId = await createConfirmedUpload(otherOwner, true, 2);
+    await expect(
+      createJobIdempotently(env.DB, {
+        ...firstRequest,
+        id: createSecureId("job"),
+        idempotencyKey: createdJob.job.idempotencyKey,
+        ownerId: otherOwner.ownerId,
+        requestFingerprint: "c".repeat(64),
+        uploadId: otherUploadId,
+      }),
+    ).resolves.toMatchObject({ created: true });
+    expect(await getOwnedCreditSummary(env.DB, otherOwner.ownerId)).toMatchObject({
+      availableCredits: 0,
+      reservedCredits: 2,
+      settledCredits: 0,
+    });
+  });
+
+  it("rejects reusing one owner grant reference for a different quantity", async () => {
+    const owner = ownerContext("1");
+    await upsertOwner(env.DB, owner, now);
+    const grant = {
+      createdAt: now,
+      eventId: createSecureId("evt"),
+      ownerId: owner.ownerId,
+      quantity: 5,
+      referenceKey: "test:grant:quantity-bound",
+    };
+    await grantPrivateBetaCredits(env.DB, grant);
+
+    await expect(
+      grantPrivateBetaCredits(env.DB, {
+        ...grant,
+        eventId: createSecureId("evt"),
+        quantity: 6,
+      }),
+    ).rejects.toBeInstanceOf(RepositoryConflictError);
+    expect(await getOwnedCreditSummary(env.DB, owner.ownerId)).toMatchObject({
+      availableCredits: 5,
+      reservedCredits: 0,
+      settledCredits: 0,
+    });
+    const recorded = await env.DB.prepare(
+      `SELECT event_type, quantity,
+        (SELECT COUNT(*) FROM credit_ledger WHERE owner_id = ?1) AS events
+       FROM credit_ledger
+       WHERE owner_id = ?1 AND reference_key = ?2`,
+    )
+      .bind(owner.ownerId, grant.referenceKey)
+      .first<{ event_type: string; events: number; quantity: number }>();
+    expect(recorded).toEqual({ event_type: "grant", events: 1, quantity: 5 });
+  });
+
+  it("serializes conflicting grant quantities within one owner reference scope", async () => {
+    const owner = ownerContext("1");
+    await upsertOwner(env.DB, owner, now);
+    const referenceKey = "test:grant:concurrent-quantity";
+    const outcomes = await Promise.all(
+      [3, 7].map(async (quantity) => {
+        try {
+          const summary = await grantPrivateBetaCredits(env.DB, {
+            createdAt: now,
+            eventId: createSecureId("evt"),
+            ownerId: owner.ownerId,
+            quantity,
+            referenceKey,
+          });
+          return { kind: "granted", summary } as const;
+        } catch (error) {
+          return { error, kind: "rejected" } as const;
+        }
+      }),
+    );
+    const granted = outcomes.flatMap((outcome) =>
+      outcome.kind === "granted" ? [outcome.summary] : [],
+    );
+    const rejected = outcomes.flatMap((outcome) =>
+      outcome.kind === "rejected" ? [outcome.error] : [],
+    );
+    const recorded = await env.DB.prepare(
+      `SELECT quantity,
+        (SELECT COUNT(*) FROM credit_ledger WHERE owner_id = ?1) AS events
+       FROM credit_ledger
+       WHERE owner_id = ?1 AND reference_key = ?2`,
+    )
+      .bind(owner.ownerId, referenceKey)
+      .first<{ events: number; quantity: number }>();
+
+    expect(granted).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]).toBeInstanceOf(RepositoryConflictError);
+    expect(recorded?.events).toBe(1);
+    expect(granted[0]?.availableCredits).toBe(recorded?.quantity);
+
+    const otherOwner = ownerContext("2");
+    await upsertOwner(env.DB, otherOwner, now);
+    await expect(
+      grantPrivateBetaCredits(env.DB, {
+        createdAt: now,
+        eventId: createSecureId("evt"),
+        ownerId: otherOwner.ownerId,
+        quantity: 11,
+        referenceKey,
+      }),
+    ).resolves.toMatchObject({ availableCredits: 11 });
+    const ownerCounts = await env.DB.prepare(
+      `SELECT COUNT(DISTINCT owner_id) AS owners, COUNT(*) AS events
+       FROM credit_ledger
+       WHERE reference_key = ?1`,
+    )
+      .bind(referenceKey)
+      .first<{ events: number; owners: number }>();
+    expect(ownerCounts).toEqual({ events: 2, owners: 2 });
+  });
+
   it("does not reactivate a cancelled entitlement when an old grant is replayed", async () => {
     const owner = ownerContext("1");
     await upsertOwner(env.DB, owner, now);
@@ -215,6 +404,98 @@ describe("D1 repositories", () => {
       .bind(owner.ownerId)
       .first<{ total: number }>();
     expect(grants?.total).toBe(1);
+  });
+
+  it("reports the newest owner-scoped entitlement or ledger activity", async () => {
+    const owner = ownerContext("1");
+    const otherOwner = ownerContext("2");
+    const ledgerUpdate = "2026-07-24T05:30:00.000-05:00";
+    const entitlementUpdate = "2026-07-24T11:00:00.000Z";
+    await upsertOwner(env.DB, owner, now);
+    await upsertOwner(env.DB, otherOwner, now);
+    await grantPrivateBetaCredits(env.DB, {
+      createdAt: now,
+      eventId: createSecureId("evt"),
+      ownerId: owner.ownerId,
+      quantity: 5,
+      referenceKey: "test:grant:summary-created",
+    });
+    await grantPrivateBetaCredits(env.DB, {
+      createdAt: ledgerUpdate,
+      eventId: createSecureId("evt"),
+      ownerId: owner.ownerId,
+      quantity: 2,
+      referenceKey: "test:grant:summary-updated",
+    });
+    await grantPrivateBetaCredits(env.DB, {
+      createdAt: later,
+      eventId: createSecureId("evt"),
+      ownerId: otherOwner.ownerId,
+      quantity: 9,
+      referenceKey: "test:grant:other-owner-summary",
+    });
+
+    await expect(getOwnedCreditSummary(env.DB, owner.ownerId)).resolves.toMatchObject({
+      availableCredits: 7,
+      updatedAt: ledgerUpdate,
+    });
+
+    await env.DB.prepare("UPDATE owner_entitlements SET updated_at = ?1 WHERE owner_id = ?2")
+      .bind(entitlementUpdate, owner.ownerId)
+      .run();
+    await expect(getOwnedCreditSummary(env.DB, owner.ownerId)).resolves.toMatchObject({
+      availableCredits: 7,
+      updatedAt: entitlementUpdate,
+    });
+  });
+
+  it("uses owner-bounded indexes for the credit summary", async () => {
+    const plan = await env.DB.prepare(
+      `EXPLAIN QUERY PLAN
+       SELECT
+         entitlements.plan_code,
+         entitlements.status,
+         entitlements.updated_at AS entitlement_updated_at,
+         (
+           SELECT ledger.created_at
+           FROM credit_ledger AS ledger
+           WHERE ledger.owner_id = entitlements.owner_id
+           ORDER BY julianday(ledger.created_at) DESC, ledger.created_at DESC
+           LIMIT 1
+         ) AS ledger_updated_at,
+         COALESCE(balances.available_credits, 0) AS available_credits,
+         COALESCE(balances.reserved_credits, 0) AS reserved_credits,
+         COALESCE(balances.settled_credits, 0) AS settled_credits
+       FROM owner_entitlements AS entitlements
+       LEFT JOIN (
+         SELECT owner_id, available_credits, reserved_credits, settled_credits
+         FROM credit_balances
+         WHERE owner_id = ?1
+       ) AS balances ON balances.owner_id = entitlements.owner_id
+       WHERE entitlements.owner_id = ?1`,
+    )
+      .bind(ownerContext("1").ownerId)
+      .all<{ detail: string }>();
+    const details = plan.results.map((row) => row.detail);
+
+    expect({
+      fullLedgerScan: details.some((detail) => /^SCAN credit_ledger(?:\s|$)/.test(detail)),
+      temporaryOrder: details.some((detail) => detail.includes("TEMP B-TREE FOR ORDER BY")),
+      usesOwnerBalanceSearch: details.some(
+        (detail) =>
+          detail.includes("SEARCH credit_ledger USING") &&
+          detail.includes("INDEX") &&
+          detail.includes("owner_id=?"),
+      ),
+      usesOwnerInstantIndex: details.some((detail) =>
+        detail.includes("USING COVERING INDEX idx_credit_ledger_owner_instant"),
+      ),
+    }).toEqual({
+      fullLedgerScan: false,
+      temporaryOrder: false,
+      usesOwnerBalanceSearch: true,
+      usesOwnerInstantIndex: true,
+    });
   });
 
   it("settles or releases one reservation atomically with the terminal job state", async () => {
@@ -317,6 +598,113 @@ describe("D1 repositories", () => {
       availableCredits: 98,
       reservedCredits: 0,
       settledCredits: 2,
+    });
+  });
+
+  it("converges competing completion and failure with one matching credit finalization", async () => {
+    const owner = ownerContext("1");
+    const otherOwner = ownerContext("2");
+    const uploadId = await createConfirmedUpload(owner);
+    const created = await createJobIdempotently(env.DB, {
+      createdAt: now,
+      creditCost: 2,
+      expiresAt: later,
+      id: createSecureId("job"),
+      idempotencyKey: "job-request-competing-finalization",
+      maxActiveJobs: 2,
+      ownerId: owner.ownerId,
+      presetId: "soft-piano",
+      presetVersion: 1,
+      provider: "mock",
+      requestFingerprint: "e".repeat(64),
+      uploadId,
+    });
+    await transitionOwnedJob(env.DB, owner.ownerId, created.job.id, ["created"], "validating", {
+      completedAt: null,
+      errorCode: null,
+      updatedAt: now,
+    });
+    await transitionOwnedJob(env.DB, owner.ownerId, created.job.id, ["validating"], "queued", {
+      completedAt: null,
+      errorCode: null,
+      updatedAt: now,
+    });
+    await transitionOwnedJob(env.DB, owner.ownerId, created.job.id, ["queued"], "generating", {
+      completedAt: null,
+      errorCode: null,
+      updatedAt: now,
+    });
+    await transitionOwnedJob(
+      env.DB,
+      owner.ownerId,
+      created.job.id,
+      ["generating"],
+      "processing_output",
+      { completedAt: null, errorCode: null, updatedAt: now },
+    );
+
+    await expect(
+      completeOwnedJobWithCredits(env.DB, {
+        eventId: createSecureId("evt"),
+        jobId: created.job.id,
+        ownerId: otherOwner.ownerId,
+        timestamp: later,
+      }),
+    ).rejects.toBeInstanceOf(RepositoryNotFoundError);
+
+    const finalizations = [
+      () =>
+        completeOwnedJobWithCredits(env.DB, {
+          eventId: createSecureId("evt"),
+          jobId: created.job.id,
+          ownerId: owner.ownerId,
+          timestamp: later,
+        }),
+      () =>
+        failOwnedJobWithCreditRelease(env.DB, {
+          errorCode: "SYNTHETIC_TERMINAL_FAILURE",
+          eventId: createSecureId("evt"),
+          jobId: created.job.id,
+          ownerId: owner.ownerId,
+          timestamp: later,
+        }),
+    ];
+    const outcomes = await Promise.all(
+      finalizations.map(async (finalize) => {
+        try {
+          await finalize();
+          return { kind: "fulfilled" } as const;
+        } catch (error) {
+          return { error, kind: "rejected" } as const;
+        }
+      }),
+    );
+    const fulfilled = outcomes.filter((outcome) => outcome.kind === "fulfilled");
+    const rejected = outcomes.filter((outcome) => outcome.kind === "rejected");
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]?.error).toBeInstanceOf(RepositoryStateError);
+
+    const terminalJob = await getOwnedJob(env.DB, owner.ownerId, created.job.id);
+    if (terminalJob === null) {
+      throw new Error("The competing finalization job was not found.");
+    }
+    const finalEvents = await env.DB.prepare(
+      `SELECT event_type FROM credit_ledger
+       WHERE owner_id = ?1
+         AND job_id = ?2
+         AND event_type IN ('settle', 'release')`,
+    )
+      .bind(owner.ownerId, created.job.id)
+      .all<{ event_type: "release" | "settle" }>();
+    expect(finalEvents.results).toHaveLength(1);
+    const finalEvent = finalEvents.results[0]?.event_type;
+    expect(finalEvent).toBe(terminalJob.status === "completed" ? "settle" : "release");
+    expect(["completed", "failed"]).toContain(terminalJob.status);
+    await expect(getOwnedCreditSummary(env.DB, owner.ownerId)).resolves.toMatchObject({
+      availableCredits: finalEvent === "settle" ? 98 : 100,
+      reservedCredits: 0,
+      settledCredits: finalEvent === "settle" ? 2 : 0,
     });
   });
 
@@ -436,6 +824,62 @@ describe("D1 repositories", () => {
         requestFingerprint: "5".repeat(64),
       }),
     ).rejects.toBeInstanceOf(RepositoryQuotaError);
+  });
+
+  it("uses the owner-active index for the active job quota", async () => {
+    const plan = await env.DB.prepare(
+      `EXPLAIN QUERY PLAN
+       SELECT COUNT(*)
+       FROM jobs
+       WHERE owner_id = ?1
+         AND status IN ('created', 'validating', 'queued', 'generating', 'processing_output')`,
+    )
+      .bind(ownerContext("1").ownerId)
+      .all<{ detail: string }>();
+    const details = plan.results.map((row) => row.detail);
+
+    expect({
+      fullJobsScan: details.some((detail) => /^SCAN jobs(?:\s|$)/.test(detail)),
+      usesOwnerActiveIndex: details.some((detail) =>
+        detail.includes("USING INDEX idx_jobs_owner_active"),
+      ),
+    }).toEqual({
+      fullJobsScan: false,
+      usesOwnerActiveIndex: true,
+    });
+  });
+
+  it("uses owner-bounded indexes for the active upload quota", async () => {
+    const plan = await env.DB.prepare(
+      `EXPLAIN QUERY PLAN
+       SELECT
+         (
+           SELECT COUNT(*) FROM uploads
+           WHERE owner_id = ?1 AND status = 'pending' AND expires_at > ?2
+         ) + (
+           SELECT COUNT(*) FROM uploads
+           WHERE owner_id = ?1 AND status = 'confirmed'
+         ) AS total`,
+    )
+      .bind(ownerContext("1").ownerId, now)
+      .all<{ detail: string }>();
+    const details = plan.results.map((row) => row.detail);
+
+    expect({
+      fullUploadsScan: details.some((detail) => /^SCAN uploads(?:\s|$)/.test(detail)),
+      usesConfirmedIndex: details.some((detail) =>
+        detail.includes("USING COVERING INDEX idx_uploads_owner_confirmed_active"),
+      ),
+      usesPendingExpiryRange: details.some(
+        (detail) =>
+          detail.includes("USING COVERING INDEX idx_uploads_owner_pending_active") &&
+          detail.includes("expires_at>?"),
+      ),
+    }).toEqual({
+      fullUploadsScan: false,
+      usesConfirmedIndex: true,
+      usesPendingExpiryRange: true,
+    });
   });
 
   it("atomically limits active jobs without blocking an idempotent retry", async () => {

@@ -71,7 +71,22 @@ export default defineConfig({
             },
           },
           serviceBindings: {
-            ASSETS: () => new Response("test asset", { status: 200 }),
+            ASSETS: (request) => {
+              const path = new URL(request.url).pathname;
+              const contentType = path.endsWith(".css")
+                ? "text/css; charset=utf-8"
+                : path.endsWith(".js")
+                  ? "application/javascript"
+                  : path.endsWith(".webp")
+                    ? "image/webp"
+                    : path.endsWith(".png")
+                      ? "image/png"
+                      : "text/plain";
+              return new Response("test asset", {
+                headers: { "Content-Type": contentType },
+                status: 200,
+              });
+            },
           },
         },
       };
