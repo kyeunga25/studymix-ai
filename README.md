@@ -6,6 +6,10 @@ StudyMix AI is a bilingual, security-first MVP for privately restyling audio tha
 
 > **部署方式 / Deployment:** 本專案以 **Cloudflare Workers** 作為正式執行環境。React 前端經 Workers Static Assets 發佈，Hono API 在同一個 Worker 內執行；D1、私人 R2、Workflows 與 Access 按部署能力接入。公開程式庫不包含任何實際 Cloudflare 識別資料、正式資料或 secret。
 
+| 可用性 / Availability                                            | 成熟度 / Maturity                                                                         | 證據 / Evidence                                                                                                                                                       |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 私人封閉測試；沒有公開註冊 / Closed beta; no public registration | Early MVP；正式音訊與外部生成預設停用 / Production audio and external generation disabled | [項目入口 / Project portal](https://k-y.cc/#projects) · [技術文件 / Docs](docs/TECH_STACK.md) · [安全政策 / Security](SECURITY.md) · [版權 / Copyright](COPYRIGHT.md) |
+
 ## 專案狀態 / Project status
 
 - 私人封閉測試階段；沒有公開註冊或公開使用者內容。
@@ -13,7 +17,7 @@ StudyMix AI is a bilingual, security-first MVP for privately restyling audio tha
 - 六個版本化雙語風格涵蓋柔和鋼琴、八音盒、Lo-fi、木結他輕奏、慢拍舒緩電音及喫茶爵士輕拍；首頁與私人工作區共用相同公開文案合約。
 - fal.ai ACE-Step audio-to-audio adapter 已包含在程式庫，但真實供應商路徑預設停用。
 - 正式音訊上載、外部生成與自動清理必須在擁有者自己的隔離環境完成安全、法律及瀏覽器驗證後才可啟用。
-- 本存放庫尚未選定開源授權；請先閱讀 [`LICENSE.md`](LICENSE.md)。
+- 本存放庫沒有授予開源授權；請先閱讀 [`LICENSE.md`](LICENSE.md) 及 [`COPYRIGHT.md`](COPYRIGHT.md)。
 
 程式庫狀態不等同於目前線上環境狀態；以 [`docs/TODO.md`](docs/TODO.md) 的已驗證項目及部署後檢查結果為準。
 
@@ -139,7 +143,7 @@ e2e/            Browser tests
 
 ## 授權 / Licence
 
-本存放庫目前沒有授予開源授權。自部署、修改或再散佈前，請閱讀 [`LICENSE.md`](LICENSE.md) 並取得所需許可。第三方套件及模型服務各自受其授權、服務條款、私隱政策與使用限制約束。
+本存放庫沒有授予開源授權。自部署、修改或再散佈前，請閱讀 [`LICENSE.md`](LICENSE.md) 及 [`COPYRIGHT.md`](COPYRIGHT.md) 並取得所需許可。第三方套件、音訊及模型服務各自受其授權、服務條款、私隱政策與使用限制約束。
 
 ## 參考與使用技術 / References and acknowledgements
 
