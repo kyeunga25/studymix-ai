@@ -60,6 +60,10 @@ const LazyRecentJobHistory = lazy(async () => {
   const module = await import("./recent-job-history");
   return { default: module.RecentJobHistoryPanel };
 });
+const LazyAccessReadiness = lazy(async () => {
+  const module = await import("./access-readiness");
+  return { default: module.AccessReadinessPanel };
+});
 
 const copy = {
   en: {
@@ -312,6 +316,16 @@ function RecentJobHistoryLoading({ language }: { language: Language }) {
       <h2>{language === "en" ? "Recent private mixes" : "最近的私人 Mix"}</h2>
       <p className="job-history-message" aria-live="polite">
         {language === "en" ? "Loading recent private mixes…" : "正在讀取最近的私人 Mix……"}
+      </p>
+    </section>
+  );
+}
+
+function AccessReadinessLoading({ language }: { language: Language }) {
+  return (
+    <section className="access-readiness is-loading" aria-busy="true" role="status">
+      <p aria-live="polite">
+        {language === "en" ? "Loading workspace readiness…" : "正在載入工作區準備狀態……"}
       </p>
     </section>
   );
@@ -1215,7 +1229,9 @@ export function PrivateApp() {
       </header>
 
       <main>
-        <AccessVerificationStatus language={language} session={privateSession} />
+        <Suspense fallback={<AccessReadinessLoading language={language} />}>
+          <LazyAccessReadiness language={language} session={privateSession} />
+        </Suspense>
         {privateSession !== null ? (
           isRestoringPrivateJob ? (
             <PrivateJobRestoreStatus language={language} />
@@ -1526,64 +1542,6 @@ export function PrivateApp() {
         <SiteFooter language={language} />
       </main>
     </div>
-  );
-}
-
-function AccessVerificationStatus({
-  language,
-  session,
-}: {
-  language: Language;
-  session: PrivateSession;
-}) {
-  const unavailable = language === "en" ? "Unavailable" : "不可用";
-  const available = language === "en" ? "Available" : "可用";
-  const localOnly = language === "en" ? "Local synthetic only" : "只限本機合成";
-  const reviewRequired = language === "en" ? "Review required; unavailable" : "待審批；不可用";
-  const flagDisabled =
-    language === "en" ? "Approved control; feature disabled" : "控制已核准；功能旗標關閉";
-  const realAiStatus = session.capabilities.realGeneration
-    ? available
-    : session.authorization.realProviderStatus === "review_required"
-      ? reviewRequired
-      : session.authorization.realProviderStatus === "approved"
-        ? flagDisabled
-        : unavailable;
-  const paymentStatus =
-    session.authorization.paymentStatus === "review_required"
-      ? reviewRequired
-      : session.authorization.paymentStatus === "approved"
-        ? flagDisabled
-        : unavailable;
-  const uploadStatus = session.capabilities.localAiHarness
-    ? localOnly
-    : session.capabilities.privateAudioUpload
-      ? available
-      : unavailable;
-  const syntheticStatus = session.capabilities.localAiHarness
-    ? localOnly
-    : session.capabilities.mockGeneration
-      ? language === "en"
-        ? "Synthetic test available"
-        : "合成測試可用"
-      : unavailable;
-  const heading =
-    language === "en"
-      ? "Private-beta access verified · Owner workspace active · Manual AI approval"
-      : "私密測試存取權已驗證 · 擁有者工作區：啟用 · AI 審批：人工";
-  const detail =
-    language === "en"
-      ? `Private upload: ${uploadStatus} · Synthetic test: ${syntheticStatus} · Real AI: ${realAiStatus} · Payments: ${paymentStatus} · Automatic retention: ${session.capabilities.retentionCleanup ? available : unavailable}`
-      : `私人上載：${uploadStatus} · 合成測試：${syntheticStatus} · 真實 AI：${realAiStatus} · 付款：${paymentStatus} · 自動保留期：${session.capabilities.retentionCleanup ? available : unavailable}`;
-
-  return (
-    <section className="access-verification is-verified" role="status">
-      <ShieldIcon />
-      <div className="access-verification-copy">
-        <strong>{heading}</strong>
-        <span>{detail}</span>
-      </div>
-    </section>
   );
 }
 

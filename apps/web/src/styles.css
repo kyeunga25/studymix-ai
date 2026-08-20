@@ -142,62 +142,150 @@ main {
   padding-bottom: 34px;
 }
 
-.access-verification {
-  display: flex;
-  min-height: 46px;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 12px;
-  padding: 10px 16px;
+.access-readiness {
+  margin: 0 0 16px;
+  padding: 20px 24px;
   border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 14px;
-  color: #4b4b6d;
-  background: rgba(255, 252, 250, 0.9);
-  box-shadow: 0 9px 24px rgba(51, 41, 104, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 252, 250, 0.94);
+  box-shadow: 0 14px 36px rgba(51, 41, 104, 0.14);
+  backdrop-filter: blur(18px);
+}
+
+.access-readiness.is-loading {
+  min-height: 88px;
+  display: grid;
+  align-items: center;
+  color: #65617a;
+}
+
+.access-readiness.is-loading p {
+  margin: 0;
+}
+
+.access-readiness-heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.access-readiness-heading h2 {
+  margin: 0;
+  color: #202451;
+  font-size: 1.25rem;
+  line-height: 1.25;
+}
+
+.access-readiness-heading p {
+  max-width: 760px;
+  margin: 6px 0 0;
+  color: #66627c;
   font-size: 0.9rem;
-  line-height: 1.45;
+  line-height: 1.55;
 }
 
-.access-verification svg {
-  width: 21px;
+.access-readiness-badge {
+  display: inline-flex;
   flex: 0 0 auto;
-  color: #6558d5;
-}
-
-.access-verification.is-verified {
-  border-color: rgba(116, 180, 139, 0.62);
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-radius: 999px;
   color: #285f42;
-  background: rgba(244, 252, 247, 0.94);
+  background: #e7f6ec;
+  font-size: 0.82rem;
+  font-weight: 760;
+  line-height: 1.3;
 }
 
-.access-verification.is-verified svg {
+.access-readiness-badge svg {
+  width: 18px;
+  flex: 0 0 auto;
   color: #3f8a5f;
 }
 
-.access-verification-copy {
+.access-readiness-grid {
   display: grid;
-  gap: 2px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
 }
 
-.access-verification-copy strong {
-  font-size: 0.92rem;
+.access-readiness-item {
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid #ded9ed;
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.78);
 }
 
-.access-verification-copy span {
-  color: #557262;
-  font-size: 0.85rem;
+.access-readiness-item-heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.access-verification.is-unavailable {
-  border-color: rgba(213, 159, 159, 0.66);
-  color: #793f4a;
-  background: rgba(255, 247, 247, 0.94);
+.access-readiness-item-heading strong {
+  min-width: 0;
+  color: #262551;
+  font-size: 0.9rem;
+  line-height: 1.35;
 }
 
-.access-verification a {
-  margin-left: auto;
-  color: currentColor;
+.access-readiness-item p {
+  margin: 8px 0 0;
+  color: #69647c;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.access-readiness-state {
+  flex: 0 1 auto;
+  padding: 4px 7px;
+  border-radius: 999px;
+  font-size: 0.82rem;
   font-weight: 760;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.access-readiness-state.is-available {
+  color: #285f42;
+  background: #e7f6ec;
+}
+
+.access-readiness-state.is-local {
+  color: #4c418f;
+  background: #eeeaff;
+}
+
+.access-readiness-state.is-review {
+  color: #664816;
+  background: #fff1cf;
+}
+
+.access-readiness-state.is-approved-disabled {
+  color: #335c73;
+  background: #e7f3f8;
+}
+
+.access-readiness-state.is-unavailable {
+  color: #6d5860;
+  background: #f2eaed;
+}
+
+.access-readiness-note {
+  margin: 14px 0 0;
+  color: #575274;
+  font-size: 0.82rem;
+  font-weight: 650;
+  line-height: 1.45;
 }
 
 .public-legal-shell {
@@ -1732,6 +1820,24 @@ main {
 
   main {
     margin-top: 10px;
+  }
+
+  .access-readiness {
+    padding: 18px;
+    border-radius: 16px;
+  }
+
+  .access-readiness-heading {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .access-readiness-badge {
+    align-self: flex-start;
+  }
+
+  .access-readiness-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .job-history-panel {
