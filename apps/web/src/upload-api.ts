@@ -16,6 +16,7 @@ import {
   type CreateUploadResponse,
   type PublicUpload,
 } from "@studymix/contracts";
+import type { AudioContainerFormat } from "@studymix/core";
 import type { ZodType } from "zod";
 import { readBoundedWebJsonResponse } from "./bounded-json-response";
 import { fetchPrivateApi } from "./private-api";
@@ -166,7 +167,7 @@ async function requireClientAudioStructure(
   file: File,
   metadata: CreateUploadMetadata,
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<AudioContainerFormat> {
   try {
     signal?.throwIfAborted();
     const { inspectAudioContainer } = await import("@studymix/core");
@@ -183,6 +184,7 @@ async function requireClientAudioStructure(
     if (!inspection.valid) {
       throw invalidAudioContentError();
     }
+    return inspection.format;
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") {
       throw error;
@@ -192,6 +194,14 @@ async function requireClientAudioStructure(
     }
     throw invalidAudioContentError();
   }
+}
+
+export async function inspectClientAudioFileStructure(
+  file: File,
+  signal?: AbortSignal,
+): Promise<AudioContainerFormat> {
+  const metadata = requireClientAudioMetadata(file);
+  return await requireClientAudioStructure(file, metadata, signal);
 }
 
 function createClientUploadRequest(metadata: CreateUploadMetadata): CreateUploadRequest {

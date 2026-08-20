@@ -174,6 +174,9 @@ async function prepareAuthorizedMix(page: Page, path = "/app") {
     mimeType: "audio/wav",
     name: "authorized-recording.wav",
   });
+  await expect(page.locator(".file-structure-status")).toContainText(
+    "Recognized WAV audio structure on this device.",
+  );
   const checkboxes = page.getByRole("checkbox");
   await checkboxes.nth(0).check();
   await checkboxes.nth(1).check();
@@ -547,7 +550,7 @@ test("renders every core route without inline style attributes", async ({ page }
 
   await page.goto("/app");
   await page.locator('input[type="file"]').setInputFiles({
-    buffer: Buffer.from("test-audio-placeholder"),
+    buffer: fixtureWave(),
     mimeType: "audio/wav",
     name: "authorized-recording.wav",
   });
@@ -597,26 +600,39 @@ test("rejects invalid audio selections before enabling generation", async ({ pag
   );
 
   await input.setInputFiles({
-    buffer: Buffer.from("test-audio-placeholder"),
+    buffer: fixtureWave(),
     mimeType: "audio/wav",
     name: "authorized-recording.wav",
   });
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(input).toHaveAttribute("aria-invalid", "false");
   await expect(page.locator(".file-preview")).toContainText("authorized-recording.wav");
+  await expect(page.locator(".file-structure-status")).toContainText(
+    "已在此裝置辨識 WAV 音訊結構。",
+  );
+  await expect(page.locator("#file-selection-status")).toContainText(
+    "已辨識 WAV 音訊結構。請確認相關權利並接受現行法律文件",
+  );
 
   const checkboxes = page.getByRole("checkbox");
   await checkboxes.nth(0).check();
   await checkboxes.nth(1).check();
   await expect(page.getByRole("button", { name: "生成 2 個候選版本" })).toBeEnabled();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+  await expect(page.locator(".file-structure-status.is-valid")).toBeVisible();
   expect(uploadRequestCount).toBe(0);
 });
 
 test("rejects renamed non-audio content before private upload creation", async ({ page }) => {
   await routePrivateRealSession(page);
+  let legalAcceptanceRequestCount = 0;
   let uploadRequestCount = 0;
   page.on("request", (request) => {
-    if (new URL(request.url()).pathname === "/api/uploads" && request.method() === "POST") {
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/legal/acceptances" && request.method() === "POST") {
+      legalAcceptanceRequestCount += 1;
+    } else if (path === "/api/uploads" && request.method() === "POST") {
       uploadRequestCount += 1;
     }
   });
@@ -627,17 +643,56 @@ test("rejects renamed non-audio content before private upload creation", async (
     mimeType: "audio/mpeg",
     name: "renamed.mp3",
   });
-  const checkboxes = page.getByRole("checkbox");
-  await checkboxes.nth(0).check();
-  await checkboxes.nth(1).check();
-  await page.getByRole("button", { name: "Securely upload audio" }).click();
 
   await expect(page.getByRole("alert")).toContainText(
     "The selected file is not a recognized MP3, WAV, M4A, AAC, or OGG audio stream.",
   );
   await expect(page.locator('input[type="file"]')).toHaveAttribute("aria-invalid", "true");
   await expect(page.getByRole("button", { name: "Securely upload audio" })).toBeDisabled();
+  expect(legalAcceptanceRequestCount).toBe(0);
   expect(uploadRequestCount).toBe(0);
+});
+
+test("does not let a stale local audio check replace a newer invalid selection", async ({
+  page,
+}) => {
+  await routePrivateRealSession(page);
+  await page.addInitScript(() => {
+    const originalArrayBuffer = Blob.prototype.arrayBuffer;
+    let readCount = 0;
+    Blob.prototype.arrayBuffer = async function delayedFirstAudioRead(this: Blob) {
+      readCount += 1;
+      if (readCount === 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 200));
+      }
+      return await originalArrayBuffer.call(this);
+    };
+  });
+
+  await openPrivateAppInEnglish(page);
+  const input = page.locator('input[type="file"]');
+  await input.setInputFiles({
+    buffer: fixtureWave(),
+    mimeType: "audio/wav",
+    name: "first-valid.wav",
+  });
+  await expect(page.locator(".file-structure-status")).toContainText(
+    "Checking the audio structure on this device",
+  );
+  await input.setInputFiles({
+    buffer: Buffer.from("synthetic text, not audio"),
+    mimeType: "audio/mpeg",
+    name: "newer-invalid.mp3",
+  });
+
+  await expect(page.getByRole("alert")).toContainText(
+    "The selected file is not a recognized MP3, WAV, M4A, AAC, or OGG audio stream.",
+  );
+  await page.waitForTimeout(300);
+  await expect(page.locator(".file-preview")).toContainText("newer-invalid.mp3");
+  await expect(page.locator(".file-structure-status.is-invalid")).toBeVisible();
+  await expect(page.locator(".file-structure-status.is-valid")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Securely upload audio" })).toBeDisabled();
 });
 
 test("shows an Access denial on the login interface without accepting an external redirect", async ({
@@ -1627,9 +1682,9 @@ test("returns an expired in-workspace API session to the login interface", async
   });
   await page.goto("/app");
   await page.locator('input[type="file"]').setInputFiles({
-    buffer: Buffer.from("test-audio-placeholder"),
-    mimeType: "audio/mpeg",
-    name: "authorized-recording.mp3",
+    buffer: fixtureWave(),
+    mimeType: "audio/wav",
+    name: "authorized-recording.wav",
   });
   const checkboxes = page.getByRole("checkbox");
   await checkboxes.nth(0).check();
@@ -1647,10 +1702,13 @@ test("requires both rights and current legal documents before generation can be 
 }) => {
   await openPrivateAppInEnglish(page);
   await page.locator('input[type="file"]').setInputFiles({
-    buffer: Buffer.from("test-audio-placeholder"),
-    mimeType: "audio/mpeg",
-    name: "authorized-recording.mp3",
+    buffer: fixtureWave(),
+    mimeType: "audio/wav",
+    name: "authorized-recording.wav",
   });
+  await expect(page.locator(".file-structure-status")).toContainText(
+    "Recognized WAV audio structure on this device.",
+  );
 
   const checkboxes = page.getByRole("checkbox");
   await expect(checkboxes).toHaveCount(2);
@@ -2822,7 +2880,7 @@ test("supports keyboard operation from the selected file through job submission"
   await openPrivateAppInEnglish(page);
   const fileInput = page.locator('input[type="file"]');
   await fileInput.setInputFiles({
-    buffer: Buffer.from("test-audio-placeholder"),
+    buffer: fixtureWave(),
     mimeType: "audio/wav",
     name: "keyboard-recording.wav",
   });

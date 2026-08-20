@@ -7,6 +7,7 @@ import {
   type PublicJob,
   type PublicUpload,
 } from "@studymix/contracts";
+import type { AudioContainerFormat } from "@studymix/core";
 import {
   lazy,
   Suspense,
@@ -45,6 +46,7 @@ import { BrandMark, GlobeIcon, legalLinkCopy, ShieldIcon, SiteFooter } from "./s
 import {
   clientAudioFileAccept,
   deleteUpload,
+  inspectClientAudioFileStructure,
   UploadApiError,
   uploadAndConfirmAudio,
   validateClientAudioFile,
@@ -104,6 +106,12 @@ const copy = {
     fileInvalidName: "The filename is invalid. Rename the file and choose it again.",
     fileInvalidContent:
       "The selected file is not a recognized MP3, WAV, M4A, AAC, or OGG audio stream. Check the original file instead of only renaming its extension.",
+    fileChecking: "Checking the audio structure on this device…",
+    fileReady:
+      "Recognized {format} audio structure. Confirm your rights and accept the current legal documents to continue.",
+    fileRejected: "Audio structure not recognized.",
+    fileVerified:
+      "Recognized {format} audio structure on this device. This checks the format only, not full decodability, musical content, or rights.",
     fileMultiple: "Choose one audio file at a time.",
     fileTooLarge: "The selected audio file exceeds the 500 MB limit.",
     fileUnsupported: "Choose an MP3, WAV, M4A, AAC, or OGG audio file.",
@@ -209,6 +217,11 @@ const copy = {
     fileInvalidName: "檔案名稱無效，請重新命名後再選擇。",
     fileInvalidContent:
       "所選檔案不是可辨識的 MP3、WAV、M4A、AAC 或 OGG 音訊串流；請檢查原始檔案，不要只更改副檔名。",
+    fileChecking: "正在此裝置核對音訊結構……",
+    fileReady: "已辨識 {format} 音訊結構。請確認相關權利並接受現行法律文件，以繼續操作。",
+    fileRejected: "未能辨識音訊結構。",
+    fileVerified:
+      "已在此裝置辨識 {format} 音訊結構。這只核對格式，不代表可完整解碼、一定是音樂或已具備相關權利。",
     fileMultiple: "每次只可選擇一個音訊檔案。",
     fileTooLarge: "所選音訊檔案超過 500 MB 上限。",
     fileUnsupported: "請選擇 MP3、WAV、M4A、AAC 或 OGG 音訊檔案。",
@@ -311,6 +324,26 @@ type CreditSummaryState =
 
 type ActiveJobOrigin = "browser-mock" | "private-api";
 
+type ClientAudioPreflightState =
+  | { status: "idle" }
+  | { file: File; status: "checking" }
+  | { file: File; format: AudioContainerFormat; status: "valid" }
+  | { file: File; status: "invalid" };
+
+const audioContainerFormatLabels: Readonly<Record<AudioContainerFormat, string>> = {
+  "aac-adts": "AAC",
+  m4a: "M4A",
+  mp3: "MP3",
+  "ogg-opus": "OGG Opus",
+  "ogg-speex": "OGG Speex",
+  "ogg-vorbis": "OGG Vorbis",
+  wav: "WAV",
+};
+
+function audioPreflightMessage(template: string, format: AudioContainerFormat): string {
+  return template.replace("{format}", audioContainerFormatLabels[format]);
+}
+
 const waveformHeights = [
   17, 24, 31, 20, 38, 26, 45, 22, 34, 48, 29, 41, 25, 35, 19, 30, 23, 39, 28, 18,
 ];
@@ -326,6 +359,9 @@ export function PrivateApp() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileValidationIssue, setFileValidationIssue] =
     useState<ClientAudioFileValidationIssue | null>(null);
+  const [filePreflight, setFilePreflight] = useState<ClientAudioPreflightState>({
+    status: "idle",
+  });
   const [rightsAccepted, setRightsAccepted] = useState(false);
   const [legalAccepted, setLegalAccepted] = useState(false);
   const [privateSession, setPrivateSession] = useState<PrivateSession | null>(null);
@@ -369,6 +405,7 @@ export function PrivateApp() {
   const [confirmedUpload, setConfirmedUpload] = useState<PublicUpload | null>(null);
   const [isUploadingAudio, setIsUploadingAudio] = useState(false);
   const uploadAbortController = useRef<AbortController | null>(null);
+  const filePreflightAbortController = useRef<AbortController | null>(null);
   const jobIdempotencyKey = useRef<string | null>(null);
   const localSourceIdempotencyKey = useRef<string | null>(null);
   const strings = copy[language];
@@ -391,7 +428,10 @@ export function PrivateApp() {
         ? "real"
         : "mock";
   const canGenerate =
-    (localAiHarnessEnabled || selectedFile !== null) &&
+    (localAiHarnessEnabled ||
+      (selectedFile !== null &&
+        filePreflight.status === "valid" &&
+        filePreflight.file === selectedFile)) &&
     fileValidationIssue === null &&
     rightsAccepted &&
     legalAccepted &&
@@ -421,6 +461,8 @@ export function PrivateApp() {
     () => () => {
       uploadAbortController.current?.abort();
       uploadAbortController.current = null;
+      filePreflightAbortController.current?.abort();
+      filePreflightAbortController.current = null;
     },
     [],
   );
@@ -655,9 +697,12 @@ export function PrivateApp() {
       setNotice(strings.replaceBlocked);
       return false;
     }
+    filePreflightAbortController.current?.abort();
+    filePreflightAbortController.current = null;
     if (fileList !== null && fileList.length > 1) {
       setSelectedFile(null);
       setFileValidationIssue("multiple");
+      setFilePreflight({ status: "idle" });
       setNotice(null);
       jobIdempotencyKey.current = null;
       return false;
@@ -666,6 +711,7 @@ export function PrivateApp() {
     if (file === null) {
       setSelectedFile(null);
       setFileValidationIssue(null);
+      setFilePreflight({ status: "idle" });
       setNotice(null);
       jobIdempotencyKey.current = null;
       return true;
@@ -674,14 +720,40 @@ export function PrivateApp() {
     if (!validation.valid) {
       setSelectedFile(null);
       setFileValidationIssue(validation.issue);
+      setFilePreflight({ status: "idle" });
       setNotice(null);
       jobIdempotencyKey.current = null;
       return false;
     }
+    const controller = new AbortController();
+    filePreflightAbortController.current = controller;
     setSelectedFile(file);
     setFileValidationIssue(null);
+    setFilePreflight({ file, status: "checking" });
     setNotice(null);
     jobIdempotencyKey.current = null;
+    void inspectClientAudioFileStructure(file, controller.signal)
+      .then((format) => {
+        if (filePreflightAbortController.current === controller && !controller.signal.aborted) {
+          setFilePreflight({ file, format, status: "valid" });
+        }
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+        if (filePreflightAbortController.current === controller) {
+          setFilePreflight({ file, status: "invalid" });
+          setFileValidationIssue("invalid-content");
+          setNotice(null);
+          jobIdempotencyKey.current = null;
+        }
+      })
+      .finally(() => {
+        if (filePreflightAbortController.current === controller) {
+          filePreflightAbortController.current = null;
+        }
+      });
     return true;
   };
 
@@ -787,6 +859,9 @@ export function PrivateApp() {
             (error.code === "INVALID_AUDIO_CONTENT" || error.code === "VALIDATION_ERROR")
           ) {
             setFileValidationIssue("invalid-content");
+            if (selectedFile !== null) {
+              setFilePreflight({ file: selectedFile, status: "invalid" });
+            }
             setNotice(null);
           } else {
             setNotice(
@@ -854,6 +929,9 @@ export function PrivateApp() {
       setConfirmedUpload(null);
       setSelectedFile(null);
       setFileValidationIssue(null);
+      filePreflightAbortController.current?.abort();
+      filePreflightAbortController.current = null;
+      setFilePreflight({ status: "idle" });
       setRightsAccepted(false);
       setNotice(null);
       jobIdempotencyKey.current = null;
@@ -949,6 +1027,9 @@ export function PrivateApp() {
     setCandidateSources(null);
     setSelectedFile(null);
     setFileValidationIssue(null);
+    filePreflightAbortController.current?.abort();
+    filePreflightAbortController.current = null;
+    setFilePreflight({ status: "idle" });
     setRightsAccepted(false);
     setLegalAccepted(false);
     setNotice(null);
@@ -1189,6 +1270,7 @@ export function PrivateApp() {
                   />
                 ) : (
                   <UploadPanel
+                    filePreflight={filePreflight}
                     hasFileValidationError={fileValidationIssue !== null}
                     language={language}
                     privateAudioUploadEnabled={privateAudioUploadEnabled}
@@ -1324,13 +1406,18 @@ export function PrivateApp() {
                     </button>
                   ) : null}
                   <p
-                    className={`form-status${fileValidationMessage !== null ? " is-error" : canGenerate || canStartPrivateGeneration ? " is-ready" : ""}`}
+                    className={`form-status${fileValidationMessage !== null ? " is-error" : canGenerate || canStartPrivateGeneration || filePreflight.status === "valid" ? " is-ready" : ""}`}
                     id="file-selection-status"
+                    aria-busy={filePreflight.status === "checking"}
                     aria-live="polite"
                     role={fileValidationMessage === null ? undefined : "alert"}
                   >
                     {fileValidationMessage ??
+                      (filePreflight.status === "checking" ? strings.fileChecking : null) ??
                       notice ??
+                      (filePreflight.status === "valid" && (!rightsAccepted || !legalAccepted)
+                        ? audioPreflightMessage(strings.fileReady, filePreflight.format)
+                        : null) ??
                       (localAiHarnessEnabled
                         ? confirmedUpload !== null
                           ? strings.localUploadSuccess
@@ -1453,6 +1540,7 @@ function AccessVerificationStatus({
 }
 
 type UploadPanelProps = {
+  filePreflight: ClientAudioPreflightState;
   hasFileValidationError: boolean;
   language: Language;
   privateAudioUploadEnabled: boolean;
@@ -1463,6 +1551,7 @@ type UploadPanelProps = {
 };
 
 function UploadPanel({
+  filePreflight,
   hasFileValidationError,
   language,
   privateAudioUploadEnabled,
@@ -1472,6 +1561,10 @@ function UploadPanel({
   onDrop,
 }: UploadPanelProps) {
   const strings = copy[language];
+  const verifiedMessage =
+    filePreflight.status === "valid"
+      ? audioPreflightMessage(strings.fileVerified, filePreflight.format)
+      : null;
 
   return (
     <section className="upload-panel" aria-labelledby="upload-title">
@@ -1491,6 +1584,9 @@ function UploadPanel({
           className="visually-hidden"
           type="file"
           accept={clientAudioFileAccept}
+          onClick={(event) => {
+            event.currentTarget.value = "";
+          }}
           onChange={onFileChange}
         />
         <span className="upload-orbit" aria-hidden="true">
@@ -1504,7 +1600,7 @@ function UploadPanel({
       </label>
 
       {selectedFile !== null ? (
-        <div className="file-preview">
+        <div className="file-preview" aria-busy={filePreflight.status === "checking"}>
           <div className="file-tile" aria-hidden="true">
             <WaveFileIcon />
           </div>
@@ -1514,10 +1610,27 @@ function UploadPanel({
               {(selectedFile.type || "audio").replace("audio/", "").toUpperCase()} ·{" "}
               {formatBytes(selectedFile.size)}
             </span>
+            {filePreflight.status === "checking" ? (
+              <span className="file-structure-status is-checking">{strings.fileChecking}</span>
+            ) : verifiedMessage !== null ? (
+              <span className="file-structure-status is-valid">{verifiedMessage}</span>
+            ) : filePreflight.status === "invalid" ? (
+              <span className="file-structure-status is-invalid">{strings.fileRejected}</span>
+            ) : null}
           </div>
-          <span className="file-check" aria-label="File selected">
-            <CheckIcon />
-          </span>
+          {filePreflight.status === "valid" ? (
+            <span className="file-check" aria-hidden="true">
+              <CheckIcon />
+            </span>
+          ) : filePreflight.status === "checking" ? (
+            <span className="file-check is-checking" aria-hidden="true">
+              …
+            </span>
+          ) : filePreflight.status === "invalid" ? (
+            <span className="file-check is-invalid" aria-hidden="true">
+              !
+            </span>
+          ) : null}
           <div className="mini-player" aria-hidden="true">
             <span className="mini-play">
               <PlayIcon />
