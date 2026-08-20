@@ -101,7 +101,10 @@ The browser must bind the response to its idempotency key before trusting the up
 create response is lost to an ambiguous network failure, it may retry the create request once with the exact
 same key and metadata. Before sending upload metadata or bytes, it must also use bounded local reads to
 recognize audio structure matching the declared supported type; changing a non-audio file's extension is not
-sufficient. It then uploads directly to R2.
+sufficient. This local preflight starts as soon as a metadata-valid file is selected, blocks legal-acceptance
+submission and upload controls until it succeeds, and visibly reports only the recognized structure type.
+Replacing the file or leaving the workspace aborts the stale read. The upload operation repeats the same
+inspection before it creates metadata, then uploads directly to R2.
 
 ### FR-2: Confirm upload
 

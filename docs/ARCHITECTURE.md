@@ -265,11 +265,13 @@ These strings are hypotheses and must be benchmarked. Do not claim that they gua
    contract: supported audio MIME type and aliases, non-empty bytes, the 500 MB client limit, and safe
    filename metadata. The picker advertises only these explicit formats instead of the broader `audio/*`
    category. A rejected selection is cleared, announced accessibly in the selected language, and makes
-   no upload request. Immediately before upload creation, the browser also uses the shared bounded
-   random-access inspector against `File.slice()` ranges. It requires recognizable MP3 frames, RIFF/WAVE
-   chunks, an M4A audio track, AAC ADTS frames, or an Ogg audio identification packet matching the normalized
-   MIME type. Failure gets a bilingual accessible error and sends neither upload metadata nor file bytes.
-   The inspector never buffers the complete selected file.
+   no upload request. A metadata-valid selection immediately starts the shared bounded random-access
+   inspector against `File.slice()` ranges. The UI remains disabled while checking, then reports the detected
+   MP3, WAV, M4A, AAC, or OGG structure without claiming musical content, full decoding, quality, or rights.
+   Replacing the file or unmounting the private app aborts the stale check, and a late result cannot replace the
+   current selection state. Failure gets a bilingual accessible error before legal-acceptance submission,
+   upload metadata, or file-byte transfer. Immediately before upload creation, the upload client repeats the
+   same independent inspection. Neither pass buffers the complete selected file.
 2. The client creates one `ui-upload:` idempotency key and requests `POST /api/uploads`. If the request has
    an ambiguous network failure, the client makes at most one automatic retry with the same key and metadata;
    aborts, validation failures, conflicts, and invalid responses are not retried by this recovery path.

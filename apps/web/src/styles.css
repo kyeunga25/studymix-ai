@@ -358,6 +358,22 @@ main {
   font-size: 0.85rem;
 }
 
+.file-copy .file-structure-status {
+  line-height: 1.4;
+}
+
+.file-copy .file-structure-status.is-checking {
+  color: #5f55a4;
+}
+
+.file-copy .file-structure-status.is-valid {
+  color: #377858;
+}
+
+.file-copy .file-structure-status.is-invalid {
+  color: #8c4652;
+}
+
 .file-check {
   display: grid;
   width: 27px;
@@ -370,6 +386,16 @@ main {
 
 .file-check svg {
   width: 17px;
+}
+
+.file-check.is-checking {
+  background: #6e63c6;
+  font-weight: 800;
+}
+
+.file-check.is-invalid {
+  background: #a64f5d;
+  font-weight: 850;
 }
 
 .mini-player {

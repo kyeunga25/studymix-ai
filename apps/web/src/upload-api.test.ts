@@ -10,6 +10,7 @@ import {
   clientAudioFileAccept,
   createDirectUpload,
   deleteUpload,
+  inspectClientAudioFileStructure,
   uploadAndConfirmAudio,
   validateClientAudioFile,
 } from "./upload-api";
@@ -329,6 +330,26 @@ describe("direct R2 upload client", () => {
         new File([new Uint8Array([1])], `${"a".repeat(252)}.wav`, { type: "audio/wav" }),
       ),
     ).toMatchObject({ issue: "invalid-name", valid: false });
+  });
+
+  it("recognizes supported audio structure locally without making a request", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(inspectClientAudioFileStructure(mp3File())).resolves.toBe("mp3");
+    await expect(inspectClientAudioFileStructure(m4aFile())).resolves.toBe("m4a");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("stops local structure inspection when the caller has already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      inspectClientAudioFileStructure(mp3File(), controller.signal),
+    ).rejects.toMatchObject({
+      name: "AbortError",
+    });
   });
 
   it("creates, directly uploads, and confirms without sending audio through the API", async () => {
