@@ -170,7 +170,7 @@ async function setDocumentVisibility(page: Page, visibilityState: "hidden" | "vi
 async function prepareAuthorizedMix(page: Page, path = "/app") {
   await openPrivateAppInEnglish(page, path);
   await page.locator('input[type="file"]').setInputFiles({
-    buffer: Buffer.from("test-audio-placeholder"),
+    buffer: fixtureWave(),
     mimeType: "audio/wav",
     name: "authorized-recording.wav",
   });
@@ -609,6 +609,34 @@ test("rejects invalid audio selections before enabling generation", async ({ pag
   await checkboxes.nth(0).check();
   await checkboxes.nth(1).check();
   await expect(page.getByRole("button", { name: "生成 2 個候選版本" })).toBeEnabled();
+  expect(uploadRequestCount).toBe(0);
+});
+
+test("rejects renamed non-audio content before private upload creation", async ({ page }) => {
+  await routePrivateRealSession(page);
+  let uploadRequestCount = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/uploads" && request.method() === "POST") {
+      uploadRequestCount += 1;
+    }
+  });
+
+  await openPrivateAppInEnglish(page);
+  await page.locator('input[type="file"]').setInputFiles({
+    buffer: Buffer.from("synthetic text, not audio"),
+    mimeType: "audio/mpeg",
+    name: "renamed.mp3",
+  });
+  const checkboxes = page.getByRole("checkbox");
+  await checkboxes.nth(0).check();
+  await checkboxes.nth(1).check();
+  await page.getByRole("button", { name: "Securely upload audio" }).click();
+
+  await expect(page.getByRole("alert")).toContainText(
+    "The selected file is not a recognized MP3, WAV, M4A, AAC, or OGG audio stream.",
+  );
+  await expect(page.locator('input[type="file"]')).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByRole("button", { name: "Securely upload audio" })).toBeDisabled();
   expect(uploadRequestCount).toBe(0);
 });
 
@@ -2021,7 +2049,7 @@ test("uses the private real-provider API flow and binds deletion to its job", as
           declaredContentType: "audio/wav",
           expiresAt: fixtureConfirmedUploadExpiresAt,
           originalFilename: "authorized-recording.wav",
-          sizeBytes: 22,
+          sizeBytes: fixtureWave().byteLength,
           status: "confirmed",
           uploadId: fixtureUploadId,
         }),
@@ -2150,7 +2178,7 @@ test("rejects a mismatched upload confirmation before private job creation", asy
           declaredContentType: "audio/wav",
           expiresAt: fixtureConfirmedUploadExpiresAt,
           originalFilename: "authorized-recording.wav",
-          sizeBytes: 22,
+          sizeBytes: fixtureWave().byteLength,
           status: "confirmed",
           uploadId: `upl_${"f".repeat(32)}`,
         }),

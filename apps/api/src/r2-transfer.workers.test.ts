@@ -16,6 +16,7 @@ import {
   RepositoryNotFoundError,
 } from "./repositories";
 import { runRetentionCleanup } from "./retention";
+import { createSyntheticMp3Fixture, createSyntheticWaveFixture } from "./test-audio-fixtures";
 
 type CreatedUpload = {
   expiresAt: string;
@@ -52,6 +53,8 @@ const jsonBrowserMutationHeaders = {
   "Content-Type": "application/json",
 } as const;
 let uploadRequestSequence = 0;
+const syntheticMp3 = createSyntheticMp3Fixture();
+const syntheticWave = createSyntheticWaveFixture();
 
 function nextUploadRequestKey(): string {
   uploadRequestSequence += 1;
@@ -188,7 +191,7 @@ async function requestUpload(
         contentType: "audio/mpeg",
         idempotencyKey: nextUploadRequestKey(),
         originalFilename: "fixture.mp3",
-        sizeBytes: 4,
+        sizeBytes: syntheticMp3.byteLength,
         ...overrides,
       }),
       headers: jsonBrowserMutationHeaders,
@@ -202,7 +205,7 @@ async function requestUpload(
 
 async function createReadyOutputFixture(): Promise<{ objectKey: string; outputId: string }> {
   const { upload } = await requestUpload();
-  await env.AUDIO_BUCKET.put(upload.objectKey, new Uint8Array([1, 2, 3, 4]), {
+  await env.AUDIO_BUCKET.put(upload.objectKey, syntheticMp3, {
     httpMetadata: { contentType: "audio/mpeg" },
   });
   await app.request(
@@ -300,7 +303,7 @@ describe("private R2 transfer boundary", () => {
       idempotency_key: upload.idempotencyKey,
       original_filename: "fixture.mp3",
       request_fingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
-      size_bytes: 4,
+      size_bytes: syntheticMp3.byteLength,
       status: "pending",
     });
   });
@@ -324,7 +327,7 @@ describe("private R2 transfer boundary", () => {
           contentType: "audio/mpeg",
           idempotencyKey,
           originalFilename: "different.mp3",
-          sizeBytes: 4,
+          sizeBytes: syntheticMp3.byteLength,
         }),
         headers: jsonBrowserMutationHeaders,
         method: "POST",
@@ -378,7 +381,7 @@ describe("private R2 transfer boundary", () => {
             contentType: "audio/mpeg",
             idempotencyKey,
             originalFilename: "fixture.mp3",
-            sizeBytes: 4,
+            sizeBytes: syntheticMp3.byteLength,
           }),
           headers: jsonBrowserMutationHeaders,
           method: "POST",
@@ -422,10 +425,25 @@ describe("private R2 transfer boundary", () => {
     },
   );
 
-  it("confirms only the owning upload after validating R2 size and content type", async () => {
+  it("confirms only the owning upload after validating metadata and audio structure", async () => {
     const { upload } = await requestUpload();
-    await env.AUDIO_BUCKET.put(upload.objectKey, new Uint8Array([1, 2, 3, 4]), {
+    await env.AUDIO_BUCKET.put(upload.objectKey, syntheticMp3, {
       httpMetadata: { contentType: "audio/mpeg" },
+    });
+    let rangeReadCount = 0;
+    const countingBucket = new Proxy(env.AUDIO_BUCKET, {
+      get(target, property) {
+        if (property === "get") {
+          return async (key: string, options: R2GetOptions) => {
+            rangeReadCount += 1;
+            return await target.get(key, options);
+          };
+        }
+        if (property === "head") {
+          return target.head.bind(target);
+        }
+        return Reflect.get(target, property, target);
+      },
     });
     const otherOwnerEnvironment: Env = { ...env, DEV_AUTH_SUBJECT: "second-test-owner" };
     const denied = await app.request(
@@ -436,7 +454,7 @@ describe("private R2 transfer boundary", () => {
     const confirmed = await app.request(
       `http://localhost:8787/api/uploads/${upload.uploadId}/confirm`,
       { headers: browserMutationHeaders, method: "POST" },
-      env,
+      { ...env, AUDIO_BUCKET: countingBucket },
     );
 
     expect(denied.status).toBe(404);
@@ -445,17 +463,18 @@ describe("private R2 transfer boundary", () => {
     expect(await confirmed.json()).toMatchObject({
       data: {
         declaredContentType: "audio/mpeg",
-        sizeBytes: 4,
+        sizeBytes: syntheticMp3.byteLength,
         status: "confirmed",
         uploadId: upload.uploadId,
       },
       error: null,
     });
+    expect(rangeReadCount).toBe(1);
   });
 
   it("replays only a still-valid confirmation without another R2 read", async () => {
     const { upload } = await requestUpload();
-    await env.AUDIO_BUCKET.put(upload.objectKey, new Uint8Array([1, 2, 3, 4]), {
+    await env.AUDIO_BUCKET.put(upload.objectKey, syntheticMp3, {
       httpMetadata: { contentType: "audio/mpeg" },
     });
     const confirmationUrl = `http://localhost:8787/api/uploads/${upload.uploadId}/confirm`;
@@ -511,7 +530,7 @@ describe("private R2 transfer boundary", () => {
 
   it("converges simultaneous confirmations on the same owner-scoped upload", async () => {
     const { upload } = await requestUpload();
-    await env.AUDIO_BUCKET.put(upload.objectKey, new Uint8Array([1, 2, 3, 4]), {
+    await env.AUDIO_BUCKET.put(upload.objectKey, syntheticMp3, {
       httpMetadata: { contentType: "audio/mpeg" },
     });
     let headRequestCount = 0;
@@ -531,6 +550,9 @@ describe("private R2 transfer boundary", () => {
             return await target.head(key);
           };
         }
+        if (property === "get") {
+          return target.get.bind(target);
+        }
         return Reflect.get(target, property, target);
       },
     });
@@ -547,6 +569,7 @@ describe("private R2 transfer boundary", () => {
         { ...env, AUDIO_BUCKET: gatedBucket },
       ),
     ]);
+    expect(responses.map(({ status }) => status)).toEqual([200, 200]);
     const envelopes = await Promise.all(
       responses.map(async (response) => confirmedUploadEnvelopeSchema.parse(await response.json())),
     );
@@ -560,7 +583,6 @@ describe("private R2 transfer boundary", () => {
     }
 
     expect(headRequestCount).toBe(2);
-    expect(responses.map(({ status }) => status)).toEqual([200, 200]);
     expect(new Set(envelopes.map(({ data }) => data.uploadId))).toEqual(new Set([upload.uploadId]));
     expect(new Set(envelopes.map(({ data }) => data.confirmedAt)).size).toBe(1);
     expect(new Set(envelopes.map(({ data }) => data.expiresAt)).size).toBe(1);
@@ -586,7 +608,7 @@ describe("private R2 transfer boundary", () => {
         env.DB,
         `own_${"f".repeat(32)}`,
         upload.uploadId,
-        4,
+        syntheticMp3.byteLength,
         replayedAt,
         replayRetentionExpiresAt,
       ),
@@ -611,6 +633,70 @@ describe("private R2 transfer boundary", () => {
     expect(await response.json()).toMatchObject({ error: { code: "VALIDATION_ERROR" } });
     expect(await env.AUDIO_BUCKET.head(upload.objectKey)).toBeNull();
     expect(row?.status).toBe("expired");
+  });
+
+  it("rejects and removes a matching-size object whose container contradicts its audio type", async () => {
+    const { upload } = await requestUpload(env, { sizeBytes: syntheticWave.byteLength });
+    await env.AUDIO_BUCKET.put(upload.objectKey, syntheticWave, {
+      httpMetadata: { contentType: "audio/mpeg" },
+    });
+    const response = await app.request(
+      `http://localhost:8787/api/uploads/${upload.uploadId}/confirm`,
+      { headers: browserMutationHeaders, method: "POST" },
+      env,
+    );
+    const responseBody: unknown = await response.json();
+    const row = await env.DB.prepare("SELECT status FROM uploads WHERE id = ?1")
+      .bind(upload.uploadId)
+      .first<{ status: string }>();
+
+    expect(response.status).toBe(400);
+    expect(responseBody).toMatchObject({
+      data: null,
+      error: { code: "VALIDATION_ERROR", retryable: false },
+    });
+    expect(JSON.stringify(responseBody)).not.toContain(upload.objectKey);
+    expect(await env.AUDIO_BUCKET.head(upload.objectKey)).toBeNull();
+    expect(row?.status).toBe("expired");
+  });
+
+  it("keeps a valid pending object retryable when its pinned R2 version cannot be read", async () => {
+    const { upload } = await requestUpload();
+    await env.AUDIO_BUCKET.put(upload.objectKey, syntheticMp3, {
+      httpMetadata: { contentType: "audio/mpeg" },
+    });
+    let boundedReadCount = 0;
+    const unavailableReadBucket = new Proxy(env.AUDIO_BUCKET, {
+      get(target, property) {
+        if (property === "get") {
+          return async () => {
+            boundedReadCount += 1;
+            return null;
+          };
+        }
+        if (property === "head") {
+          return target.head.bind(target);
+        }
+        return Reflect.get(target, property, target);
+      },
+    });
+    const response = await app.request(
+      `http://localhost:8787/api/uploads/${upload.uploadId}/confirm`,
+      { headers: browserMutationHeaders, method: "POST" },
+      { ...env, AUDIO_BUCKET: unavailableReadBucket },
+    );
+    const row = await env.DB.prepare("SELECT status FROM uploads WHERE id = ?1")
+      .bind(upload.uploadId)
+      .first<{ status: string }>();
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      data: null,
+      error: { code: "UPLOAD_NOT_CONFIRMED", retryable: true },
+    });
+    expect(boundedReadCount).toBe(1);
+    expect(row?.status).toBe("pending");
+    expect(await env.AUDIO_BUCKET.head(upload.objectKey)).not.toBeNull();
   });
 
   it("deletes only an owner-scoped upload and its one server-controlled object", async () => {

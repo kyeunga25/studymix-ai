@@ -39,14 +39,19 @@ export const clientAudioFileAccept = [
 ].join(",");
 
 export type ClientAudioFileValidationIssue =
-  "empty" | "invalid-name" | "multiple" | "too-large" | "unsupported";
+  "empty" | "invalid-content" | "invalid-name" | "multiple" | "too-large" | "unsupported";
 
 export type ClientAudioFileValidationResult =
   | { issue: null; request: CreateUploadMetadata; valid: true }
   | { issue: ClientAudioFileValidationIssue; request: null; valid: false };
 
 export class UploadApiError extends Error {
-  readonly code: ApiErrorCode | "DIRECT_UPLOAD_FAILED" | "INVALID_RESPONSE" | "NETWORK_ERROR";
+  readonly code:
+    | ApiErrorCode
+    | "DIRECT_UPLOAD_FAILED"
+    | "INVALID_AUDIO_CONTENT"
+    | "INVALID_RESPONSE"
+    | "NETWORK_ERROR";
   readonly retryable: boolean;
   readonly requestId: string | null;
 
@@ -56,7 +61,12 @@ export class UploadApiError extends Error {
     requestId = null,
     retryable,
   }: {
-    code: ApiErrorCode | "DIRECT_UPLOAD_FAILED" | "INVALID_RESPONSE" | "NETWORK_ERROR";
+    code:
+      | ApiErrorCode
+      | "DIRECT_UPLOAD_FAILED"
+      | "INVALID_AUDIO_CONTENT"
+      | "INVALID_RESPONSE"
+      | "NETWORK_ERROR";
     message: string;
     requestId?: string | null;
     retryable: boolean;
@@ -136,12 +146,52 @@ function invalidAudioFileError(): UploadApiError {
   });
 }
 
+function invalidAudioContentError(): UploadApiError {
+  return new UploadApiError({
+    code: "INVALID_AUDIO_CONTENT",
+    message: "The selected file does not contain a recognized supported audio structure.",
+    retryable: false,
+  });
+}
+
 function requireClientAudioMetadata(file: File): CreateUploadMetadata {
   const validation = validateClientAudioFile(file);
   if (!validation.valid) {
     throw invalidAudioFileError();
   }
   return validation.request;
+}
+
+async function requireClientAudioStructure(
+  file: File,
+  metadata: CreateUploadMetadata,
+  signal?: AbortSignal,
+): Promise<void> {
+  try {
+    signal?.throwIfAborted();
+    const { inspectAudioContainer } = await import("@studymix/core");
+    const inspection = await inspectAudioContainer({
+      contentType: metadata.contentType,
+      read: async (offset, length) => {
+        signal?.throwIfAborted();
+        const bytes = new Uint8Array(await file.slice(offset, offset + length).arrayBuffer());
+        signal?.throwIfAborted();
+        return bytes;
+      },
+      sizeBytes: metadata.sizeBytes,
+    });
+    if (!inspection.valid) {
+      throw invalidAudioContentError();
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw error;
+    }
+    if (error instanceof UploadApiError) {
+      throw error;
+    }
+    throw invalidAudioContentError();
+  }
 }
 
 function createClientUploadRequest(metadata: CreateUploadMetadata): CreateUploadRequest {
@@ -283,7 +333,9 @@ async function createDirectUploadForFile(
   file: File,
   signal?: AbortSignal,
 ): Promise<{ request: CreateUploadRequest; upload: CreateUploadResponse }> {
-  const request = createClientUploadRequest(requireClientAudioMetadata(file));
+  const metadata = requireClientAudioMetadata(file);
+  await requireClientAudioStructure(file, metadata, signal);
+  const request = createClientUploadRequest(metadata);
   return {
     request,
     upload: await createDirectUploadForRequest(request, signal),

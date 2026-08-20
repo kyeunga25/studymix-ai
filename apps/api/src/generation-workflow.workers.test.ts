@@ -28,6 +28,7 @@ import {
   recordCurrentLegalAcceptances,
 } from "./repositories";
 import { ensureFirstProviderSubmissionAttempt } from "./workflows/generation-workflow";
+import { createSyntheticMp3Fixture } from "./test-audio-fixtures";
 
 const uploadEnvelopeSchema = apiEnvelopeSchema(createUploadResponseSchema);
 const jobEnvelopeSchema = apiEnvelopeSchema(publicJobSchema);
@@ -40,6 +41,7 @@ const jsonBrowserMutationHeaders = {
   ...browserMutationHeaders,
   "Content-Type": "application/json",
 } as const;
+const syntheticMp3 = createSyntheticMp3Fixture();
 const validJobRequestBody = {
   candidateCount: 2,
   idempotencyKey: "synthetic-job-request-0001",
@@ -117,7 +119,7 @@ async function createConfirmedUpload(withLegalAcceptance: boolean): Promise<stri
         contentType: "audio/mpeg",
         idempotencyKey: "test-upload-workflow-fixture",
         originalFilename: "workflow-fixture.mp3",
-        sizeBytes: 4,
+        sizeBytes: syntheticMp3.byteLength,
       }),
       headers: jsonBrowserMutationHeaders,
       method: "POST",
@@ -128,7 +130,7 @@ async function createConfirmedUpload(withLegalAcceptance: boolean): Promise<stri
   if (uploadEnvelope.error !== null) {
     throw new Error("Test upload could not be created.");
   }
-  await env.AUDIO_BUCKET.put(uploadEnvelope.data.objectKey, new Uint8Array([1, 2, 3, 4]), {
+  await env.AUDIO_BUCKET.put(uploadEnvelope.data.objectKey, syntheticMp3, {
     httpMetadata: { contentType: "audio/mpeg" },
   });
   const confirmResponse = await app.request(

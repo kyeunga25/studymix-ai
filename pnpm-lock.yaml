@@ -89,6 +89,9 @@ importers:
       '@studymix/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@studymix/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       react:
         specifier: ^19.2.8
         version: 19.2.8

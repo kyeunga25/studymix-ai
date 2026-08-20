@@ -16,6 +16,7 @@ import { z } from "zod";
 import { app } from "./index";
 import { grantPrivateBetaCredits, recordCurrentLegalAcceptances } from "./repositories";
 import { runRetentionCleanup } from "./retention";
+import { createSyntheticMp3Fixture } from "./test-audio-fixtures";
 
 const uploadEnvelopeSchema = apiEnvelopeSchema(createUploadResponseSchema);
 const jobEnvelopeSchema = apiEnvelopeSchema(publicJobSchema);
@@ -28,6 +29,7 @@ const jsonBrowserMutationHeaders = {
   ...browserMutationHeaders,
   "Content-Type": "application/json",
 } as const;
+const syntheticMp3 = createSyntheticMp3Fixture();
 
 async function resetStorage(): Promise<void> {
   let cursor: string | undefined;
@@ -69,7 +71,7 @@ async function createConfirmedUpload(): Promise<{
         contentType: "audio/mpeg",
         idempotencyKey: "test-upload-retention-fixture",
         originalFilename: "retention-fixture.mp3",
-        sizeBytes: 4,
+        sizeBytes: syntheticMp3.byteLength,
       }),
       headers: jsonBrowserMutationHeaders,
       method: "POST",
@@ -80,7 +82,7 @@ async function createConfirmedUpload(): Promise<{
   if (envelope.error !== null) {
     throw new Error("Retention test upload could not be created.");
   }
-  await env.AUDIO_BUCKET.put(envelope.data.objectKey, new Uint8Array([1, 2, 3, 4]), {
+  await env.AUDIO_BUCKET.put(envelope.data.objectKey, syntheticMp3, {
     httpMetadata: { contentType: "audio/mpeg" },
   });
   const confirmation = await app.request(
