@@ -23,6 +23,7 @@ const expectedPrivateApiRoutes = [
   { method: "POST", path: "/api/uploads" },
   { method: "POST", path: "/api/uploads/:uploadId/confirm" },
   { method: "DELETE", path: "/api/uploads/:uploadId" },
+  { method: "GET", path: "/api/jobs" },
   { method: "POST", path: "/api/jobs" },
   { method: "GET", path: "/api/jobs/:jobId" },
   { method: "POST", path: "/api/jobs/:jobId/cancel" },

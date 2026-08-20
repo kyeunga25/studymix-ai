@@ -5,6 +5,7 @@ import {
   currentRightsDeclarationVersion,
   downloadOutputResponseSchema,
   localSyntheticUploadResponseSchema,
+  publicJobHistorySchema,
   publicJobSchema,
 } from "@studymix/contracts";
 import {
@@ -16,6 +17,7 @@ import { env, introspectWorkflow } from "cloudflare:test";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { app } from "./index";
 import {
+  createJobIdempotently,
   getOwnedCreditReservationStatus,
   getOwnedCreditSummary,
   grantPrivateBetaCredits,
@@ -23,6 +25,7 @@ import {
 
 const localSourceEnvelopeSchema = apiEnvelopeSchema(localSyntheticUploadResponseSchema);
 const jobEnvelopeSchema = apiEnvelopeSchema(publicJobSchema);
+const jobHistoryEnvelopeSchema = apiEnvelopeSchema(publicJobHistorySchema);
 const creditEnvelopeSchema = apiEnvelopeSchema(creditSummarySchema);
 const downloadEnvelopeSchema = apiEnvelopeSchema(downloadOutputResponseSchema);
 const browserMutationHeaders = {
@@ -241,6 +244,56 @@ describe("local-only synthetic AI milestone", () => {
     expect(secondUploadId).toBe(firstUploadId);
     expect(counts).toEqual({ local_ai_sources: 1, uploads: 1 });
     expect(objects.objects).toHaveLength(objectCountBefore + 1);
+  });
+
+  it("lists a minimal owner job history even when new generation is disabled", async () => {
+    const ownerId = await prepareOwner();
+    const uploadId = await createSyntheticUpload("success");
+    const createdAt = new Date().toISOString();
+    const created = await createJobIdempotently(env.DB, {
+      createdAt,
+      expiresAt: new Date(Date.parse(createdAt) + 60 * 60 * 1_000).toISOString(),
+      id: createSecureId("job"),
+      idempotencyKey: "local-job-history",
+      maxActiveJobs: 2,
+      ownerId,
+      presetId: "soft-piano",
+      presetVersion: 1,
+      provider: "mock",
+      requestFingerprint: "a".repeat(64),
+      uploadId,
+    });
+
+    const response = await app.request(
+      "http://127.0.0.1/api/jobs",
+      { headers: browserMutationHeaders },
+      {
+        ...localEnvironment,
+        JOB_WORKFLOW_ENABLED: "false",
+        REAL_GENERATION_ENABLED: "false",
+      },
+    );
+    const rawHistory: unknown = await response.json();
+    const history = jobHistoryEnvelopeSchema.parse(rawHistory);
+
+    expect(response.status).toBe(200);
+    expect(history.error).toBeNull();
+    if (history.error !== null || history.data === null) {
+      throw new Error("The owner job history was not returned.");
+    }
+    expect(history.data.jobs).toEqual([
+      {
+        createdAt: created.job.createdAt,
+        expiresAt: created.job.expiresAt,
+        jobId: created.job.id,
+        preset: { id: created.job.presetId, version: created.job.presetVersion },
+        status: created.job.status,
+        updatedAt: created.job.updatedAt,
+      },
+    ]);
+    expect(JSON.stringify(rawHistory)).not.toContain(uploadId);
+    expect(JSON.stringify(rawHistory)).not.toContain("provider");
+    expect(JSON.stringify(rawHistory)).not.toContain("outputs");
   });
 
   it("keeps a deleted source key tombstoned for its owner without blocking another owner", async () => {

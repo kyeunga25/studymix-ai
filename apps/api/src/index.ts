@@ -38,6 +38,7 @@ import {
   isMockGenerationAvailable,
   isRealGenerationAvailable,
   isRealGenerationRequestWithinRateLimit,
+  listOwnedPublicJobHistory,
   resolveGenerationWorkflowConfiguration,
 } from "./job-service";
 import {
@@ -1055,6 +1056,12 @@ app.delete("/api/uploads/:uploadId", async (context) => {
     error: null,
     requestId: createRequestId(),
   });
+});
+
+app.get("/api/jobs", async (context) => {
+  const owner = context.get("owner");
+  const history = await listOwnedPublicJobHistory(context.env.DB, owner.ownerId);
+  return context.json({ data: history, error: null, requestId: createRequestId() });
 });
 
 app.post("/api/jobs", async (context) => {

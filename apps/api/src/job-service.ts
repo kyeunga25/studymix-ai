@@ -3,12 +3,15 @@ import {
   createJobRequestSchema,
   jobIdSchema,
   ownerIdSchema,
+  publicJobHistorySchema,
   publicJobSchema,
+  recentJobHistoryLimit,
   type CreateJobRequest,
+  type PublicJobHistory,
   type PublicJob,
 } from "@studymix/contracts";
 import { z } from "zod";
-import { getOwnedJob, listOwnedOutputs } from "./repositories";
+import { getOwnedJob, listOwnedJobs, listOwnedOutputs } from "./repositories";
 import {
   isR2TransferAvailable,
   resolveR2TransferConfiguration,
@@ -276,6 +279,23 @@ export async function getOwnedPublicJob(
     status: job.status,
     updatedAt: job.updatedAt,
     uploadId: job.uploadId,
+  });
+}
+
+export async function listOwnedPublicJobHistory(
+  db: D1Database,
+  ownerId: string,
+): Promise<PublicJobHistory> {
+  const jobs = await listOwnedJobs(db, ownerId, recentJobHistoryLimit);
+  return publicJobHistorySchema.parse({
+    jobs: jobs.map((job) => ({
+      createdAt: job.createdAt,
+      expiresAt: job.expiresAt,
+      jobId: job.id,
+      preset: { id: job.presetId, version: job.presetVersion },
+      status: job.status,
+      updatedAt: job.updatedAt,
+    })),
   });
 }
 

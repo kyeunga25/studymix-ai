@@ -4,6 +4,7 @@ import { activePrivateJobSessionKey } from "../apps/web/src/private-job-session"
 const fixtureUploadId = "upl_11111111111111111111111111111111";
 const browserMockUploadId = "upl_00000000000000000000000000000001";
 const fixtureJobId = "job_22222222222222222222222222222222";
+const otherHistoryJobId = "job_66666666666666666666666666666666";
 const fixtureOutputIds = [
   "out_33333333333333333333333333333333",
   "out_44444444444444444444444444444444",
@@ -87,12 +88,37 @@ function fixtureJob(status: "completed" | "created") {
   };
 }
 
+function fixtureJobSummary(status: "completed" | "created" = "completed") {
+  const job = fixtureJob(status);
+  return {
+    createdAt: job.createdAt,
+    expiresAt: job.expiresAt,
+    jobId: job.jobId,
+    preset: job.preset,
+    status: job.status,
+    updatedAt: job.updatedAt,
+  };
+}
+
 function successEnvelope(data: unknown) {
   return {
     data,
     error: null,
     requestId: "req_55555555555555555555555555555555",
   };
+}
+
+async function fulfillEmptyRecentJobsRead(route: Route): Promise<boolean> {
+  if (route.request().method() !== "GET") {
+    return false;
+  }
+  expect(route.request().headers()["x-requested-with"]).toBe("XMLHttpRequest");
+  await route.fulfill({
+    body: JSON.stringify(successEnvelope({ jobs: [] })),
+    contentType: "application/json",
+    status: 200,
+  });
+  return true;
 }
 
 function readUploadIdempotencyKey(route: Route): string {
@@ -758,6 +784,148 @@ test("recovers private session verification after one transport failure", async 
   expect(jobPostCount).toBe(0);
 });
 
+test("shows a private recent-job dashboard and opens only the selected owner-bound job", async ({
+  page,
+}) => {
+  let historyReadCount = 0;
+  let selectedJobReadCount = 0;
+  let otherJobReadCount = 0;
+  let jobPostCount = 0;
+  await routePrivateRealSession(page);
+  await page.route("**/api/jobs", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    historyReadCount += 1;
+    expect(route.request().headers()["x-requested-with"]).toBe("XMLHttpRequest");
+    await route.fulfill({
+      body: JSON.stringify(
+        successEnvelope({
+          jobs: [
+            fixtureJobSummary("completed"),
+            {
+              ...fixtureJobSummary("created"),
+              jobId: otherHistoryJobId,
+              preset: { id: "music-box", version: 1 },
+              status: "failed",
+            },
+          ],
+        }),
+      ),
+      contentType: "application/json",
+      status: 200,
+    });
+  });
+  await page.route(`**/api/jobs/${fixtureJobId}`, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    selectedJobReadCount += 1;
+    await route.fulfill({
+      body: JSON.stringify(successEnvelope(fixtureJob("completed"))),
+      contentType: "application/json",
+      status: 200,
+    });
+  });
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path === `/api/jobs/${otherHistoryJobId}` && request.method() === "GET") {
+      otherJobReadCount += 1;
+    }
+    if (path === "/api/jobs" && request.method() === "POST") {
+      jobPostCount += 1;
+    }
+  });
+  for (const outputId of fixtureOutputIds) {
+    const downloadUrl = fixtureOutputUrl(outputId);
+    await page.route(downloadUrl, async (route) => {
+      await route.fulfill({ body: fixtureWave(), contentType: "audio/wav", status: 200 });
+    });
+    await page.route(`**/api/outputs/${outputId}/download`, async (route) => {
+      await route.fulfill({
+        body: JSON.stringify(
+          successEnvelope({
+            downloadMethod: "GET",
+            downloadUrl,
+            expiresAt: fixtureSignedExpiresAt,
+            outputId,
+          }),
+        ),
+        contentType: "application/json",
+        status: 200,
+      });
+    });
+  }
+
+  await openPrivateAppInEnglish(page);
+  await expect(page.getByRole("heading", { name: "Recent private mixes" })).toBeVisible();
+  await expect(page.locator(".job-history-list")).toContainText("Soft Piano");
+  await expect(page.locator(".job-history-list")).toContainText("Music Box");
+  await expect(page.locator(".job-history-panel")).not.toContainText(fixtureJobId);
+  await expect(page.locator(".job-history-panel")).not.toContainText(otherHistoryJobId);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+
+  await page.getByRole("button", { name: "Open private mix" }).first().click();
+  await expect(page.getByRole("heading", { name: "Your study mix is ready" })).toBeVisible();
+  expect(historyReadCount).toBe(1);
+  expect(selectedJobReadCount).toBe(1);
+  expect(otherJobReadCount).toBe(0);
+  expect(jobPostCount).toBe(0);
+  expect(
+    await page.evaluate(
+      (storageKey) => window.sessionStorage.getItem(storageKey),
+      activePrivateJobSessionKey,
+    ),
+  ).toBe(fixtureJobId);
+  await expectNoHorizontalOverflow(page);
+});
+
+test("keeps the private workspace usable when recent-job history is unavailable", async ({
+  page,
+}) => {
+  let historyReadCount = 0;
+  let jobPostCount = 0;
+  await routePrivateRealSession(page);
+  await page.route("**/api/jobs", async (route) => {
+    if (route.request().method() !== "GET") {
+      await route.fallback();
+      return;
+    }
+    historyReadCount += 1;
+    await route.fulfill({
+      body: JSON.stringify({
+        data: null,
+        error: {
+          code: "PROVIDER_UNAVAILABLE",
+          message: "Synthetic internal history detail must stay hidden.",
+          retryable: true,
+        },
+        requestId: "req_77777777777777777777777777777777",
+      }),
+      contentType: "application/json",
+      status: 503,
+    });
+  });
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/jobs" && request.method() === "POST") {
+      jobPostCount += 1;
+    }
+  });
+
+  await openPrivateAppInEnglish(page);
+  await expect(page.getByRole("alert")).toContainText(
+    "Recent mixes are unavailable. Your current work is unchanged.",
+  );
+  await expect(page.locator(".job-history-panel")).not.toContainText(
+    "Synthetic internal history detail",
+  );
+  await expect(
+    page.getByRole("heading", { name: "Turn your track into a study mix" }),
+  ).toBeVisible();
+  expect(historyReadCount).toBe(1);
+  expect(jobPostCount).toBe(0);
+});
+
 test("restores a remembered private job only after session verification", async ({ page }) => {
   let jobReadCount = 0;
   let jobPostCount = 0;
@@ -1235,6 +1403,9 @@ test("warns when the current tab cannot persist a private job reference", async 
     });
   });
   await page.route("**/api/jobs", async (route) => {
+    if (await fulfillEmptyRecentJobsRead(route)) {
+      return;
+    }
     expect(route.request().method()).toBe("POST");
     jobPostCount += 1;
     await route.fulfill({
@@ -1743,6 +1914,10 @@ test("keeps generation blocked for an incomplete legal acceptance success", asyn
     });
   });
   await page.route("**/api/jobs", async (route) => {
+    if (await fulfillEmptyRecentJobsRead(route)) {
+      return;
+    }
+    expect(route.request().method()).toBe("POST");
     jobRequestCount += 1;
     await route.abort();
   });
@@ -1920,6 +2095,10 @@ test("moves from a pending mock HTTP job to two playable result candidates", asy
 test("rejects a create success for another private upload", async ({ page }) => {
   let jobRequestCount = 0;
   await page.route("**/api/jobs", async (route) => {
+    if (await fulfillEmptyRecentJobsRead(route)) {
+      return;
+    }
+    expect(route.request().method()).toBe("POST");
     jobRequestCount += 1;
     await route.fulfill({
       body: JSON.stringify(successEnvelope(fixtureJob("completed"))),
@@ -1954,10 +2133,10 @@ test("pauses private job polling while hidden and resumes until completion", asy
     }
   });
   await page.route("**/api/jobs", async (route) => {
-    if (route.request().method() !== "POST") {
-      await route.fallback();
+    if (await fulfillEmptyRecentJobsRead(route)) {
       return;
     }
+    expect(route.request().method()).toBe("POST");
     await route.fulfill({
       body: JSON.stringify(
         successEnvelope({ ...fixtureJob("created"), uploadId: browserMockUploadId }),
@@ -2014,10 +2193,10 @@ test("does not offer terminal deletion after a pending job read failure", async 
     releaseManualRetry = resolve;
   });
   await page.route("**/api/jobs", async (route) => {
-    if (route.request().method() !== "POST") {
-      await route.fallback();
+    if (await fulfillEmptyRecentJobsRead(route)) {
       return;
     }
+    expect(route.request().method()).toBe("POST");
     await route.fulfill({
       body: JSON.stringify(
         successEnvelope({ ...fixtureJob("created"), uploadId: browserMockUploadId }),
@@ -2117,6 +2296,10 @@ test("uses the private real-provider API flow and binds deletion to its job", as
     });
   });
   await page.route("**/api/jobs", async (route) => {
+    if (await fulfillEmptyRecentJobsRead(route)) {
+      return;
+    }
+    expect(route.request().method()).toBe("POST");
     jobRequestCount += 1;
     submittedJob = route.request().postDataJSON();
     await route.fulfill({
@@ -2254,6 +2437,10 @@ test("rejects a mismatched upload confirmation before private job creation", asy
     });
   });
   await page.route("**/api/jobs", async (route) => {
+    if (await fulfillEmptyRecentJobsRead(route)) {
+      return;
+    }
+    expect(route.request().method()).toBe("POST");
     jobRequestCount += 1;
     await route.fulfill({ status: 500 });
   });
@@ -2311,6 +2498,10 @@ test("loads local private outputs through bounded authenticated fetches and revo
     });
   });
   await page.route("**/api/jobs", async (route) => {
+    if (await fulfillEmptyRecentJobsRead(route)) {
+      return;
+    }
+    expect(route.request().method()).toBe("POST");
     await route.fulfill({
       body: JSON.stringify(successEnvelope(fixtureJob("completed"))),
       contentType: "application/json",
@@ -2424,6 +2615,10 @@ test("presents local job cancellation as a normal terminal state", async ({ page
     });
   });
   await page.route("**/api/jobs", async (route) => {
+    if (await fulfillEmptyRecentJobsRead(route)) {
+      return;
+    }
+    expect(route.request().method()).toBe("POST");
     await route.fulfill({
       body: JSON.stringify(successEnvelope(fixtureJob("created"))),
       contentType: "application/json",
@@ -2532,6 +2727,10 @@ test("explains insufficient beta credits without discarding the confirmed upload
     });
   });
   await page.route("**/api/jobs", async (route) => {
+    if (await fulfillEmptyRecentJobsRead(route)) {
+      return;
+    }
+    expect(route.request().method()).toBe("POST");
     jobRequestCount += 1;
     await route.fulfill({
       body: JSON.stringify({
@@ -2616,6 +2815,10 @@ test("keeps a confirmed private upload recoverable after job creation fails", as
     });
   });
   await page.route("**/api/jobs", async (route) => {
+    if (await fulfillEmptyRecentJobsRead(route)) {
+      return;
+    }
+    expect(route.request().method()).toBe("POST");
     jobIdempotencyKeys.push(readJobIdempotencyKey(route));
     await route.fulfill({
       body: JSON.stringify({
@@ -2707,6 +2910,10 @@ test("rejects a local synthetic source success bound to another request", async 
     });
   });
   await page.route("**/api/jobs", async (route) => {
+    if (await fulfillEmptyRecentJobsRead(route)) {
+      return;
+    }
+    expect(route.request().method()).toBe("POST");
     jobRequestCount += 1;
     await route.fulfill({ status: 500 });
   });

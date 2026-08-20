@@ -46,6 +46,20 @@ const jobRowSchema = z.object({
   workflow_instance_id: z.string().min(1).max(128).nullable(),
 });
 
+const jobSummaryRowSchema = z
+  .object({
+    created_at: z.string().datetime({ offset: true }),
+    expires_at: z.string().datetime({ offset: true }),
+    id: jobIdSchema,
+    preset_id: presetIdSchema,
+    preset_version: presetVersionSchema,
+    status: jobStatusSchema,
+    updated_at: z.string().datetime({ offset: true }),
+  })
+  .strict();
+
+const ownedJobListLimitSchema = z.number().int().min(1).max(20);
+
 const createJobSchema = z.object({
   creditCost: z.number().int().min(1).max(1_000).default(1),
   createdAt: z.string().datetime({ offset: true }),
@@ -106,6 +120,16 @@ export type JobRecord = {
   workflowInstanceId: string | null;
 };
 
+export type JobSummaryRecord = {
+  createdAt: string;
+  expiresAt: string;
+  id: string;
+  presetId: PresetId;
+  presetVersion: number;
+  status: JobStatus;
+  updatedAt: string;
+};
+
 export type IdempotentJobResult = {
   created: boolean;
   job: JobRecord;
@@ -146,6 +170,38 @@ export async function getOwnedJob(
     .first();
 
   return row === null ? null : mapJobRow(row);
+}
+
+export async function listOwnedJobs(
+  db: D1Database,
+  ownerId: string,
+  limit: number,
+): Promise<JobSummaryRecord[]> {
+  const parsedOwnerId = ownerIdSchema.parse(ownerId);
+  const parsedLimit = ownedJobListLimitSchema.parse(limit);
+  const result = await db
+    .prepare(
+      `SELECT id, preset_id, preset_version, status,
+              created_at, updated_at, expires_at
+       FROM jobs
+       WHERE owner_id = ?1
+       ORDER BY created_at DESC, id DESC
+       LIMIT ?2`,
+    )
+    .bind(parsedOwnerId, parsedLimit)
+    .all();
+  return result.results.map((value) => {
+    const row = jobSummaryRowSchema.parse(value);
+    return {
+      createdAt: row.created_at,
+      expiresAt: row.expires_at,
+      id: row.id,
+      presetId: row.preset_id,
+      presetVersion: row.preset_version,
+      status: row.status,
+      updatedAt: row.updated_at,
+    };
+  });
 }
 
 async function getJobByIdempotencyKey(

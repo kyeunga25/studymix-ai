@@ -7,6 +7,7 @@ const buildBudgetRoles = [
   "login-js",
   "public-legal-js",
   "private-app-js",
+  "job-history-js",
   "job-experience-js",
   "entry-css",
   "all-css",
@@ -29,10 +30,11 @@ export type BuildBudgetLimits = Readonly<Record<BuildBudgetRole, BuildBudgetLimi
 
 export const webBuildBudgetLimits: BuildBudgetLimits = {
   "entry-js": { gzipBytes: 95_000, rawBytes: 300_000 },
-  "all-js": { gzipBytes: 135_000, rawBytes: 420_000 },
+  "all-js": { gzipBytes: 137_000, rawBytes: 420_000 },
   "login-js": { gzipBytes: 6_000, rawBytes: 15_000 },
   "public-legal-js": { gzipBytes: 17_000, rawBytes: 40_000 },
   "private-app-js": { gzipBytes: 20_000, rawBytes: 60_000 },
+  "job-history-js": { gzipBytes: 4_000, rawBytes: 12_000 },
   "job-experience-js": { gzipBytes: 8_000, rawBytes: 24_000 },
   "entry-css": { gzipBytes: 5_000, rawBytes: 20_000 },
   "all-css": { gzipBytes: 15_000, rawBytes: 55_000 },
@@ -262,6 +264,9 @@ function routeRole(facadeModuleId: string | null): BuildBudgetRole | null {
   }
   if (normalizedId?.endsWith("/src/DeferredRoutes.tsx") === true) {
     return "private-app-js";
+  }
+  if (normalizedId?.endsWith("/src/recent-job-history.tsx") === true) {
+    return "job-history-js";
   }
   if (normalizedId?.endsWith("/src/job-experience.tsx") === true) {
     return "job-experience-js";

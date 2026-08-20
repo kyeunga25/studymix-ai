@@ -22,6 +22,7 @@ import {
   getOwnedCreditSummary,
   getOwnedJob,
   getOwnedOutput,
+  listOwnedJobs,
   listOwnedOutputs,
   markOwnedOutputReady,
   markOwnedProviderRequestCompleted,
@@ -106,6 +107,59 @@ describe("D1 repositories", () => {
     await env.DB.prepare("DELETE FROM owner_invitations").run();
     await env.DB.prepare("DELETE FROM workspaces").run();
     await env.DB.prepare("DELETE FROM owners").run();
+  });
+
+  it("returns a bounded newest-first owner job history without another owner's rows", async () => {
+    const owner = ownerContext("1");
+    const uploadId = await createConfirmedUpload(owner);
+    const createdJobs = [];
+    for (const [index, createdAt] of [
+      "2026-07-24T10:00:00.000Z",
+      "2026-07-24T11:00:00.000Z",
+      "2026-07-24T12:00:00.000Z",
+    ].entries()) {
+      createdJobs.push(
+        await createJobIdempotently(env.DB, {
+          createdAt,
+          expiresAt: later,
+          id: createSecureId("job"),
+          idempotencyKey: `history-owner-one-${index.toString()}`,
+          maxActiveJobs: 20,
+          ownerId: owner.ownerId,
+          presetId: index === 1 ? "music-box" : "soft-piano",
+          presetVersion: 1,
+          provider: "mock",
+          requestFingerprint: (index + 1).toString().repeat(64),
+          uploadId,
+        }),
+      );
+    }
+
+    const otherOwner = ownerContext("2");
+    const otherUploadId = await createConfirmedUpload(otherOwner);
+    const otherJob = await createJobIdempotently(env.DB, {
+      createdAt: "2026-07-24T13:00:00.000Z",
+      expiresAt: later,
+      id: createSecureId("job"),
+      idempotencyKey: "history-owner-two",
+      maxActiveJobs: 20,
+      ownerId: otherOwner.ownerId,
+      presetId: "lofi-study",
+      presetVersion: 1,
+      provider: "mock",
+      requestFingerprint: "f".repeat(64),
+      uploadId: otherUploadId,
+    });
+
+    const history = await listOwnedJobs(env.DB, owner.ownerId, 2);
+
+    expect(history.map((job) => job.id)).toEqual([createdJobs[2]?.job.id, createdJobs[1]?.job.id]);
+    expect(history).toHaveLength(2);
+    expect(history.every((job) => job.id !== otherJob.job.id)).toBe(true);
+    expect(history.map((job) => Object.keys(job).sort())).toEqual([
+      ["createdAt", "expiresAt", "id", "presetId", "presetVersion", "status", "updatedAt"],
+      ["createdAt", "expiresAt", "id", "presetId", "presetVersion", "status", "updatedAt"],
+    ]);
   });
 
   it("returns the existing job for a duplicate owner-scoped idempotency key", async () => {

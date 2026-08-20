@@ -377,6 +377,15 @@ classification instead of leaking the lower-level stream error.
 
 ## 7. Job flow
 
+The authenticated workspace reads a fixed newest-first collection through `GET /api/jobs`. The repository
+binds the server-derived owner ID, uses a bounded owner-scoped query, and returns at most ten minimal
+summaries. The response omits upload／output IDs, filenames, provider state, object locations, errors, and
+identity fields. This read does not depend on a generation capability switch, does not reserve credits or
+change job state, and remains behind the shared authentication, workspace-membership, and exact
+browser-intent middleware. The bounded web JSON client retries only one outcome-unknown network failure.
+The user must explicitly open one summary before the browser requests the existing full owner-bound job;
+missing or unavailable history leaves the upload form and current draft unchanged.
+
 The private browser keeps one deterministic job idempotency key for the selected upload／preset request. Its
 job-create client makes at most one automatic retry after a normalized network failure and serializes the
 same validated request both times. It does not automatically retry an unkeyed request, caller abort, API
@@ -429,7 +438,7 @@ provider result into private R2 before recording completion. Neither the signed 
 provider output URL is returned from a Workflow step or stored in D1. CI configuration is deliberately
 invalid for real generation and no automated test makes a provider request.
 
-`POST /api/jobs`, `GET /api/jobs/:jobId`, and the output-download route remain behind authentication.
+`GET /api/jobs`, `POST /api/jobs`, `GET /api/jobs/:jobId`, and the output-download route remain behind authentication.
 The client receives only public job metadata and short-lived delivery instructions, never standalone
 output object-key fields or Workflow internals. The server issues an output instruction only for an
 owner-scoped `ready`, unexpired record after an R2 binding `HEAD` confirms the exact stored byte size and

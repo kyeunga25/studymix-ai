@@ -56,6 +56,10 @@ import "./auth.css";
 import "./styles.css";
 
 const LazyJobExperience = lazy(loadJobExperience);
+const LazyRecentJobHistory = lazy(async () => {
+  const module = await import("./recent-job-history");
+  return { default: module.RecentJobHistoryPanel };
+});
 
 const copy = {
   en: {
@@ -302,6 +306,17 @@ function JobExperienceLoading({ language }: { language: Language }) {
   );
 }
 
+function RecentJobHistoryLoading({ language }: { language: Language }) {
+  return (
+    <section className="job-history-panel" aria-busy="true">
+      <h2>{language === "en" ? "Recent private mixes" : "最近的私人 Mix"}</h2>
+      <p className="job-history-message" aria-live="polite">
+        {language === "en" ? "Loading recent private mixes…" : "正在讀取最近的私人 Mix……"}
+      </p>
+    </section>
+  );
+}
+
 function PrivateJobRestoreStatus({ language }: { language: Language }) {
   return (
     <section className="job-page" aria-busy="true">
@@ -440,6 +455,12 @@ export function PrivateApp() {
     confirmedUpload !== null && privateGenerationMode !== null && rightsAccepted && legalAccepted;
   const canRefreshPrivateOutputs =
     activeJob?.status === "completed" && activeJobOrigin === "private-api";
+  const canOpenRecentJob =
+    selectedFile === null &&
+    confirmedUpload === null &&
+    !isUploadingAudio &&
+    !isSavingAcceptance &&
+    activeJob === null;
   const activeJobId = activeJob?.jobId;
   const activeJobStatus = activeJob?.status;
   const sourceFilename = localAiHarnessEnabled
@@ -997,6 +1018,26 @@ export function PrivateApp() {
     setDownloadRetryVersion((version) => version + 1);
   };
 
+  const handleOpenRecentJob = (job: PublicJob) => {
+    if (!canOpenRecentJob) {
+      return;
+    }
+    rememberedPrivateJobId.current = job.jobId;
+    setJobRecoveryNotice(rememberPrivateJobId(job.jobId) ? null : "unavailable");
+    setStaleJobRecoveryNotice(null);
+    setStartOverReferenceClearUnavailable(false);
+    setActiveJobOrigin("private-api");
+    setSelectedPreset(job.preset.id);
+    setActiveJob(job);
+    setJobError(null);
+    setJobCancellationFailed(false);
+    setJobDeletionFailed(false);
+    setCandidateSources(null);
+    setDownloadRetryVersion(0);
+    setJobPollAttempt(0);
+    setNotice(null);
+  };
+
   const handleRetryJobRecovery = () => {
     if (activeJob === null || activeJobOrigin !== "private-api") {
       return;
@@ -1255,6 +1296,13 @@ export function PrivateApp() {
                   {strings.staleJobReferenceCleared}
                 </p>
               ) : null}
+              <Suspense fallback={<RecentJobHistoryLoading language={language} />}>
+                <LazyRecentJobHistory
+                  canOpen={canOpenRecentJob}
+                  language={language}
+                  onOpen={handleOpenRecentJob}
+                />
+              </Suspense>
               <form className="mix-workspace" onSubmit={(event) => void handleSubmit(event)}>
                 {localAiHarnessEnabled ? (
                   <LocalSyntheticSourcePanel
