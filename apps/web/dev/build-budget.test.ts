@@ -60,6 +60,13 @@ function syntheticArtifacts(): BuildArtifact[] {
       type: "chunk",
     },
     {
+      code: "h".repeat(500),
+      facadeModuleId: "/synthetic/project/src/recent-job-history.tsx",
+      fileName: "assets/recent-job-history-synthetic.js",
+      isEntry: false,
+      type: "chunk",
+    },
+    {
       fileName: "assets/index-synthetic.css",
       source: "i".repeat(500),
       type: "asset",
@@ -84,7 +91,7 @@ describe("web build budget", () => {
     expect(validatePublicBuildArtifacts(syntheticArtifacts())).toEqual([]);
     expect(collection.errors).toEqual([]);
     expect(evaluateBuildBudget(collection.measurements)).toEqual([]);
-    expect(collection.measurements.get("all-js")?.rawBytes).toBe(3_000);
+    expect(collection.measurements.get("all-js")?.rawBytes).toBe(3_500);
     expect(collection.measurements.get("all-css")?.rawBytes).toBe(1_000);
   });
 
@@ -109,6 +116,18 @@ describe("web build budget", () => {
 
     expect(evaluateBuildBudget(collection.measurements)).toContain(
       "Missing required job-experience-js build artifact.",
+    );
+  });
+
+  it("fails closed when the private job-history chunk is absent", () => {
+    const artifacts = syntheticArtifacts().filter(
+      (artifact) =>
+        artifact.type !== "chunk" || !artifact.fileName.startsWith("assets/recent-job-history-"),
+    );
+    const collection = collectBuildMeasurements(artifacts);
+
+    expect(evaluateBuildBudget(collection.measurements)).toContain(
+      "Missing required job-history-js build artifact.",
     );
   });
 
@@ -155,7 +174,7 @@ describe("web build budget", () => {
 
     const errors = validatePublicBuildArtifacts(artifacts);
 
-    expect(errors).toContain("Unexpected public build artifact #10 (.mp3).");
+    expect(errors).toContain("Unexpected public build artifact #11 (.mp3).");
     expect(errors.join(" ")).not.toContain("synthetic-private-recording");
   });
 
@@ -168,7 +187,7 @@ describe("web build budget", () => {
     });
 
     expect(validatePublicBuildArtifacts(artifacts)).toContain(
-      "Unexpected public build artifact #10 (.webp).",
+      "Unexpected public build artifact #11 (.webp).",
     );
   });
 

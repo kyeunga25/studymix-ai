@@ -244,6 +244,13 @@ Internal state may be more detailed.
 
 The client polls `GET /api/jobs/:jobId` with bounded backoff. Server-Sent Events are optional and not required for MVP.
 
+After private session verification, the workspace may read `GET /api/jobs` to show the newest ten jobs for
+the current owner. This collection has no caller-controlled pagination or filter in the MVP and returns only
+job ID, preset reference, status, and created／updated／expiry timestamps. It must not include filenames,
+upload or output IDs, provider metadata, delivery URLs, error detail, owner IDs, or workspace IDs. Selecting
+one summary triggers the existing owner-scoped `GET /api/jobs/:jobId`; a history failure must not block a new
+mix or discard a current draft.
+
 ### FR-8: Provider completion
 
 Support both:
@@ -576,6 +583,7 @@ DELETE /api/uploads/:uploadId
 GET    /api/presets
 GET    /api/credits
 
+GET    /api/jobs
 POST   /api/jobs
 GET    /api/jobs/:jobId
 DELETE /api/jobs/:jobId

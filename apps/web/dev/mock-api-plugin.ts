@@ -351,6 +351,30 @@ async function handleMockRequest(
     return true;
   }
 
+  if (method === "GET" && url.pathname === "/api/jobs") {
+    const recentJobs = [...jobs.values()]
+      .map(({ job }) => ({
+        createdAt: job.createdAt,
+        expiresAt: job.expiresAt,
+        jobId: job.jobId,
+        preset: job.preset,
+        status: job.status,
+        updatedAt: job.updatedAt,
+      }))
+      .sort(
+        (first, second) =>
+          Date.parse(second.createdAt) - Date.parse(first.createdAt) ||
+          second.jobId.localeCompare(first.jobId),
+      )
+      .slice(0, 10);
+    sendJson(response, 200, {
+      data: { jobs: recentJobs },
+      error: null,
+      requestId: requestId(),
+    });
+    return true;
+  }
+
   if (method === "POST" && url.pathname === "/api/jobs") {
     let body: unknown;
     try {

@@ -72,6 +72,35 @@ export const publicJobSchema = z
   })
   .strict();
 
+export const recentJobHistoryLimit = 10 as const;
+
+export const publicJobSummarySchema = z
+  .object({
+    jobId: jobIdSchema,
+    preset: presetReferenceSchema,
+    status: jobStatusSchema,
+    createdAt: isoDateTimeSchema,
+    updatedAt: isoDateTimeSchema,
+    expiresAt: isoDateTimeSchema,
+  })
+  .strict();
+
+export const publicJobHistorySchema = z
+  .object({
+    jobs: z.array(publicJobSummarySchema).max(recentJobHistoryLimit),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const jobIds = value.jobs.map((job) => job.jobId);
+    if (new Set(jobIds).size !== jobIds.length) {
+      context.addIssue({
+        code: "custom",
+        message: "Recent private jobs must be unique.",
+        path: ["jobs"],
+      });
+    }
+  });
+
 export const downloadOutputResponseSchema = z
   .object({
     downloadMethod: z.literal("GET"),
@@ -98,5 +127,7 @@ export type OutputStatus = z.infer<typeof outputStatusSchema>;
 export type PublicOutput = z.infer<typeof publicOutputSchema>;
 export type CreateJobRequest = z.infer<typeof createJobRequestSchema>;
 export type PublicJob = z.infer<typeof publicJobSchema>;
+export type PublicJobSummary = z.infer<typeof publicJobSummarySchema>;
+export type PublicJobHistory = z.infer<typeof publicJobHistorySchema>;
 export type DownloadOutputResponse = z.infer<typeof downloadOutputResponseSchema>;
 export type DeleteJobResponse = z.infer<typeof deleteJobResponseSchema>;

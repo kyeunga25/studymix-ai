@@ -5,12 +5,14 @@ import {
   downloadOutputResponseSchema,
   outputIdSchema,
   jobIdSchema,
+  publicJobHistorySchema,
   publicJobSchema,
   type ApiErrorCode,
   type CreateJobRequest,
   type DownloadOutputResponse,
   type DeleteJobResponse,
   type PublicJob,
+  type PublicJobHistory,
 } from "@studymix/contracts";
 import { readBoundedLocalAudioResponse } from "./bounded-local-audio-response";
 import { readBoundedWebJsonResponse } from "./bounded-json-response";
@@ -19,6 +21,7 @@ import { isTrustedR2PresignedUrl } from "./r2-instruction";
 import { isWebRequestInterruption } from "./request-timeout";
 
 const jobEnvelopeSchema = apiEnvelopeSchema(publicJobSchema);
+const jobHistoryEnvelopeSchema = apiEnvelopeSchema(publicJobHistorySchema);
 const downloadEnvelopeSchema = apiEnvelopeSchema(downloadOutputResponseSchema);
 const deleteJobEnvelopeSchema = apiEnvelopeSchema(deleteJobResponseSchema);
 
@@ -100,6 +103,35 @@ async function parseJobResponse(response: Response, requestedJobId?: string): Pr
     });
   }
   if (!response.ok || (requestedJobId !== undefined && parsed.data.data.jobId !== requestedJobId)) {
+    throw invalidResponseError();
+  }
+  return parsed.data.data;
+}
+
+async function parseJobHistoryResponse(response: Response): Promise<PublicJobHistory> {
+  let body: unknown;
+  try {
+    body = await readBoundedWebJsonResponse(response);
+  } catch (error) {
+    if (isWebRequestInterruption(error)) {
+      throw error;
+    }
+    throw invalidResponseError();
+  }
+
+  const parsed = jobHistoryEnvelopeSchema.safeParse(body);
+  if (!parsed.success) {
+    throw invalidResponseError();
+  }
+  if (parsed.data.error !== null) {
+    throw new JobApiError({
+      code: parsed.data.error.code,
+      message: parsed.data.error.message,
+      requestId: parsed.data.requestId,
+      retryable: parsed.data.error.retryable,
+    });
+  }
+  if (!response.ok) {
     throw invalidResponseError();
   }
   return parsed.data.data;
@@ -269,6 +301,26 @@ export async function getJob(jobId: string, signal: AbortSignal): Promise<Public
       throw error;
     }
     return await requestJobRead(parsedJobId.data, signal);
+  }
+}
+
+async function requestJobHistory(signal: AbortSignal): Promise<PublicJobHistory> {
+  try {
+    const response = await fetchPrivateApi("/api/jobs", { signal });
+    return await parseJobHistoryResponse(response);
+  } catch (error) {
+    normalizeFetchError(error);
+  }
+}
+
+export async function getRecentJobs(signal: AbortSignal): Promise<PublicJobHistory> {
+  try {
+    return await requestJobHistory(signal);
+  } catch (error) {
+    if (!(error instanceof JobApiError && error.code === "NETWORK_ERROR")) {
+      throw error;
+    }
+    return await requestJobHistory(signal);
   }
 }
 

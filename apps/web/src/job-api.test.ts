@@ -6,6 +6,7 @@ import {
   getJob,
   getOutputDownload,
   getPlayableOutputSource,
+  getRecentJobs,
 } from "./job-api";
 
 const now = "2026-07-25T10:00:00.000Z";
@@ -29,6 +30,14 @@ const validJob = {
   status: "created",
   updatedAt: now,
   uploadId: mockUploadId,
+} as const;
+const validJobSummary = {
+  createdAt: validJob.createdAt,
+  expiresAt: validJob.expiresAt,
+  jobId: validJob.jobId,
+  preset: validJob.preset,
+  status: validJob.status,
+  updatedAt: validJob.updatedAt,
 } as const;
 const keyedJobRequest = {
   candidateCount: 2,
@@ -381,6 +390,72 @@ describe("job API client", () => {
       retryable: true,
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads a bounded minimal recent-job history from the private collection", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      Response.json({
+        data: { jobs: [validJobSummary] },
+        error: null,
+        requestId: "req_job_history",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getRecentJobs(new AbortController().signal)).resolves.toEqual({
+      jobs: [validJobSummary],
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/jobs");
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBeUndefined();
+  });
+
+  it("retries one recent-job history network failure with the same read", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new TypeError("Synthetic history network failure"))
+      .mockResolvedValueOnce(
+        Response.json({
+          data: { jobs: [validJobSummary] },
+          error: null,
+          requestId: "req_job_history_recovered",
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getRecentJobs(new AbortController().signal)).resolves.toEqual({
+      jobs: [validJobSummary],
+    });
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toEqual([
+      "/api/jobs",
+      "/api/jobs",
+    ]);
+  });
+
+  it("rejects an over-disclosed recent-job history without retrying", async () => {
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
+      Response.json({
+        data: { jobs: [{ ...validJobSummary, provider: "fal", uploadId: mockUploadId }] },
+        error: null,
+        requestId: "req_job_history_invalid",
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getRecentJobs(new AbortController().signal)).rejects.toMatchObject({
+      code: "INVALID_RESPONSE",
+      retryable: true,
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it("preserves caller cancellation while reading recent-job history", async () => {
+    const abortError = new DOMException("Synthetic history navigation.", "AbortError");
+    const fetchMock = vi.fn<typeof fetch>().mockRejectedValueOnce(abortError);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(getRecentJobs(new AbortController().signal)).rejects.toBe(abortError);
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("maps an oversized server response to the safe retryable error", async () => {

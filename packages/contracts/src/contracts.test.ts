@@ -19,6 +19,7 @@ import {
   localSyntheticUploadResponseSchema,
   presetIds,
   presetIdSchema,
+  publicJobHistorySchema,
 } from "./index";
 
 const uploadId = "upl_0123456789abcdef0123456789abcdef";
@@ -253,6 +254,33 @@ describe("preset and job contracts", () => {
         ...publicJob,
         provider: "fal",
         providerRequestId: "vendor-request",
+      }).success,
+    ).toBe(false);
+  });
+
+  it("bounds recent private jobs and excludes upload or provider details", () => {
+    const summary = {
+      createdAt: now,
+      expiresAt: now,
+      jobId,
+      preset: { id: "soft-piano", version: 1 },
+      status: "queued",
+      updatedAt: now,
+    };
+
+    expect(publicJobHistorySchema.safeParse({ jobs: [summary] }).success).toBe(true);
+    expect(
+      publicJobHistorySchema.safeParse({
+        jobs: [{ ...summary, provider: "fal", uploadId }],
+      }).success,
+    ).toBe(false);
+    expect(publicJobHistorySchema.safeParse({ jobs: [summary, summary] }).success).toBe(false);
+    expect(
+      publicJobHistorySchema.safeParse({
+        jobs: Array.from({ length: 11 }, (_, index) => ({
+          ...summary,
+          jobId: `job_${index.toString(16).padStart(32, "0")}`,
+        })),
       }).success,
     ).toBe(false);
   });
