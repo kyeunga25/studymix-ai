@@ -99,7 +99,9 @@ independent key scope. The API creates an upload record and returns:
 
 The browser must bind the response to its idempotency key before trusting the upload instruction. If the
 create response is lost to an ambiguous network failure, it may retry the create request once with the exact
-same key and metadata. It then uploads directly to R2.
+same key and metadata. Before sending upload metadata or bytes, it must also use bounded local reads to
+recognize audio structure matching the declared supported type; changing a non-audio file's extension is not
+sufficient. It then uploads directly to R2.
 
 ### FR-2: Confirm upload
 
@@ -112,9 +114,14 @@ The server checks:
 - The object exists in R2.
 - The object size is within the configured limit.
 - The declared content type is accepted.
+- Bounded, ETag-pinned R2 range reads recognize audio structure matching the declared type.
 - The upload has not expired.
 
 The server must not trust client-supplied object keys or sizes.
+
+Structural inspection is a fail-closed container/frame check, not a claim that the file is music, is
+decodable end to end, has acceptable quality, or is legally authorized. Rights confirmation remains a
+separate mandatory control.
 
 Confirmation is idempotent for the same authenticated owner and upload. Sequential or simultaneous
 confirmations that validate the same private object converge on the one confirmed record and return the

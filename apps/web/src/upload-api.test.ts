@@ -33,6 +33,67 @@ const signedUploadQuery = new URLSearchParams({
 const signedUploadUrl = `https://${r2Hostname}/synthetic-private-audio/${objectKey}?${signedUploadQuery}`;
 const confirmedUploadExpiresAt = "2026-07-26T08:00:00.000Z";
 
+function writeAscii(bytes: Uint8Array, offset: number, value: string): void {
+  for (let index = 0; index < value.length; index += 1) {
+    bytes[offset + index] = value.charCodeAt(index);
+  }
+}
+
+function writeUint32Be(bytes: Uint8Array, offset: number, value: number): void {
+  new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint32(offset, value, false);
+}
+
+function isoBox(type: string, content: Uint8Array): Uint8Array {
+  const bytes = new Uint8Array(8 + content.byteLength);
+  writeUint32Be(bytes, 0, bytes.byteLength);
+  writeAscii(bytes, 4, type);
+  bytes.set(content, 8);
+  return bytes;
+}
+
+function concatenate(parts: readonly Uint8Array[]): Uint8Array {
+  const result = new Uint8Array(parts.reduce((total, part) => total + part.byteLength, 0));
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.byteLength;
+  }
+  return result;
+}
+
+function createM4aBytes(): Uint8Array {
+  const ftypContent = new Uint8Array(16);
+  writeAscii(ftypContent, 0, "M4A ");
+  writeAscii(ftypContent, 8, "isom");
+  writeAscii(ftypContent, 12, "M4A ");
+  const handlerContent = new Uint8Array(24);
+  writeAscii(handlerContent, 8, "soun");
+  return concatenate([
+    isoBox("ftyp", ftypContent),
+    isoBox("moov", isoBox("trak", isoBox("mdia", isoBox("hdlr", handlerContent)))),
+  ]);
+}
+
+function createMp3Bytes(): Uint8Array {
+  const frameLength = 417;
+  const bytes = new Uint8Array(frameLength * 2);
+  const header = new Uint8Array([0xff, 0xfb, 0x90, 0x64]);
+  bytes.set(header, 0);
+  bytes.set(header, frameLength);
+  return bytes;
+}
+
+const m4aBytes = createM4aBytes();
+const mp3Bytes = createMp3Bytes();
+
+function m4aFile(): File {
+  return new File([new Uint8Array(m4aBytes)], "study.m4a", { type: "audio/x-m4a" });
+}
+
+function mp3File(): File {
+  return new File([new Uint8Array(mp3Bytes)], "study.mp3", { type: "audio/mpeg" });
+}
+
 function uploadInstructions(contentType: AudioContentType): CreateUploadResponse {
   return {
     allowedContentTypes: [contentType],
@@ -170,7 +231,7 @@ function confirmedUpload(overrides: Partial<PublicUpload> = {}): PublicUpload {
     declaredContentType: "audio/mp4",
     expiresAt: confirmedUploadExpiresAt,
     originalFilename: "study.m4a",
-    sizeBytes: 3,
+    sizeBytes: m4aBytes.byteLength,
     status: "confirmed",
     uploadId,
     ...overrides,
@@ -183,7 +244,7 @@ const invalidConfirmedUploadCases = [
   ["another upload ID", (upload) => ({ ...upload, uploadId: otherUploadId })],
   ["another filename", (upload) => ({ ...upload, originalFilename: "other.m4a" })],
   ["another content type", (upload) => ({ ...upload, declaredContentType: "audio/wav" })],
-  ["another byte size", (upload) => ({ ...upload, sizeBytes: 4 })],
+  ["another byte size", (upload) => ({ ...upload, sizeBytes: m4aBytes.byteLength + 1 })],
   ["a non-confirmed status", (upload) => ({ ...upload, confirmedAt: null, status: "created" })],
   [
     "timestamps in the wrong order",
@@ -271,7 +332,7 @@ describe("direct R2 upload client", () => {
   });
 
   it("creates, directly uploads, and confirms without sending audio through the API", async () => {
-    const file = new File([new Uint8Array([1, 2, 3])], "study.m4a", { type: "audio/x-m4a" });
+    const file = m4aFile();
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(apiResponse(uploadInstructions("audio/mp4"), 201))
@@ -293,14 +354,12 @@ describe("direct R2 upload client", () => {
       contentType: "audio/mp4",
       idempotencyKey: uploadIdempotencyKey,
       originalFilename: "study.m4a",
-      sizeBytes: 3,
+      sizeBytes: m4aBytes.byteLength,
     });
   });
 
   it("retries one ambiguous confirmation failure for the same private upload", async () => {
-    const file = new File([new Uint8Array([1, 2, 3])], "study.m4a", {
-      type: "audio/x-m4a",
-    });
+    const file = m4aFile();
     const confirmationUrl = `/api/uploads/${uploadId}/confirm`;
     const fetchMock = vi
       .fn<typeof fetch>()
@@ -321,9 +380,7 @@ describe("direct R2 upload client", () => {
   });
 
   it("limits automatic confirmation recovery to one retry before cleanup", async () => {
-    const file = new File([new Uint8Array([1, 2, 3])], "study.m4a", {
-      type: "audio/x-m4a",
-    });
+    const file = m4aFile();
     const confirmationUrl = `/api/uploads/${uploadId}/confirm`;
     const fetchMock = vi
       .fn<typeof fetch>()
@@ -345,9 +402,7 @@ describe("direct R2 upload client", () => {
   });
 
   it("does not retry an API confirmation error before cleanup", async () => {
-    const file = new File([new Uint8Array([1, 2, 3])], "study.m4a", {
-      type: "audio/x-m4a",
-    });
+    const file = m4aFile();
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(apiResponse(uploadInstructions("audio/mp4"), 201))
@@ -382,9 +437,7 @@ describe("direct R2 upload client", () => {
   });
 
   it("preserves an aborted confirmation without retrying before cleanup", async () => {
-    const file = new File([new Uint8Array([1, 2, 3])], "study.m4a", {
-      type: "audio/x-m4a",
-    });
+    const file = m4aFile();
     const abortError = new DOMException("Synthetic navigation.", "AbortError");
     const fetchMock = vi
       .fn<typeof fetch>()
@@ -404,9 +457,7 @@ describe("direct R2 upload client", () => {
   });
 
   it("retries one ambiguous creation failure with the same idempotency key", async () => {
-    const file = new File([new Uint8Array([1, 2, 3])], "study.m4a", {
-      type: "audio/x-m4a",
-    });
+    const file = m4aFile();
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockRejectedValueOnce(new TypeError("Synthetic lost response"))
@@ -429,7 +480,7 @@ describe("direct R2 upload client", () => {
   });
 
   it("limits automatic creation recovery to one retry", async () => {
-    const file = new File([new Uint8Array([1])], "study.mp3", { type: "audio/mpeg" });
+    const file = mp3File();
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockRejectedValueOnce(new TypeError("Synthetic first network failure"))
@@ -454,8 +505,18 @@ describe("direct R2 upload client", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("rejects a renamed non-audio file before sending bytes or metadata", async () => {
+    const fetchMock = vi.fn<typeof fetch>();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      createDirectUpload(new File(["synthetic text"], "renamed.mp3", { type: "audio/mpeg" })),
+    ).rejects.toMatchObject({ code: "INVALID_AUDIO_CONTENT", retryable: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("accepts the server millisecond precision omitted from the AWS signing date", async () => {
-    const file = new File([new Uint8Array([1])], "study.mp3", { type: "audio/mpeg" });
+    const file = mp3File();
     const instructions = {
       ...uploadInstructions("audio/mpeg"),
       expiresAt: "2026-07-25T08:01:00.789Z",
@@ -470,9 +531,7 @@ describe("direct R2 upload client", () => {
   it.each(invalidUploadInstructionCases)(
     "rejects and cleans up %s before transferring audio",
     async (_caseName, mutateInstructions) => {
-      const file = new File([new Uint8Array([1, 2, 3])], "study.m4a", {
-        type: "audio/x-m4a",
-      });
+      const file = m4aFile();
       const fetchMock = vi
         .fn<typeof fetch>()
         .mockResolvedValueOnce(
@@ -490,7 +549,7 @@ describe("direct R2 upload client", () => {
   );
 
   it("rejects a mismatched idempotency response without touching its resource", async () => {
-    const file = new File([new Uint8Array([1])], "study.mp3", { type: "audio/mpeg" });
+    const file = mp3File();
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(
       apiResponse(
         {
@@ -507,7 +566,7 @@ describe("direct R2 upload client", () => {
   });
 
   it("requests owner-scoped cleanup after a failed direct PUT", async () => {
-    const file = new File([new Uint8Array([1])], "study.mp3", { type: "audio/mpeg" });
+    const file = mp3File();
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(apiResponse(uploadInstructions("audio/mpeg"), 201))
@@ -526,9 +585,7 @@ describe("direct R2 upload client", () => {
   it.each(invalidConfirmedUploadCases)(
     "rejects and cleans up a confirmation for %s",
     async (_caseName, mutateConfirmation) => {
-      const file = new File([new Uint8Array([1, 2, 3])], "study.m4a", {
-        type: "audio/x-m4a",
-      });
+      const file = m4aFile();
       const fetchMock = vi
         .fn<typeof fetch>()
         .mockResolvedValueOnce(apiResponse(uploadInstructions("audio/mp4"), 201))
@@ -629,7 +686,7 @@ describe("direct R2 upload client", () => {
   });
 
   it("uses a fresh bounded API signal to clean up after caller cancellation", async () => {
-    const file = new File([new Uint8Array([1])], "study.mp3", { type: "audio/mpeg" });
+    const file = mp3File();
     const callerController = new AbortController();
     const fetchMock = vi
       .fn<typeof fetch>()

@@ -1,6 +1,6 @@
 # 實作狀態 / Implementation Status
 
-更新日期：2026-08-11
+更新日期：2026-08-21
 
 本文件只記錄目前程式庫可驗證的能力與公開安全限制；未落實的工作不在此列出。
 
@@ -18,6 +18,7 @@ This document records only verifiable repository capabilities and public safety 
 - [x] 僅限本機開發的 mock HTTP job API；正式 bundle 不包含 mock 路由或測試控制標記。
 - [x] Zod API contracts、加密安全 ID、job state machine 及 provider abstraction。
 - [x] 瀏覽器選檔只提示 contract 明確支援的格式，不使用過度寬鬆的 `audio/*`；共用 Zod 上載 contract 會即時攔截多檔、不支援、空白、超過 500 MB 或檔名無效的選擇，清除無效狀態並提供雙語可及提示。單元及 Chromium `DataTransfer` 測試確認不會提前發出上載請求，server 仍會獨立重做權限及資料驗證。
+- [x] 共用有界音訊結構檢查會在建立上載前以 `File.slice()`，並在確認時以固定 `HEAD` ETag 的 R2 range reads，分別辨識目前供應商接受的 MP3 frame、RIFF/WAVE chunks、M4A audio track、AAC ADTS frames 及 Ogg audio identification packet；全程不載入完整大檔。改副檔名的非音訊會在零 upload metadata／零 bytes 外送下收到雙語可及錯誤；繞過 browser 的 MIME／container mismatch 會在 server fail closed 並走 owner-scoped cleanup，暫時讀不到固定版本則保持 pending／retryable 而不誤刪。Unit、Worker ownership／並發／R2 failure 及合成 Chromium 反例均不使用真實音訊或外部 AI。此檢查只確認結構，不聲稱檔案一定是歌曲、可完整解碼、品質合格或已具權利。
 - [x] `POST /api/uploads` 只接收最多 4 KiB 的 `application/json`，再以 strict Zod contract 及 runtime 大小上限驗證；Worker matrix 覆蓋錯誤 media type、malformed／超大 JSON、額外欄位、控制字元檔名、零大小、不支援 MIME 及越界大小，全部在簽名及建立 D1 upload row 前 fail closed，錯誤不回顯輸入內容。
 - [x] Upload 建立以 `owner_id + idempotency_key` 唯一索引及完整 metadata SHA-256 fingerprint 綁定：相同 owner 的順序／同時重放只取得同一個仍有效的 pending row 與重新簽發指令，同 key 錯 metadata 得 409、另一 owner 可獨立使用，confirmed／expired／deleted row 不會復活；active-upload quota 仍在同一原子 INSERT predicate 下限制同時不同 key。Browser 僅在 create 網絡結果不確定時以完全相同 key 自動重試一次，並在任何 R2 PUT 前核對回應 key；錯配不會上載或誤刪未綁定資源。新增 0006 migration 目前只在本機及測試套用，未執行任何遠端 migration 或啟用正式 R2 上載。
 - [x] 共用 bounded JSON reader 要求 positive safe-integer 上限及 `application/json`（可帶一般參數），先拒絕 invalid／超限 `Content-Length`，再獨立計算實際 stream chunks；空 body、malformed JSON、無效 UTF-8 與實際超限均分類明確，底層 stream cancellation 失敗亦不會掩蓋 body-too-large 結果。
@@ -26,7 +27,7 @@ This document records only verifiable repository capabilities and public safety 
 - [x] 小型 web JSON 請求會把 caller Abort 與固定 15 秒 deadline 合併，header 或 response stream 停滯都會回到既有 unavailable／retryable 狀態；mutation／job 的 TimeoutError 轉成可重試 network error，credit aggregate 及公開法律 manifest 只在首個 transport／timeout failure 後重讀一次，session 維持原有 unavailable 行為，navigation AbortError 保持原樣，大型 direct R2 audio PUT 不套用不合理的短 timeout。
 - [x] 私人音訊離開瀏覽器前會驗證短效 R2 `PUT` 指令的一致性：標準 HTTPS S3 endpoint、完整單一簽名參數、server-controlled object key／upload ID、精確且不重複的 `content-length;content-type;host;if-none-match` signed-header list、足夠大小上限，以及 credential date、嚴格 UTC 簽名時刻、TTL、宣告到期時間仍有效且互相吻合；Worker 以宣告 bytes 簽署 `Content-Length`，瀏覽器不可自行改寫該 forbidden header。任何不一致均不向該目的地傳輸，並嘗試 owner-scoped metadata cleanup；單元、Worker 及合成 Chromium 反例已覆蓋。正式 R2 仍須以實機瀏覽器 staging 流程驗證後才可啟用。
 - [x] 大型 direct R2 PUT 有雙語可及取消控制及 unmount abort；若已取得 upload ID，取消會以獨立未 aborted、15 秒受限的 private API signal 嘗試 owner-scoped cleanup，不會呼叫 confirm，並保留檔案／權利／法律選項供重試；unit 及 stalled-transfer Chromium flow 已驗證，server expiry 仍是 cleanup fallback。
-- [x] Direct R2 confirm 回應必須重新綁定原 upload ID、normalized filename／MIME／bytes、`confirmed` 狀態及有效時間順序，才可讓 UI 建立 job；不一致會清理原 upload、保持可重試狀態且零 job POST。Cleanup ID 會在組合 URL 前驗證，delete response 亦必須回傳同一 ID。43 項 unit matrix 與 Chromium 錯-ID confirm 流程已覆蓋，server owner 驗證維持獨立。
+- [x] Direct R2 confirm 回應必須重新綁定原 upload ID、normalized filename／MIME／bytes、`confirmed` 狀態及有效時間順序，才可讓 UI 建立 job；不一致會清理原 upload、保持可重試狀態且零 job POST。Cleanup ID 會在組合 URL 前驗證，delete response 亦必須回傳同一 ID。Unit matrix 與 Chromium 錯-ID confirm 流程已覆蓋，server owner 驗證維持獨立。
 - [x] Owner-scoped upload confirmation 以 guarded `pending → confirmed` transition 收斂：兩個同時通過 R2 `HEAD` 的相同請求都回傳同一 confirmed row 及 winner timestamps，不產生第二個狀態或 500；loser 只有在 upload ID、owner、實際 bytes、confirmed timestamp 及仍有效 retention lifetime 相符時才可讀回。Barrier Worker test 同時鎖定錯 bytes 與另一 owner 仍被拒絕。
 - [x] Sequential confirmed-upload replay 會先核對 stored expiry：仍有效時直接回傳相同 metadata 且不重讀 R2，過期後改回 non-retryable `UPLOAD_EXPIRED`，不再把 stale success 交給 browser；confirm route 不即場刪除可能已連接 job 的 confirmed source，繼續由 guarded job／retention lifecycle 處理。Worker test 鎖定兩條路徑均為零額外 R2 `HEAD`。
 - [x] Browser confirmation 只有在第一個結果為 outcome-unknown `NETWORK_ERROR` 時，以同一個 upload ID 及 `POST` 自動重試一次，不重送大型 direct R2 `PUT`；第二次 network failure、AbortError、API error、invalid／錯配 response 都直接進入既有安全錯誤與 owner-scoped cleanup 路徑。有效 server replay 會回傳同一 confirmed metadata，不建立第二個來源。
@@ -57,9 +58,9 @@ This document records only verifiable repository capabilities and public safety 
 - [x] Legal acceptance browser mutation 會固定序列化現行三文件 request；只有第一個結果為 outcome-unknown `NETWORK_ERROR` 時才以完全相同 body 自動重試一次。第二次 network failure、AbortError、API／version error 及 invalid／未完整 success 均不重送；6 項 client tests 與 D1 repository replay 證明同 owner 只保留三筆首次 server timestamps，另一 owner 維持隔離。
 - [x] Worker Static Assets 與 API 使用同一 Worker；`/app`、`/app/*`、`/api` 及使用者 `/api/*` 先經 Access JWT 與 active D1 owner／workspace／membership 驗證。只有成功、fingerprinted 且 MIME 相符的公開 CSS／JS／PNG／WebP 使用 immutable browser cache；HTML、私人 app、API、錯誤及 SPA fallback 保持 `private, no-store`。
 - [x] Landing、登入與 workspace 共用背景保持原有 1672×941 構圖，來源資產由 1.81 MB PNG 改為 96.65 kB WebP；production build、桌面及 390×844 瀏覽器畫面均已驗證。
-- [x] 匿名首頁只同步載入公開 overview；登入、公開法律及私人應用使用具雙語載入狀態及安全重試的獨立 lazy chunks。production 入口 JS 由 368.53 kB 降至 281.02 kB（gzip 114.30 kB 降至 86.31 kB），精確 route tests 會把未知及 `/app` lookalike 路徑留在公開首頁，Playwright 亦覆蓋 deferred chunk failure。
-- [x] CSS 跟隨 route lazy loading：production 匿名入口 CSS 由 46.74 kB 降至 15.64 kB（gzip 10.04 kB 降至 4.07 kB），登入 10.28 kB 及私人／法律 22.31 kB 樣式按需載入；四類頁面及 390×844 瀏覽器均無水平溢出或 console error。
-- [x] 公開法律正文、私人 workspace runtime 與工作結果體驗已分開：原 81.70 kB deferred chunk 改為 32.68 kB public-legal、53.38 kB private-app（gzip 16.69 kB）及只有 job／job error 出現時才載入的 15.46 kB job-experience（gzip 5.58 kB）；另有按需載入的 1.54 kB legal-acceptance、1.65 kB local-AI helpers、0.62 kB private-API helper 及 2.97 kB 共用雙語 site chrome。Chromium 以延遲 chunk 證明初始 workspace 不會要求工作體驗、載入時有可存取雙語狀態，完成後保留原有結果流程。
+- [x] 匿名首頁只同步載入公開 overview；登入、公開法律及私人應用使用具雙語載入狀態及安全重試的獨立 lazy chunks。production 入口 JS 由 368.53 kB 降至 281.69 kB（gzip 114.30 kB 降至 86.55 kB），精確 route tests 會把未知及 `/app` lookalike 路徑留在公開首頁，Playwright 亦覆蓋 deferred chunk failure。
+- [x] CSS 跟隨 route lazy loading：production 匿名入口 CSS 由 46.74 kB 降至 15.53 kB（gzip 10.04 kB 降至 4.03 kB），登入 10.28 kB 及私人／法律 22.19 kB 樣式按需載入；四類頁面及 390×844 瀏覽器均無水平溢出或 console error。
+- [x] 公開法律正文、私人 workspace runtime 與工作結果體驗已分開：原 81.70 kB deferred chunk 改為 32.68 kB public-legal、54.54 kB private-app（gzip 17.04 kB）及只有 job／job error 出現時才載入的 15.46 kB job-experience（gzip 5.58 kB）；另有開始私人上載才載入的 6.29 kB（gzip 2.37 kB）共用音訊結構檢查器，以及按需載入的 1.54 kB legal-acceptance、1.65 kB local-AI helpers、0.62 kB private-API helper 及 2.97 kB 共用雙語 site chrome。Chromium 以延遲 chunk 證明初始 workspace 不會要求工作體驗，完整上載反例亦證明檢查器只在需要時載入；兩者均保留可存取雙語狀態及原有結果流程。
 - [x] Landing、法律頁及登入 action 會在 pointer hover／keyboard focus 時預載相應靜態 route chunk；Playwright 證明預載不導航、不 render 私人 workspace，亦不呼叫 `/api/session` 或讀取工作區資料。
 - [x] Production Vite build 以 raw／gzip byte budgets fail closed：匿名入口、登入、公開法律、私人 app、私人工作體驗、入口／總 CSS、總 JS 及背景 WebP 必須齊全且不超標；合成 unit tests 覆蓋正常、缺失、重複與超標輸出，錯誤不公開本機 module path。
 - [x] Public build surface 只接受一個 `index.html`、fingerprinted JS／CSS 及唯一已審查背景 WebP；source map、JSON、音訊、額外圖片、unhashed 或其他意外輸出均會令 build 失敗，診斷只顯示序號與副檔名。

@@ -23,6 +23,10 @@ import { createSecureId } from "@studymix/core";
 import { listPresets, resolvePreset, toPublicPreset } from "@studymix/presets";
 import { Hono, type Context } from "hono";
 import { AuthenticationError, resolveOwnerContext, type OwnerContext } from "./auth/owner-context";
+import {
+  AudioObjectInspectionUnavailableError,
+  inspectR2AudioObject,
+} from "./audio-object-inspection";
 import { handleFalWebhook } from "./fal-webhook";
 import {
   GenerationWorkflowConfigurationError,
@@ -959,6 +963,38 @@ app.post("/api/uploads/:uploadId/confirm", async (context) => {
       400,
       "VALIDATION_ERROR",
       "The uploaded object does not match the declared audio metadata.",
+      false,
+    );
+  }
+
+  let audioInspection;
+  try {
+    audioInspection = await inspectR2AudioObject({
+      bucket: context.env.AUDIO_BUCKET,
+      contentType: audioContentTypeSchema.parse(upload.declaredContentType),
+      etag: object.etag,
+      objectKey: upload.objectKey,
+      sizeBytes: object.size,
+    });
+  } catch (error) {
+    if (error instanceof AudioObjectInspectionUnavailableError) {
+      return errorResponse(
+        context,
+        409,
+        "UPLOAD_NOT_CONFIRMED",
+        "The audio object could not be verified yet. Retry confirmation.",
+        true,
+      );
+    }
+    throw error;
+  }
+  if (!audioInspection.valid) {
+    await purgeOwnedUnattachedUpload(context.env, owner.ownerId, upload.id, now);
+    return errorResponse(
+      context,
+      400,
+      "VALIDATION_ERROR",
+      "The uploaded object is not a recognized supported audio file.",
       false,
     );
   }

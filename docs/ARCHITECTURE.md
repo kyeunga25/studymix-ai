@@ -265,7 +265,11 @@ These strings are hypotheses and must be benchmarked. Do not claim that they gua
    contract: supported audio MIME type and aliases, non-empty bytes, the 500 MB client limit, and safe
    filename metadata. The picker advertises only these explicit formats instead of the broader `audio/*`
    category. A rejected selection is cleared, announced accessibly in the selected language, and makes
-   no upload request.
+   no upload request. Immediately before upload creation, the browser also uses the shared bounded
+   random-access inspector against `File.slice()` ranges. It requires recognizable MP3 frames, RIFF/WAVE
+   chunks, an M4A audio track, AAC ADTS frames, or an Ogg audio identification packet matching the normalized
+   MIME type. Failure gets a bilingual accessible error and sends neither upload metadata nor file bytes.
+   The inspector never buffers the complete selected file.
 2. The client creates one `ui-upload:` idempotency key and requests `POST /api/uploads`. If the request has
    an ambiguous network failure, the client makes at most one automatic retry with the same key and metadata;
    aborts, validation failures, conflicts, and invalid responses are not retried by this recovery path.
@@ -303,7 +307,11 @@ These strings are hypotheses and must be benchmarked. Do not claim that they gua
    returns the same metadata without another R2 read, while an expired row returns `UPLOAD_EXPIRED` and
    remains under the existing job／retention lifecycle rather than being deleted inside the confirmation
    request.
-10. For a pending upload, API checks R2 object metadata using its binding or trusted server access.
+10. For a pending upload, API checks R2 object metadata using its binding or trusted server access, then
+    reuses the shared bounded inspector through R2 range reads pinned to the `HEAD` ETag. A missing／changed
+    object or temporary range-read failure remains retryable and does not purge a potentially valid object.
+    A stable object whose supported audio structure contradicts the declared MIME is made unusable and
+    removed through the owner-scoped unattached-upload cleanup path before confirmation.
 11. API uses a guarded `pending → confirmed` D1 update. If two requests already validated the same object,
     the transition loser may read back the winner only when owner, upload ID, exact bytes, confirmed state,
     confirmation timestamp, and still-valid retention lifetime all match; it returns the winner's timestamps
@@ -349,7 +357,11 @@ These strings are hypotheses and must be benchmarked. Do not claim that they gua
   are not automatically resubmitted.
 - Enforce size both before and after upload.
 - Treat content type as untrusted metadata.
-- A later CPU media-validation service may inspect magic bytes and decode the audio.
+- Use bounded local and ETag-pinned R2 structural inspection for the currently supported MP3, WAV, M4A,
+  AAC, and OGG inputs. This recognizes container／frame structure only; it does not prove the file is a song,
+  decode the whole recording, assess quality, identify copyrighted material, or replace the rights control.
+  A later CPU media-validation service may perform bounded decode／duration／quality checks before any wider
+  format set is enabled.
 - Do not allow server-side fetch from URLs supplied by the user.
 
 ### Shared bounded JSON boundary

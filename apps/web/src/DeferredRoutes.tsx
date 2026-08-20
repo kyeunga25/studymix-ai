@@ -45,6 +45,7 @@ import { BrandMark, GlobeIcon, legalLinkCopy, ShieldIcon, SiteFooter } from "./s
 import {
   clientAudioFileAccept,
   deleteUpload,
+  UploadApiError,
   uploadAndConfirmAudio,
   validateClientAudioFile,
   type ClientAudioFileValidationIssue,
@@ -101,6 +102,8 @@ const copy = {
     replaceBlocked: "Delete the confirmed private upload before choosing another file.",
     fileEmpty: "The selected audio file is empty. Choose a file that contains audio data.",
     fileInvalidName: "The filename is invalid. Rename the file and choose it again.",
+    fileInvalidContent:
+      "The selected file is not a recognized MP3, WAV, M4A, AAC, or OGG audio stream. Check the original file instead of only renaming its extension.",
     fileMultiple: "Choose one audio file at a time.",
     fileTooLarge: "The selected audio file exceeds the 500 MB limit.",
     fileUnsupported: "Choose an MP3, WAV, M4A, AAC, or OGG audio file.",
@@ -204,6 +207,8 @@ const copy = {
     replaceBlocked: "請先刪除已確認的私人上載，然後再選擇另一個檔案。",
     fileEmpty: "所選音訊檔案是空白的，請選擇含有音訊資料的檔案。",
     fileInvalidName: "檔案名稱無效，請重新命名後再選擇。",
+    fileInvalidContent:
+      "所選檔案不是可辨識的 MP3、WAV、M4A、AAC 或 OGG 音訊串流；請檢查原始檔案，不要只更改副檔名。",
     fileMultiple: "每次只可選擇一個音訊檔案。",
     fileTooLarge: "所選音訊檔案超過 500 MB 上限。",
     fileUnsupported: "請選擇 MP3、WAV、M4A、AAC 或 OGG 音訊檔案。",
@@ -369,6 +374,7 @@ export function PrivateApp() {
   const strings = copy[language];
   const fileValidationMessages: Record<ClientAudioFileValidationIssue, string> = {
     empty: strings.fileEmpty,
+    "invalid-content": strings.fileInvalidContent,
     "invalid-name": strings.fileInvalidName,
     multiple: strings.fileMultiple,
     "too-large": strings.fileTooLarge,
@@ -386,6 +392,7 @@ export function PrivateApp() {
         : "mock";
   const canGenerate =
     (localAiHarnessEnabled || selectedFile !== null) &&
+    fileValidationIssue === null &&
     rightsAccepted &&
     legalAccepted &&
     confirmedUpload === null;
@@ -775,11 +782,19 @@ export function PrivateApp() {
                 : strings.uploadSuccess,
           );
         } catch (error) {
-          setNotice(
-            error instanceof DOMException && error.name === "AbortError"
-              ? strings.uploadCancelled
-              : strings.uploadFailed,
-          );
+          if (
+            error instanceof UploadApiError &&
+            (error.code === "INVALID_AUDIO_CONTENT" || error.code === "VALIDATION_ERROR")
+          ) {
+            setFileValidationIssue("invalid-content");
+            setNotice(null);
+          } else {
+            setNotice(
+              error instanceof DOMException && error.name === "AbortError"
+                ? strings.uploadCancelled
+                : strings.uploadFailed,
+            );
+          }
         } finally {
           if (uploadAbortController.current === controller) {
             uploadAbortController.current = null;
