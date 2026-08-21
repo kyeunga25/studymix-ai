@@ -201,7 +201,7 @@ async function prepareAuthorizedMix(page: Page, path = "/app") {
     name: "authorized-recording.wav",
   });
   await expect(page.locator(".file-structure-status")).toContainText(
-    "Recognized WAV audio structure on this device.",
+    "Playable WAV metadata detected on this device",
   );
   const checkboxes = page.getByRole("checkbox");
   await checkboxes.nth(0).check();
@@ -634,10 +634,10 @@ test("rejects invalid audio selections before enabling generation", async ({ pag
   await expect(input).toHaveAttribute("aria-invalid", "false");
   await expect(page.locator(".file-preview")).toContainText("authorized-recording.wav");
   await expect(page.locator(".file-structure-status")).toContainText(
-    "已在此裝置辨識 WAV 音訊結構。",
+    "已在此裝置讀取可播放的 WAV 音訊元資料",
   );
   await expect(page.locator("#file-selection-status")).toContainText(
-    "已辨識 WAV 音訊結構。請確認相關權利並接受現行法律文件",
+    "已在此裝置讀取可播放的 WAV 音訊元資料（少於 1 秒）。請確認相關權利並接受現行法律文件",
   );
 
   const checkboxes = page.getByRole("checkbox");
@@ -679,6 +679,56 @@ test("rejects renamed non-audio content before private upload creation", async (
   expect(uploadRequestCount).toBe(0);
 });
 
+test("blocks a recognized container when the browser cannot read playback metadata", async ({
+  page,
+}) => {
+  await routePrivateRealSession(page);
+  await page.addInitScript(() => {
+    Object.defineProperty(HTMLMediaElement.prototype, "duration", {
+      configurable: true,
+      get: () => Number.NaN,
+    });
+    Object.defineProperty(HTMLMediaElement.prototype, "load", {
+      configurable: true,
+      value(this: HTMLMediaElement) {
+        if (this.hasAttribute("src")) {
+          queueMicrotask(() => this.dispatchEvent(new Event("error")));
+        }
+      },
+    });
+  });
+  const privateMutationCounts = { job: 0, legal: 0, upload: 0 };
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path === "/api/legal/acceptances" && request.method() === "POST") {
+      privateMutationCounts.legal += 1;
+    } else if (path === "/api/uploads" && request.method() === "POST") {
+      privateMutationCounts.upload += 1;
+    } else if (path === "/api/jobs" && request.method() === "POST") {
+      privateMutationCounts.job += 1;
+    }
+  });
+
+  await openPrivateAppInEnglish(page);
+  const input = page.locator('input[type="file"]');
+  await input.setInputFiles({
+    buffer: fixtureWave(),
+    mimeType: "audio/wav",
+    name: "recognized-container.wav",
+  });
+
+  await expect(page.getByRole("alert")).toContainText(
+    "This browser could not read playable audio metadata from the selected file.",
+  );
+  await expect(page.getByRole("alert")).toContainText("no upload was started");
+  await expect(input).toHaveAttribute("aria-invalid", "true");
+  await expect(page.locator(".file-structure-status.is-invalid")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Securely upload audio" })).toBeDisabled();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+  expect(privateMutationCounts).toEqual({ job: 0, legal: 0, upload: 0 });
+});
+
 test("does not let a stale local audio check replace a newer invalid selection", async ({
   page,
 }) => {
@@ -703,7 +753,7 @@ test("does not let a stale local audio check replace a newer invalid selection",
     name: "first-valid.wav",
   });
   await expect(page.locator(".file-structure-status")).toContainText(
-    "Checking the audio structure on this device",
+    "Checking audio structure and playback metadata on this device",
   );
   await input.setInputFiles({
     buffer: Buffer.from("synthetic text, not audio"),
@@ -1926,7 +1976,7 @@ test("requires both rights and current legal documents before generation can be 
     name: "authorized-recording.wav",
   });
   await expect(page.locator(".file-structure-status")).toContainText(
-    "Recognized WAV audio structure on this device.",
+    "Playable WAV metadata detected on this device",
   );
 
   const checkboxes = page.getByRole("checkbox");

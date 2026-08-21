@@ -40,7 +40,18 @@ export const clientAudioFileAccept = [
 ].join(",");
 
 export type ClientAudioFileValidationIssue =
-  "empty" | "invalid-content" | "invalid-name" | "multiple" | "too-large" | "unsupported";
+  | "empty"
+  | "invalid-content"
+  | "invalid-name"
+  | "multiple"
+  | "too-large"
+  | "unreadable-audio"
+  | "unsupported";
+
+export type ClientAudioFileReadiness = {
+  durationSeconds: number;
+  format: AudioContainerFormat;
+};
 
 export type ClientAudioFileValidationResult =
   | { issue: null; request: CreateUploadMetadata; valid: true }
@@ -52,7 +63,8 @@ export class UploadApiError extends Error {
     | "DIRECT_UPLOAD_FAILED"
     | "INVALID_AUDIO_CONTENT"
     | "INVALID_RESPONSE"
-    | "NETWORK_ERROR";
+    | "NETWORK_ERROR"
+    | "UNREADABLE_AUDIO";
   readonly retryable: boolean;
   readonly requestId: string | null;
 
@@ -67,7 +79,8 @@ export class UploadApiError extends Error {
       | "DIRECT_UPLOAD_FAILED"
       | "INVALID_AUDIO_CONTENT"
       | "INVALID_RESPONSE"
-      | "NETWORK_ERROR";
+      | "NETWORK_ERROR"
+      | "UNREADABLE_AUDIO";
     message: string;
     requestId?: string | null;
     retryable: boolean;
@@ -155,6 +168,14 @@ function invalidAudioContentError(): UploadApiError {
   });
 }
 
+function unreadableAudioError(): UploadApiError {
+  return new UploadApiError({
+    code: "UNREADABLE_AUDIO",
+    message: "The browser could not read playable metadata from the selected audio file.",
+    retryable: false,
+  });
+}
+
 function requireClientAudioMetadata(file: File): CreateUploadMetadata {
   const validation = validateClientAudioFile(file);
   if (!validation.valid) {
@@ -202,6 +223,29 @@ export async function inspectClientAudioFileStructure(
 ): Promise<AudioContainerFormat> {
   const metadata = requireClientAudioMetadata(file);
   return await requireClientAudioStructure(file, metadata, signal);
+}
+
+export async function inspectClientAudioFileReadiness(
+  file: File,
+  signal?: AbortSignal,
+): Promise<ClientAudioFileReadiness> {
+  const metadata = requireClientAudioMetadata(file);
+  const format = await requireClientAudioStructure(file, metadata, signal);
+  signal?.throwIfAborted();
+  const playbackModule = await import("./audio-playback-metadata");
+
+  try {
+    const playback = await playbackModule.inspectAudioPlaybackMetadata(file, signal);
+    return { durationSeconds: playback.durationSeconds, format };
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw error;
+    }
+    if (error instanceof playbackModule.AudioPlaybackMetadataError) {
+      throw unreadableAudioError();
+    }
+    throw invalidAudioContentError();
+  }
 }
 
 function createClientUploadRequest(metadata: CreateUploadMetadata): CreateUploadRequest {

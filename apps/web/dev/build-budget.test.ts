@@ -74,6 +74,13 @@ function syntheticArtifacts(): BuildArtifact[] {
       type: "chunk",
     },
     {
+      code: "m".repeat(500),
+      facadeModuleId: "/synthetic/project/src/audio-playback-metadata.ts",
+      fileName: "assets/audio-playback-metadata-synthetic.js",
+      isEntry: false,
+      type: "chunk",
+    },
+    {
       fileName: "assets/index-synthetic.css",
       source: "i".repeat(500),
       type: "asset",
@@ -98,7 +105,7 @@ describe("web build budget", () => {
     expect(validatePublicBuildArtifacts(syntheticArtifacts())).toEqual([]);
     expect(collection.errors).toEqual([]);
     expect(evaluateBuildBudget(collection.measurements)).toEqual([]);
-    expect(collection.measurements.get("all-js")?.rawBytes).toBe(4_000);
+    expect(collection.measurements.get("all-js")?.rawBytes).toBe(4_500);
     expect(collection.measurements.get("all-css")?.rawBytes).toBe(1_000);
   });
 
@@ -150,6 +157,19 @@ describe("web build budget", () => {
     );
   });
 
+  it("fails closed when the browser audio-metadata chunk is absent", () => {
+    const artifacts = syntheticArtifacts().filter(
+      (artifact) =>
+        artifact.type !== "chunk" ||
+        !artifact.fileName.startsWith("assets/audio-playback-metadata-"),
+    );
+    const collection = collectBuildMeasurements(artifacts);
+
+    expect(evaluateBuildBudget(collection.measurements)).toContain(
+      "Missing required audio-metadata-js build artifact.",
+    );
+  });
+
   it("reports duplicate entry artifacts without revealing module paths", () => {
     const artifacts = syntheticArtifacts();
     artifacts.push({
@@ -193,7 +213,7 @@ describe("web build budget", () => {
 
     const errors = validatePublicBuildArtifacts(artifacts);
 
-    expect(errors).toContain("Unexpected public build artifact #12 (.mp3).");
+    expect(errors).toContain("Unexpected public build artifact #13 (.mp3).");
     expect(errors.join(" ")).not.toContain("synthetic-private-recording");
   });
 
@@ -206,7 +226,7 @@ describe("web build budget", () => {
     });
 
     expect(validatePublicBuildArtifacts(artifacts)).toContain(
-      "Unexpected public build artifact #12 (.webp).",
+      "Unexpected public build artifact #13 (.webp).",
     );
   });
 

@@ -46,7 +46,7 @@ import { BrandMark, GlobeIcon, legalLinkCopy, ShieldIcon, SiteFooter } from "./s
 import {
   clientAudioFileAccept,
   deleteUpload,
-  inspectClientAudioFileStructure,
+  inspectClientAudioFileReadiness,
   UploadApiError,
   uploadAndConfirmAudio,
   validateClientAudioFile,
@@ -114,12 +114,14 @@ const copy = {
     fileInvalidName: "The filename is invalid. Rename the file and choose it again.",
     fileInvalidContent:
       "The selected file is not a recognized MP3, WAV, M4A, AAC, or OGG audio stream. Check the original file instead of only renaming its extension.",
-    fileChecking: "Checking the audio structure on this device…",
+    fileChecking: "Checking audio structure and playback metadata on this device…",
     fileReady:
-      "Recognized {format} audio structure. Confirm your rights and accept the current legal documents to continue.",
-    fileRejected: "Audio structure not recognized.",
+      "Playable {format} audio detected ({duration}). Confirm your rights and accept the current legal documents to continue.",
+    fileRejected: "Playable audio not confirmed.",
+    fileUnreadable:
+      "This browser could not read playable audio metadata from the selected file. Check the original file or convert it to a supported format; no upload was started.",
     fileVerified:
-      "Recognized {format} audio structure on this device. This checks the format only, not full decodability, musical content, or rights.",
+      "Playable {format} metadata detected on this device ({duration}). This does not prove the file is a song, fully decodable, high quality, or authorized for use.",
     fileMultiple: "Choose one audio file at a time.",
     fileTooLarge: "The selected audio file exceeds the 500 MB limit.",
     fileUnsupported: "Choose an MP3, WAV, M4A, AAC, or OGG audio file.",
@@ -225,11 +227,14 @@ const copy = {
     fileInvalidName: "檔案名稱無效，請重新命名後再選擇。",
     fileInvalidContent:
       "所選檔案不是可辨識的 MP3、WAV、M4A、AAC 或 OGG 音訊串流；請檢查原始檔案，不要只更改副檔名。",
-    fileChecking: "正在此裝置核對音訊結構……",
-    fileReady: "已辨識 {format} 音訊結構。請確認相關權利並接受現行法律文件，以繼續操作。",
-    fileRejected: "未能辨識音訊結構。",
+    fileChecking: "正在此裝置核對音訊結構及播放元資料……",
+    fileReady:
+      "已在此裝置讀取可播放的 {format} 音訊元資料（{duration}）。請確認相關權利並接受現行法律文件，以繼續操作。",
+    fileRejected: "未能確認可播放音訊。",
+    fileUnreadable:
+      "此瀏覽器未能從所選檔案讀取可播放的音訊元資料。請檢查原始檔案或轉換成支援格式；系統尚未開始上載。",
     fileVerified:
-      "已在此裝置辨識 {format} 音訊結構。這只核對格式，不代表可完整解碼、一定是音樂或已具備相關權利。",
+      "已在此裝置讀取可播放的 {format} 音訊元資料（{duration}）。這不代表檔案一定是歌曲、可完整解碼、品質良好或已獲授權使用。",
     fileMultiple: "每次只可選擇一個音訊檔案。",
     fileTooLarge: "所選音訊檔案超過 500 MB 上限。",
     fileUnsupported: "請選擇 MP3、WAV、M4A、AAC 或 OGG 音訊檔案。",
@@ -356,7 +361,7 @@ type ActiveJobOrigin = "browser-mock" | "private-api";
 type ClientAudioPreflightState =
   | { status: "idle" }
   | { file: File; status: "checking" }
-  | { file: File; format: AudioContainerFormat; status: "valid" }
+  | { durationSeconds: number; file: File; format: AudioContainerFormat; status: "valid" }
   | { file: File; status: "invalid" };
 
 const audioContainerFormatLabels: Readonly<Record<AudioContainerFormat, string>> = {
@@ -369,8 +374,32 @@ const audioContainerFormatLabels: Readonly<Record<AudioContainerFormat, string>>
   wav: "WAV",
 };
 
-function audioPreflightMessage(template: string, format: AudioContainerFormat): string {
-  return template.replace("{format}", audioContainerFormatLabels[format]);
+function audioDurationLabel(durationSeconds: number, language: Language): string {
+  if (durationSeconds < 1) {
+    return language === "en" ? "less than 1 second" : "少於 1 秒";
+  }
+  const seconds = Math.round(durationSeconds);
+  if (seconds < 60) {
+    return language === "en"
+      ? `${seconds} ${seconds === 1 ? "second" : "seconds"}`
+      : `${seconds} 秒`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return language === "en"
+    ? `${minutes} min${remainder === 0 ? "" : ` ${remainder} sec`}`
+    : `${minutes} 分${remainder === 0 ? "" : ` ${remainder} 秒`}`;
+}
+
+function audioPreflightMessage(
+  template: string,
+  format: AudioContainerFormat,
+  durationSeconds: number,
+  language: Language,
+): string {
+  return template
+    .replace("{format}", audioContainerFormatLabels[format])
+    .replace("{duration}", audioDurationLabel(durationSeconds, language));
 }
 
 const waveformHeights = [
@@ -444,6 +473,7 @@ export function PrivateApp() {
     "invalid-name": strings.fileInvalidName,
     multiple: strings.fileMultiple,
     "too-large": strings.fileTooLarge,
+    "unreadable-audio": strings.fileUnreadable,
     unsupported: strings.fileUnsupported,
   };
   const fileValidationMessage =
@@ -767,10 +797,10 @@ export function PrivateApp() {
     setFilePreflight({ file, status: "checking" });
     setNotice(null);
     jobIdempotencyKey.current = null;
-    void inspectClientAudioFileStructure(file, controller.signal)
-      .then((format) => {
+    void inspectClientAudioFileReadiness(file, controller.signal)
+      .then(({ durationSeconds, format }) => {
         if (filePreflightAbortController.current === controller && !controller.signal.aborted) {
-          setFilePreflight({ file, format, status: "valid" });
+          setFilePreflight({ durationSeconds, file, format, status: "valid" });
         }
       })
       .catch((error: unknown) => {
@@ -779,7 +809,11 @@ export function PrivateApp() {
         }
         if (filePreflightAbortController.current === controller) {
           setFilePreflight({ file, status: "invalid" });
-          setFileValidationIssue("invalid-content");
+          setFileValidationIssue(
+            error instanceof UploadApiError && error.code === "UNREADABLE_AUDIO"
+              ? "unreadable-audio"
+              : "invalid-content",
+          );
           setNotice(null);
           jobIdempotencyKey.current = null;
         }
@@ -1480,7 +1514,12 @@ export function PrivateApp() {
                       (filePreflight.status === "checking" ? strings.fileChecking : null) ??
                       notice ??
                       (filePreflight.status === "valid" && (!rightsAccepted || !legalAccepted)
-                        ? audioPreflightMessage(strings.fileReady, filePreflight.format)
+                        ? audioPreflightMessage(
+                            strings.fileReady,
+                            filePreflight.format,
+                            filePreflight.durationSeconds,
+                            language,
+                          )
                         : null) ??
                       (localAiHarnessEnabled
                         ? confirmedUpload !== null
@@ -1569,7 +1608,12 @@ function UploadPanel({
   const strings = copy[language];
   const verifiedMessage =
     filePreflight.status === "valid"
-      ? audioPreflightMessage(strings.fileVerified, filePreflight.format)
+      ? audioPreflightMessage(
+          strings.fileVerified,
+          filePreflight.format,
+          filePreflight.durationSeconds,
+          language,
+        )
       : null;
 
   return (
