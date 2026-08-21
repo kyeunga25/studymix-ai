@@ -57,8 +57,7 @@ export function buildAccessReadiness(session: PrivateSession): readonly AccessRe
 type AccessReadinessCopy = {
   badge: string;
   description: string;
-  itemListLabel: string;
-  items: Record<AccessReadinessItemId, { detail: string; label: string }>;
+  items: Record<AccessReadinessItemId, string>;
   note: string;
   states: Record<AccessReadinessState, string>;
   title: string;
@@ -68,19 +67,18 @@ const copy = {
   en: {
     badge: "Owner workspace active",
     description:
-      "Read-only launch controls derived from this verified session. Provider and payment activation still require manual approval.",
-    itemListLabel: "Workspace capability status",
+      "Read-only status from this verified session. AI and payments still require manual approval.",
     items: {
-      credits: { detail: "Private usage ledger.", label: "Beta credits" },
-      payments: { detail: "Checkout and subscriptions.", label: "Payments" },
-      realAi: { detail: "External provider and launch flag.", label: "Real AI" },
-      retention: { detail: "Scheduled retention cleanup.", label: "Automatic deletion" },
-      synthetic: { detail: "No paid AI provider.", label: "Synthetic workflow" },
-      upload: { detail: "Direct transfer to private storage.", label: "Private upload" },
+      credits: "Beta credits",
+      payments: "Payments",
+      realAi: "Real AI",
+      retention: "Automatic deletion",
+      synthetic: "Synthetic workflow",
+      upload: "Private upload",
     },
-    note: "API keys and payment details are never entered in this browser panel.",
+    note: "Never enter API keys or payment details here.",
     states: {
-      "approved-disabled": "Approved · feature off",
+      "approved-disabled": "Approved · off",
       available: "Available",
       local: "Local only",
       review: "Review required",
@@ -90,19 +88,18 @@ const copy = {
   },
   "zh-HK": {
     badge: "擁有人工作區已啟用",
-    description: "根據此已驗證工作階段顯示的唯讀上線控制。供應商及付款功能仍須經人工審批才可啟用。",
-    itemListLabel: "工作區能力狀態",
+    description: "此唯讀狀態來自已驗證工作階段；AI 及付款仍須人工審批。",
     items: {
-      credits: { detail: "私人使用額度紀錄。", label: "測試額度" },
-      payments: { detail: "結帳及訂閱。", label: "付款" },
-      realAi: { detail: "外部供應商及上線旗標。", label: "真實 AI" },
-      retention: { detail: "排程保留期清理。", label: "自動刪除" },
-      synthetic: { detail: "不使用付費 AI 供應商。", label: "合成工作流程" },
-      upload: { detail: "直接傳送至私人儲存空間。", label: "私人上載" },
+      credits: "測試額度",
+      payments: "付款",
+      realAi: "真實 AI",
+      retention: "自動刪除",
+      synthetic: "合成工作流程",
+      upload: "私人上載",
     },
-    note: "此瀏覽器面板不會要求輸入 API key 或付款資料。",
+    note: "切勿在此輸入 API key 或付款資料。",
     states: {
-      "approved-disabled": "已核准 · 功能關閉",
+      "approved-disabled": "已核准 · 關閉",
       available: "可用",
       local: "只限本機",
       review: "需要審批",
@@ -134,16 +131,15 @@ export function AccessReadinessPanel({
           {strings.badge}
         </span>
       </div>
-      <ul className="access-readiness-grid" aria-label={strings.itemListLabel}>
+      <ul className="access-readiness-grid">
         {readiness.map((item) => (
           <li className="access-readiness-item" key={item.id}>
             <div className="access-readiness-item-heading">
-              <strong>{strings.items[item.id].label}</strong>
+              <strong>{strings.items[item.id]}</strong>
               <span className={`access-readiness-state is-${item.state}`}>
                 {strings.states[item.state]}
               </span>
             </div>
-            <p>{strings.items[item.id].detail}</p>
           </li>
         ))}
       </ul>

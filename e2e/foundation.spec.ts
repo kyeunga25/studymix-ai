@@ -779,7 +779,7 @@ test("shows a bilingual read-only workspace readiness dashboard", async ({ page 
     "可用",
   );
   await expect(readiness.getByRole("listitem").filter({ hasText: "付款" })).toContainText("不可用");
-  await expect(readiness).toContainText("不會要求輸入 API key 或付款資料");
+  await expect(readiness).toContainText("切勿在此輸入 API key 或付款資料");
 
   await page.getByRole("button", { name: "EN" }).click();
   await expect(page.getByRole("heading", { name: "Workspace readiness" })).toBeVisible();
@@ -792,9 +792,7 @@ test("shows a bilingual read-only workspace readiness dashboard", async ({ page 
   await expect(readiness.getByRole("listitem").filter({ hasText: "Payments" })).toContainText(
     "Unavailable",
   );
-  await expect(readiness).toContainText(
-    "API keys and payment details are never entered in this browser panel.",
-  );
+  await expect(readiness).toContainText("Never enter API keys or payment details here.");
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expectNoHorizontalOverflow(page);

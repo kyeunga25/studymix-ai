@@ -238,13 +238,6 @@ main {
   line-height: 1.35;
 }
 
-.access-readiness-item p {
-  margin: 8px 0 0;
-  color: #69647c;
-  font-size: 0.82rem;
-  line-height: 1.45;
-}
-
 .access-readiness-state {
   flex: 0 1 auto;
   padding: 4px 7px;
