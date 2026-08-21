@@ -1659,6 +1659,7 @@ function LocalAudioPreview({ file, language }: { file: File; language: Language 
           controls
           controlsList="nodownload noplaybackrate"
           preload="metadata"
+          tabIndex={0}
           ref={(element) => {
             if (element) {
               audioElement.current = { element, source: activePreview.source };

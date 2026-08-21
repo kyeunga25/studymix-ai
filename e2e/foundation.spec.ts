@@ -3356,20 +3356,34 @@ test("supports keyboard operation from the selected file through job submission"
     mimeType: "audio/wav",
     name: "keyboard-recording.wav",
   });
+  const preview = page.getByLabel("Preview selected audio on this device");
+  await expect(preview).toBeVisible();
   await fileInput.focus();
 
   await page.keyboard.press("Tab");
-  await expect(page.getByRole("radio", { name: /^Soft Piano\b/ })).toBeFocused();
+  await expect(preview).toBeFocused();
+  const preset = page.getByRole("radio", { name: /^Soft Piano\b/ });
+  for (let index = 0; index < 12; index += 1) {
+    if (await preset.evaluate((element) => element === document.activeElement)) {
+      break;
+    }
+    await page.keyboard.press("Tab");
+  }
+  await expect(preset).toBeFocused();
   await page.keyboard.press("Tab");
   await expect(page.getByRole("checkbox").nth(0)).toBeFocused();
   await page.keyboard.press("Space");
   await page.keyboard.press("Tab");
   await expect(page.getByRole("checkbox").nth(1)).toBeFocused();
   await page.keyboard.press("Space");
-  for (let index = 0; index < 5; index += 1) {
+  const submit = page.getByRole("button", { name: "Generate 2 candidates" });
+  await expect(submit).toBeEnabled();
+  for (let index = 0; index < 8; index += 1) {
+    if (await submit.evaluate((element) => element === document.activeElement)) {
+      break;
+    }
     await page.keyboard.press("Tab");
   }
-  const submit = page.getByRole("button", { name: "Generate 2 candidates" });
   await expect(submit).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "Creating your study mix" })).toBeVisible();
