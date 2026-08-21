@@ -108,6 +108,11 @@ succeed, and visibly reports the recognized format and approximate duration. Rep
 the workspace aborts the stale work, and every transient object URL is revoked. The upload operation repeats
 the bounded structural inspection before it creates metadata, then uploads directly to R2; the browser
 playback probe remains a local usability gate and is not sent to the server.
+After both preflight layers succeed, the selected file may be played through a separate temporary local
+object URL so the user can listen before uploading. This optional preview remains device-local, exists only
+while that exact selection is active, and must be paused, detached, and revoked when the file changes or the
+workspace unmounts. A browser that cannot create the optional preview keeps the validated file ready and
+shows a safe fallback; it does not skip either preflight layer or start an external request.
 
 ### FR-2: Confirm upload
 

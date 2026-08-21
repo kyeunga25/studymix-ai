@@ -276,7 +276,11 @@ These strings are hypotheses and must be benchmarked. Do not claim that they gua
    terminal path. Failure gets a bilingual accessible error before legal-acceptance submission, upload
    metadata, or file-byte transfer. Immediately before upload creation, the upload client repeats the bounded
    structural inspection. No structural pass buffers the complete selected file, and playback metadata stays
-   in the browser.
+   in the browser. Once both gates pass, the private UI creates a second object URL for an optional native
+   audio preview of that exact `File`. The URL is never sent off-device, remains live only while the selection
+   is shown, and is paused, detached from the media element, and revoked on replacement or unmount. Failure to
+   create this optional preview is announced without invalidating the already-verified file, weakening either
+   preflight gate, or starting a legal／upload／job mutation.
 2. The client creates one `ui-upload:` idempotency key and requests `POST /api/uploads`. If the request has
    an ambiguous network failure, the client makes at most one automatic retry with the same key and metadata;
    aborts, validation failures, conflicts, and invalid responses are not retried by this recovery path.

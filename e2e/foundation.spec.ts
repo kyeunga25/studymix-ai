@@ -1,6 +1,12 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { activePrivateJobSessionKey } from "../apps/web/src/private-job-session";
 
+declare global {
+  interface Window {
+    __studymixPreviewElement?: HTMLAudioElement;
+  }
+}
+
 const fixtureUploadId = "upl_11111111111111111111111111111111";
 const browserMockUploadId = "upl_00000000000000000000000000000001";
 const fixtureJobId = "job_22222222222222222222222222222222";
@@ -581,7 +587,7 @@ test("renders every core route without inline style attributes", async ({ page }
     name: "authorized-recording.wav",
   });
   await expect(page.locator("body [style]")).toHaveCount(0);
-  await expectCssRenderedWaveform(page, ".file-preview .waveform i");
+  await expect(page.getByLabel("在此裝置預聽所選音訊")).toBeVisible();
 });
 
 test("rejects invalid audio selections before enabling generation", async ({ page }) => {
@@ -648,6 +654,167 @@ test("rejects invalid audio selections before enabling generation", async ({ pag
   await expectNoHorizontalOverflow(page);
   await expect(page.locator(".file-structure-status.is-valid")).toBeVisible();
   expect(uploadRequestCount).toBe(0);
+});
+
+test("previews validated files locally and revokes every temporary source", async ({ page }) => {
+  await routePrivateRealSession(page);
+  await page.addInitScript(() => {
+    const originalCreate = URL.createObjectURL.bind(URL);
+    const originalRevoke = URL.revokeObjectURL.bind(URL);
+    URL.createObjectURL = (object: Blob | MediaSource) => {
+      const current = Number(document.documentElement.dataset.localPreviewCreated ?? "0");
+      document.documentElement.dataset.localPreviewCreated = (current + 1).toString();
+      return originalCreate(object);
+    };
+    URL.revokeObjectURL = (value: string) => {
+      const current = Number(document.documentElement.dataset.localPreviewRevoked ?? "0");
+      document.documentElement.dataset.localPreviewRevoked = (current + 1).toString();
+      originalRevoke(value);
+    };
+  });
+  let privateMutationCount = 0;
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (
+      request.method() === "POST" &&
+      (path === "/api/legal/acceptances" || path === "/api/uploads" || path === "/api/jobs")
+    ) {
+      privateMutationCount += 1;
+    }
+  });
+
+  await openPrivateAppInEnglish(page);
+  const input = page.locator('input[type="file"]');
+  await input.setInputFiles({
+    buffer: fixtureWave(),
+    mimeType: "audio/wav",
+    name: "first-preview.wav",
+  });
+
+  const preview = page.getByLabel("Preview selected audio on this device");
+  await expect(preview).toBeVisible();
+  await expect(preview).toHaveAttribute("src", /^blob:/u);
+  await expect(page.locator(".local-audio-preview")).toContainText(
+    "This temporary local preview does not upload or analyze your recording.",
+  );
+  expect(
+    await preview.evaluate((element) => ({
+      controls: element instanceof HTMLAudioElement && element.controls,
+      preload: element instanceof HTMLAudioElement ? element.preload : null,
+    })),
+  ).toEqual({ controls: true, preload: "metadata" });
+  const firstSource = await preview.getAttribute("src");
+  await preview.evaluate((element) => {
+    if (element instanceof HTMLAudioElement) {
+      window.__studymixPreviewElement = element;
+    }
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          Number(document.documentElement.dataset.localPreviewCreated ?? "0") -
+          Number(document.documentElement.dataset.localPreviewRevoked ?? "0"),
+      ),
+    )
+    .toBe(1);
+  const firstCounts = await page.evaluate(() => ({
+    created: Number(document.documentElement.dataset.localPreviewCreated ?? "0"),
+    revoked: Number(document.documentElement.dataset.localPreviewRevoked ?? "0"),
+  }));
+  expect(firstCounts.created - firstCounts.revoked).toBe(1);
+
+  await input.setInputFiles({
+    buffer: fixtureWave(),
+    mimeType: "audio/wav",
+    name: "second-preview.wav",
+  });
+  await expect(page.locator(".file-preview")).toContainText("second-preview.wav");
+  await expect(preview).toBeVisible();
+  await expect.poll(() => preview.getAttribute("src")).not.toBe(firstSource);
+  await expect
+    .poll(() =>
+      page.evaluate(() => ({
+        paused: window.__studymixPreviewElement?.paused ?? false,
+        source: window.__studymixPreviewElement?.getAttribute("src") ?? null,
+      })),
+    )
+    .toEqual({ paused: true, source: null });
+  await preview.evaluate((element) => {
+    if (element instanceof HTMLAudioElement) {
+      window.__studymixPreviewElement = element;
+    }
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+  const switchedCounts = await page.evaluate(() => ({
+    created: Number(document.documentElement.dataset.localPreviewCreated ?? "0"),
+    revoked: Number(document.documentElement.dataset.localPreviewRevoked ?? "0"),
+  }));
+  expect(switchedCounts.created - switchedCounts.revoked).toBe(1);
+
+  await input.setInputFiles([]);
+  await expect(preview).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() => ({
+        paused: window.__studymixPreviewElement?.paused ?? false,
+        source: window.__studymixPreviewElement?.getAttribute("src") ?? null,
+      })),
+    )
+    .toEqual({ paused: true, source: null });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          Number(document.documentElement.dataset.localPreviewCreated ?? "0") -
+          Number(document.documentElement.dataset.localPreviewRevoked ?? "0"),
+      ),
+    )
+    .toBe(0);
+  expect(privateMutationCount).toBe(0);
+});
+
+test("keeps a validated file ready when optional local preview creation is unavailable", async ({
+  page,
+}) => {
+  await routePrivateRealSession(page);
+  await page.addInitScript(() => {
+    const originalCreate = URL.createObjectURL.bind(URL);
+    let createCount = 0;
+    URL.createObjectURL = (object: Blob | MediaSource) => {
+      createCount += 1;
+      if (createCount > 1) {
+        throw new DOMException("Synthetic local preview failure", "NotSupportedError");
+      }
+      return originalCreate(object);
+    };
+  });
+  let privateMutationCount = 0;
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() === "POST" && path.startsWith("/api/")) {
+      privateMutationCount += 1;
+    }
+  });
+
+  await openPrivateAppInEnglish(page);
+  const input = page.locator('input[type="file"]');
+  await input.setInputFiles({
+    buffer: fixtureWave(),
+    mimeType: "audio/wav",
+    name: "preview-optional.wav",
+  });
+
+  await expect(page.locator(".local-audio-preview-status")).toContainText(
+    "Local preview is unavailable in this browser.",
+  );
+  await expect(input).toHaveAttribute("aria-invalid", "false");
+  const checkboxes = page.getByRole("checkbox");
+  await checkboxes.nth(0).check();
+  await checkboxes.nth(1).check();
+  await expect(page.getByRole("button", { name: "Securely upload audio" })).toBeEnabled();
+  expect(privateMutationCount).toBe(0);
 });
 
 test("rejects renamed non-audio content before private upload creation", async ({ page }) => {
