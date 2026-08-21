@@ -813,6 +813,12 @@ workspace assertion can only confirm the server-selected default workspace; a di
 is rejected before route logic. The current beta has one active owner workspace. Any future multi-workspace
 data model must add workspace predicates to every owner-owned entity before enabling a second active scope.
 
+The verified browser session lazy-loads a bilingual, read-only readiness presentation that maps only the
+existing approval and capability fields into reviewed status labels. It does not request another management
+endpoint, render raw permissions or identifiers, or offer browser mutations for approvals, provider keys, or
+payment configuration. The server remains authoritative: an approved control with its runtime capability off
+is shown separately from an active capability, and a missing capability always fails closed as unavailable.
+
 The exact `/api/webhooks/fal` path is the only provider callback exception to user authentication. A
 more-specific Access application may bypass interactive login for that path only; the Worker then requires
 fal's Ed25519 signature, expected fal user, fresh timestamp, matching raw body, and known request ID before

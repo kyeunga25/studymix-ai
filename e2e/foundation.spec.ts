@@ -740,15 +740,63 @@ test("shows an Access denial on the login interface without accepting an externa
 test("verifies the invited test session before showing the private app", async ({ page }) => {
   await page.goto("/app");
 
-  await expect(page.getByRole("status")).toContainText("私密測試存取權已驗證");
-  await expect(page.getByRole("status")).toContainText("擁有者工作區：啟用");
-  await expect(page.getByRole("status")).toContainText("真實 AI：不可用");
-  await expect(page.getByRole("status")).toContainText("付款：不可用");
+  const readiness = page.locator(".access-readiness:not(.is-loading)");
+  await expect(page.getByRole("heading", { name: "工作區準備狀態" })).toBeVisible();
+  await expect(readiness).toContainText("擁有人工作區已啟用");
+  await expect(readiness.getByRole("listitem")).toHaveCount(6);
+  await expect(readiness.getByRole("listitem").filter({ hasText: "真實 AI" })).toContainText(
+    "不可用",
+  );
+  await expect(readiness.getByRole("listitem").filter({ hasText: "付款" })).toContainText("不可用");
   await expect(page.getByRole("heading", { name: "把你的音樂變成專注讀書 Mix" })).toBeVisible();
   await expect(page.getByRole("link", { name: "登出" })).toHaveAttribute(
     "href",
     "/cdn-cgi/access/logout",
   );
+});
+
+test("shows a bilingual read-only workspace readiness dashboard", async ({ page }) => {
+  let privateMutationCount = 0;
+  await routePrivateRealSession(page);
+  page.on("request", (request) => {
+    const { pathname } = new URL(request.url());
+    if (
+      pathname.startsWith("/api/") &&
+      ["POST", "PUT", "PATCH", "DELETE"].includes(request.method())
+    ) {
+      privateMutationCount += 1;
+    }
+  });
+
+  await page.goto("/app");
+  const readiness = page.locator(".access-readiness:not(.is-loading)");
+  await expect(page.getByRole("heading", { name: "工作區準備狀態" })).toBeVisible();
+  await expect(readiness.getByRole("listitem")).toHaveCount(6);
+  await expect(readiness.getByRole("listitem").filter({ hasText: "私人上載" })).toContainText(
+    "可用",
+  );
+  await expect(readiness.getByRole("listitem").filter({ hasText: "真實 AI" })).toContainText(
+    "可用",
+  );
+  await expect(readiness.getByRole("listitem").filter({ hasText: "付款" })).toContainText("不可用");
+  await expect(readiness).toContainText("切勿在此輸入 API key 或付款資料");
+
+  await page.getByRole("button", { name: "EN" }).click();
+  await expect(page.getByRole("heading", { name: "Workspace readiness" })).toBeVisible();
+  await expect(readiness.getByRole("listitem").filter({ hasText: "Private upload" })).toContainText(
+    "Available",
+  );
+  await expect(readiness.getByRole("listitem").filter({ hasText: "Real AI" })).toContainText(
+    "Available",
+  );
+  await expect(readiness.getByRole("listitem").filter({ hasText: "Payments" })).toContainText(
+    "Unavailable",
+  );
+  await expect(readiness).toContainText("Never enter API keys or payment details here.");
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expectNoHorizontalOverflow(page);
+  expect(privateMutationCount).toBe(0);
 });
 
 test("recovers private session verification after one transport failure", async ({ page }) => {
@@ -777,7 +825,7 @@ test("recovers private session verification after one transport failure", async 
 
   await page.goto("/app");
 
-  await expect(page.getByRole("status")).toContainText("私密測試存取權已驗證");
+  await expect(page.getByRole("heading", { name: "工作區準備狀態" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "把你的音樂變成專注讀書 Mix" })).toBeVisible();
   expect(new URL(page.url()).pathname).toBe("/app");
   expect(sessionRequestCount).toBe(2);

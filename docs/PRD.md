@@ -349,6 +349,13 @@ denied. The session API returns status, role, permissions, approval state, and c
 returning login identity, owner ID, workspace ID, or resource mappings. There is no public registration,
 browser onboarding, browser credit grant, or browser approval endpoint.
 
+After session verification, the private workspace presents a Traditional Chinese／English, read-only
+readiness dashboard derived only from those returned approval states and capability booleans. It distinguishes
+available, loopback-local, review-required, approved-but-disabled, and unavailable states without displaying
+permissions, identifiers, resource mappings, provider credentials, or payment details. The dashboard provides
+no mutation or approval control; provider, payment, and secret activation remain operator-managed outside the
+browser.
+
 ## 7. Non-functional requirements
 
 ### Security
