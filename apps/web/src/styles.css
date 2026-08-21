@@ -670,6 +670,40 @@ main {
   width: 14px;
 }
 
+.local-audio-preview {
+  display: grid;
+  min-width: 0;
+  grid-column: 1 / -1;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid #ebe6f2;
+}
+
+.local-audio-preview-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.local-audio-preview-copy strong {
+  color: #35304f;
+  font-size: 0.9rem;
+}
+
+.local-audio-preview-copy span,
+.local-audio-preview-status {
+  color: #6d6983;
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.local-audio-preview audio {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+}
+
 .waveform {
   display: flex;
   height: 48px;

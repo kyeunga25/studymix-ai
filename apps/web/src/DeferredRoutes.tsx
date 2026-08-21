@@ -122,6 +122,13 @@ const copy = {
       "This browser could not read playable audio metadata from the selected file. Check the original file or convert it to a supported format; no upload was started.",
     fileVerified:
       "Playable {format} metadata detected on this device ({duration}). This does not prove the file is a song, fully decodable, high quality, or authorized for use.",
+    localPreviewTitle: "Preview on this device",
+    localPreviewDetail:
+      "Listen before uploading. This temporary local preview does not upload or analyze your recording.",
+    localPreviewLabel: "Preview selected audio on this device",
+    localPreviewPreparing: "Preparing the private local preview…",
+    localPreviewUnavailable:
+      "Local preview is unavailable in this browser. The file remains ready and has not been uploaded.",
     fileMultiple: "Choose one audio file at a time.",
     fileTooLarge: "The selected audio file exceeds the 500 MB limit.",
     fileUnsupported: "Choose an MP3, WAV, M4A, AAC, or OGG audio file.",
@@ -235,6 +242,11 @@ const copy = {
       "此瀏覽器未能從所選檔案讀取可播放的音訊元資料。請檢查原始檔案或轉換成支援格式；系統尚未開始上載。",
     fileVerified:
       "已在此裝置讀取可播放的 {format} 音訊元資料（{duration}）。這不代表檔案一定是歌曲、可完整解碼、品質良好或已獲授權使用。",
+    localPreviewTitle: "在此裝置預聽",
+    localPreviewDetail: "上載前先自行聆聽；此暫時本機預聽不會上載或分析你的錄音。",
+    localPreviewLabel: "在此裝置預聽所選音訊",
+    localPreviewPreparing: "正在準備私人本機預聽……",
+    localPreviewUnavailable: "此瀏覽器暫時無法提供本機預聽；檔案仍可使用，而且尚未上載。",
     fileMultiple: "每次只可選擇一個音訊檔案。",
     fileTooLarge: "所選音訊檔案超過 500 MB 上限。",
     fileUnsupported: "請選擇 MP3、WAV、M4A、AAC 或 OGG 音訊檔案。",
@@ -1595,6 +1607,76 @@ type UploadPanelProps = {
   onDrop: (event: DragEvent<HTMLLabelElement>) => void;
 };
 
+type LocalAudioPreviewState =
+  { file: File; status: "unavailable" } | { file: File; source: string; status: "ready" };
+
+function LocalAudioPreview({ file, language }: { file: File; language: Language }) {
+  const [preview, setPreview] = useState<LocalAudioPreviewState | null>(null);
+  const audioElement = useRef<{ element: HTMLAudioElement; source: string } | null>(null);
+  const strings = copy[language];
+
+  useEffect(() => {
+    let source: string;
+    try {
+      source = URL.createObjectURL(file);
+    } catch {
+      setPreview({ file, status: "unavailable" });
+      return;
+    }
+
+    setPreview({ file, source, status: "ready" });
+    return () => {
+      const activeAudio = audioElement.current;
+      try {
+        if (activeAudio?.source === source) {
+          activeAudio.element.pause();
+          activeAudio.element.removeAttribute("src");
+          activeAudio.element.load();
+        }
+      } catch {
+        // Revocation below remains mandatory if media reset is unavailable.
+      } finally {
+        if (audioElement.current?.source === source) {
+          audioElement.current = null;
+        }
+        URL.revokeObjectURL(source);
+      }
+    };
+  }, [file]);
+
+  const activePreview = preview?.file === file ? preview : null;
+
+  return (
+    <div className="local-audio-preview">
+      <div className="local-audio-preview-copy" id="local-audio-preview-detail">
+        <strong>{strings.localPreviewTitle}</strong>
+        <span>{strings.localPreviewDetail}</span>
+      </div>
+      {activePreview?.status === "ready" ? (
+        <audio
+          aria-describedby="local-audio-preview-detail"
+          aria-label={strings.localPreviewLabel}
+          controls
+          controlsList="nodownload noplaybackrate"
+          preload="metadata"
+          ref={(element) => {
+            if (element) {
+              audioElement.current = { element, source: activePreview.source };
+            }
+          }}
+          src={activePreview.source}
+        />
+      ) : (
+        <span className="local-audio-preview-status" role="status" aria-live="polite">
+          {activePreview?.status === "unavailable"
+            ? strings.localPreviewUnavailable
+            : strings.localPreviewPreparing}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function UploadPanel({
   filePreflight,
   hasFileValidationError,
@@ -1681,16 +1763,20 @@ function UploadPanel({
               !
             </span>
           ) : null}
-          <div className="mini-player" aria-hidden="true">
-            <span className="mini-play">
-              <PlayIcon />
-            </span>
-            <span className="waveform">
-              {waveformHeights.map((height, index) => (
-                <i className={`waveform-height-${height}`} key={`${height}-${index}`} />
-              ))}
-            </span>
-          </div>
+          {filePreflight.status === "valid" ? (
+            <LocalAudioPreview file={filePreflight.file} language={language} />
+          ) : (
+            <div className="mini-player" aria-hidden="true">
+              <span className="mini-play">
+                <PlayIcon />
+              </span>
+              <span className="waveform">
+                {waveformHeights.map((height, index) => (
+                  <i className={`waveform-height-${height}`} key={`${height}-${index}`} />
+                ))}
+              </span>
+            </div>
+          )}
         </div>
       ) : (
         <div className="upload-encouragement" aria-hidden="true">
