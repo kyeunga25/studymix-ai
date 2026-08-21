@@ -99,12 +99,15 @@ independent key scope. The API creates an upload record and returns:
 
 The browser must bind the response to its idempotency key before trusting the upload instruction. If the
 create response is lost to an ambiguous network failure, it may retry the create request once with the exact
-same key and metadata. Before sending upload metadata or bytes, it must also use bounded local reads to
+same key and metadata. Before sending upload metadata or bytes, it must first use bounded local reads to
 recognize audio structure matching the declared supported type; changing a non-audio file's extension is not
-sufficient. This local preflight starts as soon as a metadata-valid file is selected, blocks legal-acceptance
-submission and upload controls until it succeeds, and visibly reports only the recognized structure type.
-Replacing the file or leaving the workspace aborts the stale read. The upload operation repeats the same
-inspection before it creates metadata, then uploads directly to R2.
+sufficient. After that bounded check, the browser locally probes playback metadata through a transient object
+URL and accepts only a finite positive duration within eight seconds. This preflight starts as soon as a
+metadata-valid file is selected, blocks legal-acceptance submission and upload controls until both layers
+succeed, and visibly reports the recognized format and approximate duration. Replacing the file or leaving
+the workspace aborts the stale work, and every transient object URL is revoked. The upload operation repeats
+the bounded structural inspection before it creates metadata, then uploads directly to R2; the browser
+playback probe remains a local usability gate and is not sent to the server.
 
 ### FR-2: Confirm upload
 
@@ -122,9 +125,9 @@ The server checks:
 
 The server must not trust client-supplied object keys or sizes.
 
-Structural inspection is a fail-closed container/frame check, not a claim that the file is music, is
-decodable end to end, has acceptable quality, or is legally authorized. Rights confirmation remains a
-separate mandatory control.
+Structural inspection and browser playback metadata are fail-closed preflight signals, not a claim that the
+file is music, is decodable end to end, has acceptable quality, or is legally authorized. Rights confirmation
+remains a separate mandatory control.
 
 Confirmation is idempotent for the same authenticated owner and upload. Sequential or simultaneous
 confirmations that validate the same private object converge on the one confirmed record and return the

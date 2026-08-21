@@ -7,6 +7,7 @@ const buildBudgetRoles = [
   "login-js",
   "public-legal-js",
   "private-app-js",
+  "audio-metadata-js",
   "access-readiness-js",
   "job-history-js",
   "job-experience-js",
@@ -31,10 +32,11 @@ export type BuildBudgetLimits = Readonly<Record<BuildBudgetRole, BuildBudgetLimi
 
 export const webBuildBudgetLimits: BuildBudgetLimits = {
   "entry-js": { gzipBytes: 95_000, rawBytes: 300_000 },
-  "all-js": { gzipBytes: 137_000, rawBytes: 420_000 },
+  "all-js": { gzipBytes: 139_000, rawBytes: 424_000 },
   "login-js": { gzipBytes: 6_000, rawBytes: 15_000 },
   "public-legal-js": { gzipBytes: 17_000, rawBytes: 40_000 },
   "private-app-js": { gzipBytes: 20_000, rawBytes: 60_000 },
+  "audio-metadata-js": { gzipBytes: 1_200, rawBytes: 3_000 },
   "access-readiness-js": { gzipBytes: 4_000, rawBytes: 12_000 },
   "job-history-js": { gzipBytes: 4_000, rawBytes: 12_000 },
   "job-experience-js": { gzipBytes: 8_000, rawBytes: 24_000 },
@@ -266,6 +268,9 @@ function routeRole(facadeModuleId: string | null): BuildBudgetRole | null {
   }
   if (normalizedId?.endsWith("/src/DeferredRoutes.tsx") === true) {
     return "private-app-js";
+  }
+  if (normalizedId?.endsWith("/src/audio-playback-metadata.ts") === true) {
+    return "audio-metadata-js";
   }
   if (normalizedId?.endsWith("/src/access-readiness.tsx") === true) {
     return "access-readiness-js";

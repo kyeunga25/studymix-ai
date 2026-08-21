@@ -266,12 +266,17 @@ These strings are hypotheses and must be benchmarked. Do not claim that they gua
    filename metadata. The picker advertises only these explicit formats instead of the broader `audio/*`
    category. A rejected selection is cleared, announced accessibly in the selected language, and makes
    no upload request. A metadata-valid selection immediately starts the shared bounded random-access
-   inspector against `File.slice()` ranges. The UI remains disabled while checking, then reports the detected
-   MP3, WAV, M4A, AAC, or OGG structure without claiming musical content, full decoding, quality, or rights.
-   Replacing the file or unmounting the private app aborts the stale check, and a late result cannot replace the
-   current selection state. Failure gets a bilingual accessible error before legal-acceptance submission,
-   upload metadata, or file-byte transfer. Immediately before upload creation, the upload client repeats the
-   same independent inspection. Neither pass buffers the complete selected file.
+   inspector against `File.slice()` ranges. Only after that succeeds, a separate lazy browser module creates a
+   transient local object URL, loads media metadata, and requires a finite positive duration within eight
+   seconds. The UI remains disabled while checking, then reports the detected MP3, WAV, M4A, AAC, or OGG
+   structure and approximate browser-readable duration without claiming musical content, full decoding,
+   quality, or rights. Replacing the file or unmounting the private app aborts the stale check; timeout,
+   browser media error, and non-finite／non-positive duration fail closed; a late result cannot replace the
+   current selection state. Event listeners, timers, media source, and object URL are released on every
+   terminal path. Failure gets a bilingual accessible error before legal-acceptance submission, upload
+   metadata, or file-byte transfer. Immediately before upload creation, the upload client repeats the bounded
+   structural inspection. No structural pass buffers the complete selected file, and playback metadata stays
+   in the browser.
 2. The client creates one `ui-upload:` idempotency key and requests `POST /api/uploads`. If the request has
    an ambiguous network failure, the client makes at most one automatic retry with the same key and metadata;
    aborts, validation failures, conflicts, and invalid responses are not retried by this recovery path.
@@ -360,10 +365,10 @@ These strings are hypotheses and must be benchmarked. Do not claim that they gua
 - Enforce size both before and after upload.
 - Treat content type as untrusted metadata.
 - Use bounded local and ETag-pinned R2 structural inspection for the currently supported MP3, WAV, M4A,
-  AAC, and OGG inputs. This recognizes container／frame structure only; it does not prove the file is a song,
-  decode the whole recording, assess quality, identify copyrighted material, or replace the rights control.
-  A later CPU media-validation service may perform bounded decode／duration／quality checks before any wider
-  format set is enabled.
+  AAC, and OGG inputs. Add browser-local finite playback duration as a usability gate without treating it as
+  server evidence. These signals do not prove the file is a song, decode the whole recording, assess quality,
+  identify copyrighted material, or replace the rights control. A later CPU media-validation service may
+  perform bounded decode／duration／quality checks before any wider format set is enabled.
 - Do not allow server-side fetch from URLs supplied by the user.
 
 ### Shared bounded JSON boundary
