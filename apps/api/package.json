@@ -2,6 +2,7 @@
   "name": "@studymix/api",
   "version": "0.0.0",
   "private": true,
+  "license": "UNLICENSED",
   "type": "module",
   "scripts": {
     "dev": "WRANGLER_SEND_METRICS=false WRANGLER_WRITE_LOGS=false WRANGLER_LOG_SANITIZE=true WRANGLER_REGISTRY_PATH=.wrangler/registry wrangler dev --var APP_ENV:local --var DEV_AUTH_SUBJECT:local-development-owner --var LEGAL_CONTACT_EMAIL:privacy@example.test",
