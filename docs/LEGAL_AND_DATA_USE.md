@@ -20,6 +20,21 @@ offline-tested but has not made a paid or real-audio request. Production R2 uplo
 generation, provider callbacks, and automatic object deletion remain disabled until their release gates
 pass. Public copy must not describe a test-only control as already operational.
 
+## Repository licence and product terms
+
+The repository uses the proprietary source evaluation [`LICENSE.md`](../LICENSE.md), not an
+open-source licence. Its limited permission for private, non-production technical evaluation does not
+authorise a production deployment, audio service, redistribution, hosting, or commercial use. The
+website Terms of Use govern an approved user's relationship with a deployed service; they do not grant
+source-code rights. Conversely, access to source code or an evaluation copy does not accept, replace, or
+expand the website terms.
+
+Audio, recordings, compositions, performances, voice characteristics, models, packages, brands, and
+hosted services remain subject to their respective owners' rights and terms. The repository licence does
+not clear those rights or override provider, Cloudflare, privacy, retention, data-processing, or
+acceptable-use obligations. See [`../COPYRIGHT.md`](../COPYRIGHT.md) and
+[`../THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md).
+
 ## Versioned website documents
 
 | Document | Route | Current version | Server acceptance required |

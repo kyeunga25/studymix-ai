@@ -2,6 +2,7 @@
   "name": "studymix-ai",
   "version": "0.0.0",
   "private": true,
+  "license": "UNLICENSED",
   "description": "Private, cloud-native AI audio restyling MVP.",
   "packageManager": "pnpm@11.9.0",
   "engines": {

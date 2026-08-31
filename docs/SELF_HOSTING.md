@@ -19,7 +19,7 @@ StudyMix AI 的部署單位是一個 Cloudflare Worker：前端由 Workers Stati
 
 ## 2. 前置要求
 
-- 有權使用本程式庫；目前未授予開源授權，見 [`../LICENSE.md`](../LICENSE.md)。
+- 有權按[專有原始碼評估授權](../LICENSE.md)使用本程式庫。該授權只容許私人、非生產評估；正式部署、音訊服務營運、再發佈或商用須另取得書面許可。
 - Cloudflare 帳戶及由該帳戶管理的網域。
 - 可以設定 Cloudflare Workers、D1、Workers Builds 與 Cloudflare Access 的權限。
 - Git。
