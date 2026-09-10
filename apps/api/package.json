@@ -26,7 +26,7 @@
     "@studymix/presets": "workspace:*",
     "@studymix/providers": "workspace:*",
     "aws4fetch": "^1.0.20",
-    "hono": "^4.12.34",
+    "hono": "^4.13.5",
     "jose": "^6.2.4",
     "zod": "catalog:"
   },
